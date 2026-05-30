@@ -7,12 +7,15 @@ workflows:
       app_store_connect: ATMA
     environment:
       xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: ru.atma.app
       vars:
         XCODE_SCHEME: "ATMA"
         BUNDLE_ID: "ru.atma.app"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
     scripts:
       - name: Install XcodeGen
         script: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
@@ -20,12 +23,31 @@ workflows:
         script: |
           cd "$CM_BUILD_DIR"
           xcodegen generate
+      - name: Initialize keychain
+        script: keychain initialize
+      - name: Generate certificate private key
+        script: |
+          openssl genrsa 2048 > /tmp/atma_priv.pem
+          PEM_B64=$(cat /tmp/atma_priv.pem | base64 | tr -d '\n')
+          echo "CERTIFICATE_PRIVATE_KEY=$PEM_B64" >> $CM_ENV
+      - name: Fetch or create signing files
+        script: |
+          echo "$CERTIFICATE_PRIVATE_KEY" | base64 -d > /tmp/priv.pem
+          export CERTIFICATE_PRIVATE_KEY=$(cat /tmp/priv.pem)
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Install certificates into keychain
+        script: |
+          echo "$CERTIFICATE_PRIVATE_KEY" | base64 -d > /tmp/priv.pem
+          export CERTIFICATE_PRIVATE_KEY=$(cat /tmp/priv.pem)
+          keychain add-certificates
+      - name: Apply provisioning profiles
+        script: xcode-project use-profiles
       - name: Set build number
         script: |
           cd "$CM_BUILD_DIR"
           agvtool new-version -all "$BUILD_NUMBER"
-      - name: Set up code signing
-        script: xcode-project use-profiles
       - name: Build IPA
         script: |
           xcode-project build-ipa \
