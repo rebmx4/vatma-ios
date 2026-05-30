@@ -1,0 +1,4 @@
+/* Russian localization for Info.plist */
+"CFBundleDisplayName" = "ATMA";
+"NSCameraUsageDescription" = "ATMA использует камеру, чтобы вы могли сделать фотографию для своего профиля. Камера включается только когда вы сами нажимаете кнопку добавления фото.";
+"NSPhotoLibraryUsageDescription" = "ATMA запрашивает доступ к фотографиям, чтобы вы могли выбрать снимок для своего профиля.";

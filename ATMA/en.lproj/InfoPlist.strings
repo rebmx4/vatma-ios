@@ -1,0 +1,4 @@
+/* English localization for Info.plist */
+"CFBundleDisplayName" = "ATMA";
+"NSCameraUsageDescription" = "ATMA uses the camera so you can take a profile photo. The camera is only activated when you tap the add-photo button.";
+"NSPhotoLibraryUsageDescription" = "ATMA needs access to your photos so you can choose a picture for your profile.";
