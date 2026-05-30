@@ -20,6 +20,8 @@ targets:
     platform: iOS
     sources:
       - path: ATMA
+        excludes:
+          - "Entitlements/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.atma.app
