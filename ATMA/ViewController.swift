@@ -4,6 +4,9 @@ import SafariServices
 
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
+    /// Weak handle so AppDelegate can push the APNs token into this web view.
+    static weak var shared: ViewController?
+
     private var webView: WKWebView!
     private var progressView: UIProgressView!
     private var offlineView: UIView!
@@ -14,11 +17,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        ViewController.shared = self
         view.backgroundColor = bgColor
         setupWebView()
         setupProgress()
         setupOffline()
         loadRoot()
+    }
+
+    /// Hand the APNs device token to the web layer, which POSTs it to
+    /// /api/push/apns with the user's Bearer JWT. Safe to call repeatedly —
+    /// the web side skips until the user is authenticated, then registers.
+    func registerApnsTokenInWeb(_ token: String) {
+        let safe = token.replacingOccurrences(of: "\"", with: "")
+        let js = "window.__ATMA_APNS_TOKEN=\"\(safe)\";"
+               + "if(window.HK&&HK.push&&HK.push.registerApns){HK.push.registerApns();}"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// Navigate the web app to the chats screen (used on notification tap).
+    func openChats() {
+        webView?.evaluateJavaScript(
+            "if(window.HK&&HK.showScreen){HK.showScreen('screen-chats');}",
+            completionHandler: nil)
     }
 
     // MARK: - WebView
@@ -148,6 +169,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 (UIApplication.shared.delegate as? AppDelegate)?.registerForPush()
             }
+        }
+        // Re-attempt token registration after every load (e.g. right after the
+        // user logs in, when the JWT first becomes available).
+        if let token = AppDelegate.apnsTokenHex {
+            registerApnsTokenInWeb(token)
         }
     }
 
