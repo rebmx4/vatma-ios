@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import SafariServices
 
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     /// Weak handle so AppDelegate can push the APNs token into this web view.
     static weak var shared: ViewController?
@@ -42,6 +42,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             completionHandler: nil)
     }
 
+    // MARK: - WKScriptMessageHandler (web → native badge bridge)
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "badge" else { return }
+        let count: Int
+        if let n = message.body as? Int {
+            count = n
+        } else if let n = message.body as? Double {
+            count = Int(n)
+        } else if let s = message.body as? String, let n = Int(s) {
+            count = n
+        } else {
+            count = 0
+        }
+        UIApplication.shared.applicationIconBadgeNumber = max(0, count)
+    }
+
     // MARK: - WebView
 
     private func setupWebView() {
@@ -52,6 +70,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             source: "window.__IS_IOS_APP = true;",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false))
+        // Web → native badge bridge: the web layer posts the current unread
+        // count here whenever it changes (incl. 0 after messages are read),
+        // since navigator.setAppBadge is a no-op inside a WKWebView.
+        ucc.add(self, name: "badge")
         config.userContentController = ucc
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
