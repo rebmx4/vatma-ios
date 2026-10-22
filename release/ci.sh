@@ -28,6 +28,8 @@ case "${1:?Expected prepare, smoke or archive}" in
     npm install --prefix "$task_root/.cache/tools" --ignore-scripts --no-audit --no-fund pnpm@11.11.0
     git clone --depth 1 --branch "$(config_value upstream_tag)" https://github.com/brave/brave-core.git "$native"
     test "$(git -C "$native" rev-parse HEAD)" = "$(config_value upstream_commit)"
+    python3 release/prepare_build.py --source "$native"
+    node tests/check_patch_concurrency.mjs "$native/build/commands/lib/gitPatcher.js"
     cat > "$native/.env" <<'CONFIG'
 projects_chrome_custom_vars_checkout_clangd=false
 projects_chrome_custom_vars_checkout_clang_coverage_tools=false
