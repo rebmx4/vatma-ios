@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from branding import rebrand_display_text, rebrand_grit, rebrand_strings, rebrand_swift_values
 from runtime_patch import configure_app_target
 from glyphs import replace_symbol_outlines
+from resource_assets import prepare_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +148,7 @@ def prepare(source):
             update(path, plistlib.dumps(data, sort_keys=False), "system_text")
 
     square, mark, wordmark = make_images(source)
+    prepare_resources(ios, square, update)
     wallet_script = ios / "Sources/Brave/Frontend/UserContent/UserScripts/Scripts_Dynamic/Scripts/Paged/WalletEthereumProviderScript.js"
     wallet_text = read_source(wallet_script)
     wallet_icon = io.BytesIO()

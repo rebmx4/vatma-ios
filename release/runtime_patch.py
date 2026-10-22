@@ -53,7 +53,10 @@ def configure_app_target(ios, config, update):
             '"View Brave Search Debug Menu"': '"View ATMA Search Debug Menu"',
             '"View Brave Wallet Debug Menu"': '"View ATMA Wallet Debug Menu"',
         },
-        "Sources/Brave/Frontend/Browser/Favorites/Data/FavoritesPreloadedData.swift": {"What's new in Brave": "What's new in ATMA"},
+        "Sources/Brave/Frontend/Browser/Favorites/Data/FavoritesPreloadedData.swift": {
+            "What's new in Brave": "What's new in ATMA",
+            "static let popularFavorites = [youtube, wikipedia, facebook, brave]": "static let popularFavorites = [youtube, wikipedia, facebook]",
+        },
         "Sources/Brave/Utility/AppDebugComposer.swift": {r"Brave \(appVersion)": r"ATMA \(appVersion)"},
         "Sources/BraveStore/Subscription/SDK/BraveStoreSDK.swift": {'"Brave VPN"': '"ATMA VPN"', '"Brave Leo"': '"ATMA Leo"', '"Brave Origin"': '"ATMA Origin"'},
         "Sources/Origin/OriginStrings.swift": {'"Brave Origin"': '"ATMA Origin"'},

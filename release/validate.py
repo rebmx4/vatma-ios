@@ -9,6 +9,7 @@ from PIL import Image
 
 from branding import rebrand_strings, rebrand_swift_values
 from prepare import CONFIG, IOS_PATH, read_source
+from resource_assets import is_vendor_favorite
 
 
 def validate(source):
@@ -49,6 +50,16 @@ def validate(source):
     wallet_text = read_source(ios / "Sources/Brave/Frontend/UserContent/UserScripts/Scripts_Dynamic/Scripts/Paged/WalletEthereumProviderScript.js")
     if 'name: "ATMA Wallet"' not in wallet_text or 'name: "Brave Wallet"' in wallet_text:
         failures.append("The website wallet picker still uses the previous brand")
+    favorites_dir = ios / 'Sources/Brave/Frontend/Browser/Favorites/Data'
+    regions = json.loads((favorites_dir / 'top_sites_by_region.json').read_bytes())
+    if any(is_vendor_favorite(site) or 'Brave' in site['name'] for region in regions for site in region['top_sites']):
+        failures.append('A regional start page still promotes the previous vendor')
+    if 'static let popularFavorites = [youtube, wikipedia, facebook]' not in read_source(favorites_dir / 'FavoritesPreloadedData.swift'):
+        failures.append('The fallback start page still promotes the previous vendor')
+    for name in ('light', 'dark'):
+        animation = json.loads((ios / f'Sources/Onboarding/WelcomeFocus/Resources/LottieAssets/onboarding-add-to-dock-{name}.json').read_bytes())
+        if not any(layer.get('refId') == 'atma-icon' for layer in animation['layers']):
+            failures.append(f'The {name} dock tutorial still uses the previous icon')
     icon_sets = 0
     for catalog in (ios / "App/iOS/AppIcons").glob("*.icon"):
         data = json.loads((catalog / "icon.json").read_text(encoding="utf-8"))

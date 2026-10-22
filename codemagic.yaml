@@ -1,5 +1,24 @@
 workflows:
   atma-testflight:
+    name: ATMA native browser — iPhone verification
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      xcode: "26.4"
+      node: "24.16.0"
+    scripts:
+      - name: Prepare pinned native source and ATMA branding
+        script: bash release/ci.sh prepare
+      - name: Compile native core for iPhone simulator
+        script: bash release/ci.sh core-simulator
+      - name: Verify native browser on iPhone simulator
+        script: bash release/ci.sh smoke
+    artifacts:
+      - out/*.json
+      - out/*.log
+      - out/screenshots/**/*.png
+      - out/ATMA-smoke.xcresult
+  atma-device-testflight:
     name: ATMA native browser — TestFlight
     max_build_duration: 120
     instance_type: mac_mini_m2
@@ -11,10 +30,12 @@ workflows:
       groups:
         - atma_signing
     scripts:
+      - name: Require the verified simulator revision
+        script: test "${ATMA_VERIFIED_COMMIT:?A passing simulator build is required}" = "$(git rev-parse HEAD)"
       - name: Prepare pinned native source and ATMA branding
         script: bash release/ci.sh prepare
-      - name: Verify native browser on iPhone simulator
-        script: bash release/ci.sh smoke
+      - name: Compile native core for iPhone devices
+        script: bash release/ci.sh core-device
       - name: Sign, archive and verify ATMA for TestFlight
         script: bash release/ci.sh archive
     artifacts:
@@ -22,8 +43,6 @@ workflows:
       - out/*.json
       - out/*.log
       - out/build-number.txt
-      - out/screenshots/**/*.png
-      - out/ATMA-smoke.xcresult
     publishing:
       app_store_connect:
         auth: integration

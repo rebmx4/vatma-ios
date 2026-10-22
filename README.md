@@ -14,9 +14,17 @@ upstream vendor's app groups, VPN extensions or default-browser entitlement.
 Those capabilities require separate registration and verification for ATMA.
 The legacy web-app sources in `ATMA/` are not built by this workflow.
 
-The workflow runs a simulator scenario that opens an HTTPS website and Settings
-and checks for old branding. Only a passing scenario proceeds to signing,
-archive validation and TestFlight upload. Automatic push triggers are omitted.
+The `atma-testflight` workflow runs a simulator scenario that opens an HTTPS
+website and Settings and checks for old branding. After this passes, run
+`atma-device-testflight` with `ATMA_VERIFIED_COMMIT` set to the tested repository
+commit. That workflow rejects a different revision before building, then signs,
+validates and uploads the app. These are separate jobs to stay within the build
+service's 120-minute limit. Automatic push triggers are omitted.
+
+Node has a 4 GB heap limit; heavy resource actions run one at a time. Native
+compilation uses 8 jobs on a 12 GB worker and 6 on a smaller worker. Remote access
+should be enabled when starting a diagnostic build so logs and simulator images
+can be inspected during the run.
 
 Local verification: `python -m unittest discover -s tests -v`, followed by
 `python release/validate.py --source <prepared-native-source>`.

@@ -9,6 +9,7 @@ export npm_config_store_dir="$task_root/.cache/pnpm"
 export PIP_CACHE_DIR="$task_root/.cache/pip"
 export TMPDIR="$task_root/.cache/tmp"
 export PYTHONDONTWRITEBYTECODE=1
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096"
 export PYTHONPATH="$task_root/.cache/python:${PYTHONPATH:-}"
 export PATH="$task_root/.cache/tools/node_modules/.bin:$PATH"
 mkdir -p "$task_root/.cache/tmp" "$task_root/out"
@@ -19,6 +20,8 @@ config_value() {
 bundle_id="$(config_value bundle_id)"
 app_id="$(config_value apple_app_id)"
 version="$(config_value marketing_version)"
+jobs=8
+if (( $(sysctl -n hw.memsize) < 12884901888 )); then jobs=6; fi
 
 case "${1:?Expected prepare, smoke or archive}" in
   prepare)
@@ -35,20 +38,31 @@ projects_chrome_custom_vars_checkout_clangd=false
 projects_chrome_custom_vars_checkout_clang_coverage_tools=false
 use_remoteexec=false
 concurrent_links=1
-gn_args={"symbol_level":0,"enable_dsyms":false,"use_thin_lto":false,"is_official_build":false}
+gn_args={"symbol_level":0,"enable_dsyms":false,"use_thin_lto":false,"is_official_build":false,"action_pool_depth":1}
 CONFIG
     cd "$native"
     pnpm install --frozen-lockfile
     node build/commands/scripts/sync.ts --init --target_os=ios --target_arch=arm64 --no-history
     pnpm run ios_bootstrap
+    "$native/../third_party/node/mac_arm64/node-darwin-arm64/bin/node" -e 'const heap = require("node:v8").getHeapStatistics().heap_size_limit; if (heap < 4000000000) throw new Error("Node heap override was not applied"); console.log(JSON.stringify({native_node_heap_limit: heap}))'
     cd "$task_root"
     python3 release/prepare.py --source "$native" --report out/branding-preparation.json
     python3 release/validate.py --source "$native" | tee out/source-validation.json
     ruby release/add_smoke_target.rb "$native" "$task_root/release/ATMASmokeTests.swift" "$task_root/release/config.json"
     ;;
+  core-simulator|core-device)
+    cd "$native"
+    target_environment="${1#core-}"
+    pnpm run build Release --target_os=ios --target_arch=arm64 --target_environment="$target_environment" --ninja "j:$jobs" 2>&1 | tee "$task_root/out/core-$target_environment.log"
+    ;;
   smoke)
     cd "$native"
-    pnpm run build Release --target_os=ios --target_arch=arm64 --target_environment=simulator --ninja j:4 2>&1 | tee "$task_root/out/core-simulator.log"
+    export_smoke_images() {
+      if [[ -d "$task_root/out/ATMA-smoke.xcresult" ]]; then
+        xcrun xcresulttool export attachments --path "$task_root/out/ATMA-smoke.xcresult" --output-path "$task_root/out/screenshots" || true
+      fi
+    }
+    trap export_smoke_images EXIT
     xcodebuild test -project "$project" -scheme ATMA -configuration Release \
       -destination 'platform=iOS Simulator,name=iPhone 17' \
       -derivedDataPath "$task_root/.cache/derived-simulator" \
@@ -56,7 +70,6 @@ CONFIG
       -only-testing:ATMASmokeTests CODE_SIGNING_ALLOWED=NO \
       brave_ios_marketing_version="$version" brave_version_build=1 \
       2>&1 | tee "$task_root/out/simulator-test.log"
-    xcrun xcresulttool export attachments --path "$task_root/out/ATMA-smoke.xcresult" --output-path "$task_root/out/screenshots"
     ;;
   archive)
     cd "$task_root"
@@ -72,7 +85,6 @@ CONFIG
     next_build="$((next_build + 1))"
     printf '%s\n' "$next_build" > "$task_root/out/build-number.txt"
     cd "$native"
-    pnpm run build Release --target_os=ios --target_arch=arm64 --target_environment=device --ninja j:4 2>&1 | tee "$task_root/out/core-device.log"
     xcodebuild archive -project "$project" -scheme ATMA -configuration Release \
       -destination 'generic/platform=iOS' -archivePath "$task_root/out/ATMA.xcarchive" \
       -derivedDataPath "$task_root/.cache/derived-device" \
