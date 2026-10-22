@@ -56,6 +56,15 @@ def configure_app_target(ios, config, update):
         "Sources/Brave/Frontend/Browser/Favorites/Data/FavoritesPreloadedData.swift": {"What's new in Brave": "What's new in ATMA"},
         "Sources/Brave/Utility/AppDebugComposer.swift": {r"Brave \(appVersion)": r"ATMA \(appVersion)"},
         "Sources/BraveStore/Subscription/SDK/BraveStoreSDK.swift": {'"Brave VPN"': '"ATMA VPN"', '"Brave Leo"': '"ATMA Leo"', '"Brave Origin"': '"ATMA Origin"'},
+        "Sources/Origin/OriginStrings.swift": {'"Brave Origin"': '"ATMA Origin"'},
+        "Sources/Brave/Frontend/Browser/UserScripts/Debug/UserScriptsDebugView.swift": {'"Brave Translate"': '"ATMA Translate"'},
+        "Sources/Brave/Frontend/Settings/Debug/BraveCoreDebugSwitchesView.swift": {'"Brave Services Environment"': '"ATMA Services Environment"'},
+        "Sources/Brave/Frontend/Settings/Debug/BraveWallet/BraveWalletDebugMenu.swift": {'"Brave Wallet Debug"': '"ATMA Wallet Debug"'},
+        "Sources/BraveNews/Settings/BraveNewsDebugSettingsView.swift": {'"Brave News QA Settings"': '"ATMA News QA Settings"'},
+        "Sources/Brave/Frontend/Settings/Debug/RewardsInternals/QA/RewardsDebugSettingsViewController.swift": {
+            "Changing the environment automatically resets Brave Rewards.": "Changing the environment automatically resets ATMA Rewards.",
+            "Brave must be restarted to ensure expected Rewards behavior": "ATMA must be restarted to ensure expected Rewards behavior",
+        },
     }
     for relative, replacements in labels.items():
         path = ios / relative

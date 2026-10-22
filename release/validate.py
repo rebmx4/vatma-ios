@@ -43,6 +43,12 @@ def validate(source):
     entitlements = plistlib.loads((ios / "App/iOS/Entitlements/Release.entitlements").read_bytes())
     if set(entitlements) - {"aps-environment"}:
         failures.append("The app still claims capabilities absent from its Apple provisioning")
+    origin_text = read_source(ios / "Sources/Origin/OriginStrings.swift")
+    if 'originProductName = "ATMA Origin"' not in origin_text:
+        failures.append("The nonlocalized product name still uses the previous brand")
+    wallet_text = read_source(ios / "Sources/Brave/Frontend/UserContent/UserScripts/Scripts_Dynamic/Scripts/Paged/WalletEthereumProviderScript.js")
+    if 'name: "ATMA Wallet"' not in wallet_text or 'name: "Brave Wallet"' in wallet_text:
+        failures.append("The website wallet picker still uses the previous brand")
     icon_sets = 0
     for catalog in (ios / "App/iOS/AppIcons").glob("*.icon"):
         data = json.loads((catalog / "icon.json").read_text(encoding="utf-8"))
