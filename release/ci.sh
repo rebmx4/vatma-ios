@@ -37,7 +37,7 @@ gn_args={"symbol_level":0,"enable_dsyms":false,"use_thin_lto":false,"is_official
 CONFIG
     cd "$native"
     pnpm install --frozen-lockfile
-    node build/commands/scripts/sync.ts --init --target_os=ios --target_arch=arm64 --target_environment=simulator --no-history
+    node build/commands/scripts/sync.ts --init --target_os=ios --target_arch=arm64 --no-history
     pnpm run ios_bootstrap
     cd "$task_root"
     python3 release/prepare.py --source "$native" --report out/branding-preparation.json
