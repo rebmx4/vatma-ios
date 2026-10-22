@@ -1,65 +1,30 @@
 workflows:
-  ios-app-store:
-    name: ATMA iOS App Store
-    max_build_duration: 60
+  atma-testflight:
+    name: ATMA native browser — TestFlight
+    max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
       app_store_connect: ATMA
     environment:
-      xcode: latest
+      xcode: "26.4"
+      node: "24.16.0"
       groups:
         - atma_signing
-      vars:
-        XCODE_SCHEME: "ATMA"
-        BUNDLE_ID: "ru.atma.app"
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
     scripts:
-      - name: Install XcodeGen
-        script: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
-      - name: Generate Xcode project
-        script: |
-          cd "$CM_BUILD_DIR"
-          xcodegen generate
-      - name: Initialize keychain
-        script: keychain initialize
-      - name: Fetch or create signing files (reuse stable cert)
-        script: |
-          echo "$CERT_KEY_B64" | base64 -d > /tmp/priv.pem
-          export CERTIFICATE_PRIVATE_KEY=$(cat /tmp/priv.pem)
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-      - name: Install certificates into keychain
-        script: |
-          echo "$CERT_KEY_B64" | base64 -d > /tmp/priv.pem
-          export CERTIFICATE_PRIVATE_KEY=$(cat /tmp/priv.pem)
-          keychain add-certificates
-      - name: Apply provisioning profiles
-        script: xcode-project use-profiles
-      - name: Set build number
-        script: |
-          cd "$CM_BUILD_DIR"
-          agvtool new-version -all "$BUILD_NUMBER"
-      - name: Build IPA
-        script: |
-          xcode-project build-ipa \
-            --project "$CM_BUILD_DIR/ATMA.xcodeproj" \
-            --scheme "$XCODE_SCHEME"
+      - name: Prepare pinned native source and ATMA branding
+        script: bash release/ci.sh prepare
+      - name: Verify native browser on iPhone simulator
+        script: bash release/ci.sh smoke
+      - name: Sign, archive and verify ATMA for TestFlight
+        script: bash release/ci.sh archive
     artifacts:
-      - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
+      - out/ipa/*.ipa
+      - out/*.json
+      - out/*.log
+      - out/build-number.txt
+      - out/screenshots/**/*.png
+      - out/ATMA-smoke.xcresult
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-      email:
-        recipients:
-          - rerebmx@gmail.com
-        notify:
-          success: true
-          failure: true

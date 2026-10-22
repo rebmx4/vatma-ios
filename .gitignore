@@ -22,3 +22,9 @@ Podfile.lock
 
 # macOS
 .DS_Store
+
+# Native browser checkout and local verification outputs
+.native/
+.cache/
+out/
+__pycache__/
