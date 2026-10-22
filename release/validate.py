@@ -9,7 +9,7 @@ from PIL import Image
 
 from branding import rebrand_strings, rebrand_swift_values
 from prepare import CONFIG, IOS_PATH, read_source
-from resource_assets import is_vendor_favorite
+from resource_assets import is_vendor_favorite, web_logo_paths
 
 
 def validate(source):
@@ -60,6 +60,9 @@ def validate(source):
         animation = json.loads((ios / f'Sources/Onboarding/WelcomeFocus/Resources/LottieAssets/onboarding-add-to-dock-{name}.json').read_bytes())
         if not any(layer.get('refId') == 'atma-icon' for layer in animation['layers']):
             failures.append(f'The {name} dock tutorial still uses the previous icon')
+    for path in web_logo_paths(source):
+        if 'data-atma-logo="true"' not in read_source(path):
+            failures.append(f'A web product logo still uses the previous artwork: {path.name}')
     icon_sets = 0
     for catalog in (ios / "App/iOS/AppIcons").glob("*.icon"):
         data = json.loads((catalog / "icon.json").read_text(encoding="utf-8"))

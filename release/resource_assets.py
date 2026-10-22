@@ -3,9 +3,60 @@
 import base64
 import io
 import json
+import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit
 
 from PIL import Image, ImageDraw
+
+from glyphs import make_outline
+
+
+WALLET_LOGOS = (
+    'assets/svg-icons/brave-icon.svg',
+    'assets/svg-icons/wallet_logo_light.svg',
+    'assets/svg-icons/wallet_logo_dark.svg',
+    'assets/svg-icons/onboarding/brave-wallet.svg',
+    'assets/svg-icons/onboarding/brave-wallet-dark.svg',
+    'assets/svg-icons/onboarding/brave-wallet-with-coins.svg',
+    'page/screens/send/assets/brave-logo-light.svg',
+    'page/screens/send/assets/brave-logo-dark.svg',
+)
+LEO_LOGO_PATTERNS = ('brave-icon-*.svg', 'social-brave-*.svg', 'brave-origin-*.svg',
+                     'pwa-brave-install-color.svg', 'brave-search-big-color.svg', 'brave-ask.svg')
+
+
+def web_logo_paths(source):
+    paths = [source / 'components/brave_wallet_ui' / relative for relative in WALLET_LOGOS]
+    directory = source / 'node_modules/@brave/leo/icons'
+    icons = sorted({path for pattern in LEO_LOGO_PATTERNS for path in directory.glob(pattern)})
+    if not icons:
+        raise ValueError('Install the pinned Leo icons before preparing web logos')
+    return paths + icons
+
+
+def prepare_web_logos(source, mark, update):
+    outline = make_outline(mark)
+    for path in web_logo_paths(source):
+        root = ET.fromstring(path.read_bytes())
+        if 'viewBox' in root.attrib:
+            x, y, width, height = map(float, root.attrib['viewBox'].split())
+        else:
+            x = y = 0
+            width, height = float(root.attrib['width']), float(root.attrib['height'])
+        size = min(width, height)
+        wordmark = width > height * 2
+        left = x if wordmark else x + (width - size) / 2
+        top = y + (height - size) / 2
+        color = '#ffffff' if 'dark' in path.stem else '#202024'
+        fill = 'currentColor' if ('monochrome' in path.stem or 'outline' in path.stem) else '#f3173c'
+        label = ''
+        if wordmark:
+            label = f'<text x="{x + size * 1.1:g}" y="{y + height * .7:g}" fill="{color}" font-family="Arial,sans-serif" font-size="{height * .48:g}" font-weight="700">ATMA</text>'
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:g}" height="{height:g}" '
+               f'viewBox="{x:g} {y:g} {width:g} {height:g}" data-atma-logo="true">'
+               f'<title>ATMA</title><path fill="{fill}" d="{outline}" '
+               f'transform="translate({left:g} {top:g}) scale({size / 24:g})"/>{label}</svg>\n')
+        update(path, svg, 'web_product_logos')
 
 
 def is_vendor_favorite(site):
