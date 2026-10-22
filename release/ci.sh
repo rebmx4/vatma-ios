@@ -22,6 +22,7 @@ app_id="$(config_value apple_app_id)"
 version="$(config_value marketing_version)"
 jobs=8
 if (( $(sysctl -n hw.memsize) < 12884901888 )); then jobs=6; fi
+export SISO_LIMITS="local=$jobs"
 
 case "${1:?Expected prepare, smoke or archive}" in
   prepare)
@@ -70,6 +71,7 @@ CONFIG
       -only-testing:ATMASmokeTests CODE_SIGNING_ALLOWED=NO \
       brave_ios_marketing_version="$version" brave_version_build=1 \
       2>&1 | tee "$task_root/out/simulator-test.log"
+    git -C "$task_root" rev-parse HEAD > "$task_root/out/verified-commit.txt"
     ;;
   archive)
     cd "$task_root"

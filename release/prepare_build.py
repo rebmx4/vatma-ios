@@ -17,8 +17,9 @@ def prepare_build(source):
     path = source / 'ios/brave-ios/scripts/xcode_scheme_preaction.sh'
     text = path.read_bytes().decode('utf-8')
     anchor = 'env -i PATH="$PATH" python3'
-    replacement = 'env -i PATH="$PATH" NODE_OPTIONS="${NODE_OPTIONS:-}" python3'
+    replacement = 'env -i PATH="$PATH" NODE_OPTIONS="${NODE_OPTIONS:-}" SISO_LIMITS="${SISO_LIMITS:-}" python3'
     if replacement not in text:
+        text = text.replace('env -i PATH="$PATH" NODE_OPTIONS="${NODE_OPTIONS:-}" python3', anchor)
         if text.count(anchor) != 1:
             raise ValueError('The pinned Xcode preaction environment has changed')
         path.write_bytes(text.replace(anchor, replacement).encode('utf-8'))

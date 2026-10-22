@@ -16,6 +16,7 @@ workflows:
     artifacts:
       - out/*.json
       - out/*.log
+      - out/verified-commit.txt
       - out/screenshots/**/*.png
       - out/ATMA-smoke.xcresult
   atma-device-testflight:
