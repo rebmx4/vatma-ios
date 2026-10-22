@@ -33,6 +33,12 @@ class BrandingTests(unittest.TestCase):
             'NSLocalizedString("BraveTitle", tableName: "Brave", value: "Open in ATMA", comment: "Brave title")',
         )
 
+    def test_product_name_is_replaced_next_to_non_latin_text_and_inflections(self):
+        self.assertEqual(
+            branding.rebrand_strings('"BraveTitle" = "Brave浏览器 Braveで開く Brave에서 Bravelta";'),
+            '"BraveTitle" = "ATMA浏览器 ATMAで開く ATMA에서 ATMAlta";',
+        )
+
     def test_grit_message_keeps_identifier_and_placeholders(self):
         source = '<message name="IDS_BRAVE_TITLE" desc="Brave title">Open Brave <ph name="NUMBER">$1<ex>2</ex></ph></message>'
         expected = '<message name="IDS_BRAVE_TITLE" desc="Brave title">Open ATMA <ph name="NUMBER">$1<ex>2</ex></ph></message>'

@@ -4,7 +4,8 @@ import re
 
 
 _STRING = r'"(?:\\.|[^"\\])*"'
-_BRAND = re.compile(r"\b(?:Brave|Брейв)\b", re.IGNORECASE)
+# Product names also touch CJK text and take suffixes in translated copy.
+_BRAND = re.compile(r"Brave|Брейв", re.IGNORECASE)
 _URL = re.compile(r"https?://[^\s\"<>]+")
 _LEGAL = re.compile(r"copyright|©|Mozilla Public License|MPL-2\.0|Brave Software", re.IGNORECASE)
 
