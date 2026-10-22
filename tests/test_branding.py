@@ -44,6 +44,24 @@ class BrandingTests(unittest.TestCase):
         expected = '<message name="IDS_BRAVE_TITLE" desc="Brave title">Open ATMA <ph name="NUMBER">$1<ex>2</ex></ph></message>'
         self.assertEqual(branding.rebrand_grit(source), expected)
 
+    def test_grit_preserves_placeholder_attributes(self):
+        source = '<message name="IDS_BRAVE"><ph name="BRAVE_ACCOUNT_BEGIN">$1</ph>Brave浏览器<ph name="BRAVE_ACCOUNT_END">$2</ph></message>'
+        self.assertEqual(branding.rebrand_grit(source), source.replace('Brave浏览器', 'ATMA浏览器'))
+
+    def test_nonlocalized_swift_values_and_interpolation_code_are_preserved(self):
+        metric = r'Metric(value: "\(serpMetrics.braveSearchCountForYesterday)")'
+        self.assertEqual(branding.rebrand_swift_values(metric), metric)
+        source = r'NSLocalizedString("BraveKey", value: "Brave \(BraveCertificateUtils.name("x(y)"))", comment: "Brave title")'
+        self.assertEqual(branding.rebrand_swift_values(source), source.replace('value: "Brave ', 'value: "ATMA '))
+
+    def test_multiline_user_agent_literals_preserve_code_names(self):
+        source = 'let braveUA = "Brave \\(braveMajorVersion)"\nreturn """\nMozilla \\(braveUA)\n"""'
+        self.assertEqual(branding.rebrand_swift_literals(source), source.replace('= "Brave ', '= "ATMA '))
+
+    def test_raw_localized_fallback_preserves_interpolation(self):
+        source = 'NSLocalizedString("BraveKey", value: #"Brave \\#(BraveAPI.name)"#, comment: "Brave title")'
+        self.assertEqual(branding.rebrand_swift_values(source), source.replace('value: #"Brave ', 'value: #"ATMA '))
+
     def test_repeated_preparation_does_not_change_output(self):
         source = r'"BraveTitle" = "Brave: \"Private\"";' + '\r\n'
         once = branding.rebrand_strings(source)

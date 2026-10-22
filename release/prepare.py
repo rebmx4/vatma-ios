@@ -36,6 +36,29 @@ def read_source(path):
     return path.read_bytes().decode("utf-8")
 
 
+def pinned_text_sources(source):
+    """Read pristine inputs in one Git process; previous preparations are outputs."""
+    names = subprocess.check_output([
+        'git', '-C', str(source), 'ls-files', '-z', '--',
+        '*.grd', '*.grdp', '*.xtb', 'ios/brave-ios/*.swift', 'ios/brave-ios/*.strings',
+    ]).decode('utf-8').split('\0')
+    names = [name for name in names if name]
+    requests = ''.join(f'HEAD:{name}\n' for name in names).encode('utf-8')
+    result = subprocess.run(['git', '-C', str(source), 'cat-file', '--batch'],
+                            input=requests, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    originals, cursor = {}, 0
+    for name in names:
+        end = result.stdout.index(b'\n', cursor)
+        header = result.stdout[cursor:end].split()
+        if len(header) != 3 or header[1] != b'blob':
+            raise ValueError(f'The pinned text input is missing: {name}')
+        size = int(header[2])
+        cursor = end + 1
+        originals[name] = result.stdout[cursor:cursor + size].decode('utf-8')
+        cursor += size + 1
+    return originals
+
+
 def write_if_changed(path, content):
     payload = content.encode("utf-8") if isinstance(content, str) else content
     if path.is_file() and path.read_bytes() == payload:
@@ -98,19 +121,24 @@ def prepare(source):
         raise ValueError(f"Source revision differs from the pinned release: {commit}")
     ios = source / IOS_PATH
     report = {"upstream_commit": commit, "product_name": CONFIG["product_name"], "changed": {}}
+    originals = pinned_text_sources(source)
+
+    def original(path):
+        key = path.relative_to(source).as_posix()
+        return originals[key] if key in originals else read_source(path)
 
     def update(path, content, kind):
         if write_if_changed(path, content):
             report["changed"][kind] = report["changed"].get(kind, 0) + 1
 
     for path in ios.rglob("*.strings"):
-        update(path, rebrand_strings(read_source(path)), "localized_text")
+        update(path, rebrand_strings(original(path)), "localized_text")
     for path in ios.rglob("*.swift"):
-        update(path, rebrand_swift_values(read_source(path)), "swift_fallbacks")
+        update(path, rebrand_swift_values(original(path)), "swift_fallbacks")
     for extension in ("*.grd", "*.grdp", "*.xtb"):
         for path in source.rglob(extension):
             if ".git" not in path.parts:
-                update(path, rebrand_grit(read_source(path)), "core_text")
+                update(path, rebrand_grit(original(path)), "core_text")
     for path in (source / "app/theme").rglob("BRANDING"):
         text = read_source(path)
         for key in ("PRODUCT_FULLNAME", "PRODUCT_SHORTNAME", "INSTALLER_FULLNAME"):

@@ -3,7 +3,7 @@
 import plistlib
 import re
 
-from branding import rebrand_display_text
+from branding import rebrand_swift_literals
 
 
 MAIN_TARGET = "F84B21BD1A090F8100AAB793"
@@ -41,7 +41,7 @@ def configure_app_target(ios, config, update):
     user_agent = ios / "Sources/UserAgent"
     for path in user_agent.glob("*.swift"):
         text = path.read_bytes().decode("utf-8")
-        text = re.sub(r'"(?:\\.|[^"\\])*"', lambda match: rebrand_display_text(match.group(0)), text)
+        text = rebrand_swift_literals(text)
         update(path, text, "user_agent_identity")
 
     labels = {
