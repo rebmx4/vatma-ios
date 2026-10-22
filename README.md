@@ -1,5 +1,24 @@
 # ATMA native iOS browser
 
+Ручной запуск в [Codemagic](https://codemagic.io/app/6a1af30432a4361359ee5663):
+
+1. Нажмите **Start new build**, выберите ветку **main** и задание
+   **1. ATMA browser — iPhone check (M4)**. Оно собирает браузер и проверяет
+   открытие сайта, восстановление страницы и настройки на симуляторе iPhone.
+   После успешной проверки скриншоты и `verified-commit.txt` появятся в Artifacts.
+2. Для загрузки в TestFlight отдельно запустите
+   **2. ATMA browser — TestFlight (after iPhone check, M4)** на той же ветке
+   и той же версии кода. В поле `verified_commit` вставьте содержимое
+   `verified-commit.txt` из успешной проверки. Несовпадение остановит задание
+   до подготовки исходников, компиляции и публикации.
+
+Оба задания запускаются вручную; автоматические запуски при отправке кода
+отключены. Используется Mac mini M4 с пределом 120 минут на каждое задание.
+Первичная сборка большого нативного браузера занимает значительное время;
+подготовленная конфигурация сама по себе не подтверждает успешную компиляцию
+или загрузку в TestFlight. Для просмотра текущих логов и симулятора при запуске
+можно включить Remote access.
+
 This branch prepares the native browser for the existing Apple app `ru.atma.app`
 (App Store Connect ID `6774934498`). The product name is **ATMA**. Its icon is the
 owner's `atma.png`, copied into `assets/` and pinned by SHA-256.

@@ -1,8 +1,8 @@
 workflows:
   atma-testflight:
-    name: ATMA native browser — iPhone verification
+    name: "1. ATMA browser — iPhone check (M4)"
     max_build_duration: 120
-    instance_type: mac_mini_m2
+    instance_type: mac_mini_m4
     environment:
       xcode: "26.4"
       node: "24.16.0"
@@ -20,16 +20,22 @@ workflows:
       - out/screenshots/**/*.png
       - out/ATMA-smoke.xcresult
   atma-device-testflight:
-    name: ATMA native browser — TestFlight
+    name: "2. ATMA browser — TestFlight (after iPhone check, M4)"
     max_build_duration: 120
-    instance_type: mac_mini_m2
+    instance_type: mac_mini_m4
+    inputs:
+      verified_commit:
+        description: "Commit from verified-commit.txt in a successful iPhone check of this revision"
+        type: string
     integrations:
       app_store_connect: ATMA
     environment:
       xcode: "26.4"
       node: "24.16.0"
       groups:
-        - atma_signing
+        - atma_browser_signing
+      vars:
+        ATMA_VERIFIED_COMMIT: ${{ inputs.verified_commit }}
     scripts:
       - name: Require the verified simulator revision
         script: test "${ATMA_VERIFIED_COMMIT:?A passing simulator build is required}" = "$(git rev-parse HEAD)"
