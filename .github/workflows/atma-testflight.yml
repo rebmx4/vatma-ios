@@ -1,0 +1,146 @@
+{
+  "name": "ATMA 2 - signed IPA and TestFlight upload",
+  "run-name": "ATMA signed build - ${{ inputs.revision }}",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "revision": {
+          "description": "Exact source SHA from successful native check artifact",
+          "required": true,
+          "type": "string"
+        },
+        "verified_run_id": {
+          "description": "Successful ATMA 1 GitHub Actions run ID",
+          "required": true,
+          "type": "string"
+        },
+        "upload_to_testflight": {
+          "description": "Upload binary to App Store Connect (separate owner authorization)",
+          "required": true,
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "atma-signing",
+    "cancel-in-progress": false
+  },
+  "defaults": {
+    "run": {
+      "shell": "bash"
+    }
+  },
+  "jobs": {
+    "ios": {
+      "name": "Verify provenance, sign and optionally upload",
+      "runs-on": "macos-26",
+      "timeout-minutes": 30,
+      "env": {
+        "DEVELOPER_DIR": "/Applications/Xcode_26.4.app/Contents/Developer",
+        "CM_BUILD_DIR": "${{ github.workspace }}",
+        "HOMEBREW_NO_AUTO_UPDATE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "SOURCE_REVISION": "${{ inputs.revision }}",
+        "VERIFIED_RUN_ID": "${{ inputs.verified_run_id }}"
+      },
+      "steps": [
+        {
+          "name": "Checkout requested source",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "${{ inputs.revision }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Use Python 3.12",
+          "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Fetch successful native run metadata",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "[[ \"$SOURCE_REVISION\" =~ ^[a-f0-9]{40}$ ]]\n[[ \"$VERIFIED_RUN_ID\" =~ ^[1-9][0-9]*$ ]]\ntest \"$SOURCE_REVISION\" = \"$(git rev-parse HEAD)\"\nmkdir -p out\ncurl --fail --silent --show-error -H \"Authorization: Bearer $GH_TOKEN\" -H \"Accept: application/vnd.github+json\" \"https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN_ID\" -o out/native-run.json"
+        },
+        {
+          "name": "Download native verification evidence",
+          "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "with": {
+            "name": "atma-native-${{ inputs.verified_run_id }}",
+            "run-id": "${{ inputs.verified_run_id }}",
+            "github-token": "${{ github.token }}",
+            "path": "out/verified-native"
+          }
+        },
+        {
+          "name": "Require successful native run and exact source SHA",
+          "run": "verified=\"$(python3 -B release/github_ci.py gate --run out/native-run.json --verified out/verified-native/verified-commit.txt --repository \"$GITHUB_REPOSITORY\" --run-id \"$VERIFIED_RUN_ID\" --revision \"$(git rev-parse HEAD)\")\"\nprintf \"ATMA_VERIFIED_COMMIT=%s\\n\" \"$verified\" >> \"$GITHUB_ENV\""
+        },
+        {
+          "name": "Require Apple signing secrets",
+          "env": {
+            "APP_STORE_CONNECT_ISSUER_ID": "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}",
+            "APP_STORE_CONNECT_KEY_IDENTIFIER": "${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}",
+            "APP_STORE_CONNECT_PRIVATE_KEY": "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}",
+            "CERT_KEY_B64": "${{ secrets.CERT_KEY_B64 }}"
+          },
+          "run": "python3 - <<'PY'\nimport os\nnames = (\"APP_STORE_CONNECT_ISSUER_ID\", \"APP_STORE_CONNECT_KEY_IDENTIFIER\", \"APP_STORE_CONNECT_PRIVATE_KEY\", \"CERT_KEY_B64\")\nmissing = [name for name in names if not os.environ.get(name)]\nif missing:\n    raise SystemExit(\"Missing GitHub secrets: \" + \", \".join(missing))\nPY"
+        },
+        {
+          "name": "Apply existing revision gate",
+          "run": "bash release/ci.sh gate"
+        },
+        {
+          "name": "Validate sources and generate Xcode project",
+          "run": "bash release/ci.sh prepare"
+        },
+        {
+          "name": "Install pinned Apple signing tools in workspace",
+          "run": "python3 -m venv .cache/release-tools\n.cache/release-tools/bin/python -m pip install --disable-pip-version-check codemagic-cli-tools==0.70.0\nprintf \"%s\\n\" \"$GITHUB_WORKSPACE/.cache/release-tools/bin\" >> \"$GITHUB_PATH\""
+        },
+        {
+          "name": "Sign, archive, export and validate IPA",
+          "env": {
+            "APP_STORE_CONNECT_ISSUER_ID": "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}",
+            "APP_STORE_CONNECT_KEY_IDENTIFIER": "${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}",
+            "APP_STORE_CONNECT_PRIVATE_KEY": "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}",
+            "CERT_KEY_B64": "${{ secrets.CERT_KEY_B64 }}"
+          },
+          "run": "bash release/ci.sh archive"
+        },
+        {
+          "name": "Upload validated binary to App Store Connect",
+          "if": "${{ inputs.upload_to_testflight }}",
+          "env": {
+            "APP_STORE_CONNECT_ISSUER_ID": "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}",
+            "APP_STORE_CONNECT_KEY_IDENTIFIER": "${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}",
+            "APP_STORE_CONNECT_PRIVATE_KEY": "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}"
+          },
+          "run": "app-store-connect publish --path \"out/ipa/ATMA.ipa\" --enable-package-validation"
+        },
+        {
+          "name": "Save signed IPA and validation logs",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "atma-signed-${{ github.run_id }}",
+            "path": "out/ipa/*.ipa\nout/*.json\nout/*.log\nout/build-number.txt",
+            "retention-days": 1,
+            "if-no-files-found": "warn",
+            "overwrite": true
+          }
+        }
+      ]
+    }
+  }
+}
