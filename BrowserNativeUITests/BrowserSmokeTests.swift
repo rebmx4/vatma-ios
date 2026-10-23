@@ -16,6 +16,8 @@ final class BrowserSmokeTests: XCTestCase {
     }
 
     func testHomeSettingsBlankTabWebsiteAndRelaunch() throws {
+        let websiteURL = "https://httpbingo.org/html"
+        let headingText = "Herman Melville - Moby-Dick"
         let home = button(["Рабочий стол", "Home"])
         XCTAssertTrue(home.waitForExistence(timeout: 20), "Bundled native browser UI must load")
         screenshot("home")
@@ -54,13 +56,14 @@ final class BrowserSmokeTests: XCTestCase {
         rotate(.portrait, landscape: false)
         assertAddressControlsAboveKeyboard(address, go: go)
         address.tap()
-        address.typeText("https://example.com")
-        XCTAssertEqual(address.value as? String, "https://example.com", "Typing an address must not hit keyboard keys beneath hidden controls")
+        address.typeText(websiteURL)
+        XCTAssertEqual(address.value as? String, websiteURL, "Typing an address must not hit keyboard keys beneath hidden controls")
         go.tap()
         assertKeyboardDismissed()
-        let heading = app.staticTexts["Example Domain"]
+        let site = siteRenderers.firstMatch
+        XCTAssertTrue(site.waitForExistence(timeout: 5), "Navigation must create an identified site renderer")
+        let heading = site.staticTexts[headingText]
         XCTAssertTrue(heading.waitForExistence(timeout: 30), "The independent site renderer must load HTTPS content")
-        XCTAssertTrue(siteRenderers.firstMatch.exists, "HTTPS content must use an identified site renderer")
         screenshot("website")
 
         address.tap()
@@ -73,7 +76,7 @@ final class BrowserSmokeTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
-        XCTAssertFalse(app.staticTexts["Example Domain"].exists, "Relaunch must return to the desktop")
+        XCTAssertFalse(app.staticTexts[headingText].exists, "Relaunch must return to the desktop")
         XCTAssertEqual(siteRenderers.count, 0, "Restored tabs must remain lazy on home launch")
         screenshot("relaunched-home")
     }
