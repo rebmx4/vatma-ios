@@ -4,6 +4,7 @@
 *.xcscheme text eol=lf
 *.xcworkspacedata text eol=lf
 *.storyboard text eol=lf
+*.sh text eol=lf
 
 # Bundled trust roots are SHA256-pinned; preserve their exact bytes on checkout.
 assets/certificates/*.crt binary

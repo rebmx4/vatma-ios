@@ -26,7 +26,7 @@
         "out/*.json",
         "out/*.log",
         "out/verified-commit.txt",
-        "out/screenshots/**/*.png",
+        "out/screenshots/**/*",
         "out/ATMA-*.xcresult",
         "out/*-final.png"
       ]

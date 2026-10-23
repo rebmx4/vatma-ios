@@ -30,7 +30,7 @@ final class LocalUIServer {
             let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
             parameters.allowLocalEndpointReuse = false
-            let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            let listener = try NWListener(using: parameters)
             self.listener = listener
             var didComplete = false
             listener.stateUpdateHandler = { [weak self] state in

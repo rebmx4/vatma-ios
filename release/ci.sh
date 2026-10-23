@@ -57,14 +57,15 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
       simulator="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' out/simulators.json "$device")"
       xcrun simctl boot "$simulator" 2>/dev/null || true
       xcrun simctl bootstatus "$simulator" -b
-      options=()
-      if [[ "$device" = ipad ]]; then options=(-only-testing:BrowserNativeUITests); fi
-      xcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Debug \
-        -destination "platform=iOS Simulator,id=$simulator" \
-        -derivedDataPath "$task_root/.cache/derived-simulator" \
-        -resultBundlePath "$task_root/out/ATMA-$device.xcresult" \
-        -parallel-testing-enabled NO "${options[@]}" CODE_SIGNING_ALLOWED=NO \
-        2>&1 | tee "$task_root/out/test-$device.log"
+      # macOS Bash 3.2 treats an empty array as unset under nounset.
+      # Keep the command nonempty so iPhone tests cannot be skipped at expansion.
+      test_command=(xcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Debug
+        -destination "platform=iOS Simulator,id=$simulator"
+        -derivedDataPath "$task_root/.cache/derived-simulator"
+        -resultBundlePath "$task_root/out/ATMA-$device.xcresult"
+        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO)
+      if [[ "$device" = ipad ]]; then test_command+=(-only-testing:BrowserNativeUITests); fi
+      "${test_command[@]}" 2>&1 | tee "$task_root/out/test-$device.log"
       xcrun simctl io "$simulator" screenshot "$task_root/out/$device-final.png"
       xcrun simctl shutdown "$simulator"
     done
