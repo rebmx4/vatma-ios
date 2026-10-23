@@ -1,9 +1,9 @@
 # ATMA для iOS — standalone browser
 
 Подготовлены собственный UIKit/WKWebView браузер, общий интерфейс `BrowserUI`
-и ручная сборка для iPhone/iPad. Приложение в этой конфигурации ещё не собрано
-и не загружено в TestFlight. Проверки Windows не подтверждают поведение iOS;
-время сборки не измерялось.
+и ручная сборка для iPhone/iPad. Приложение компилировалось на Mac и прошло 24
+unit tests; полный UI-сценарий iPhone/iPad ещё не завершён. Новый standalone build
+не загружен в TestFlight. Локальные проверки Windows не подтверждают поведение iOS.
 
 Приложение: **ATMA**, bundle ID `ru.atma.app`, Apple team `GR3WB4Z646`,
 App Store Connect ID `6774934498`, минимум iOS 17. Исходники приложения:
@@ -70,33 +70,52 @@ python -B release/validate.py --report out/source-validation.json
 Для сознательной пересборки изображений при уже установленном Pillow:
 `python -B release/icons.py`. Установка Pillow локальным workflow не выполняется.
 
-## Ручные workflows Codemagic
+## Ручные workflows GitHub Actions
 
-[Приложение Codemagic](https://codemagic.io/app/6a1af30432a4361359ee5663):
+Основная площадка сборки — [GitHub Actions](https://github.com/rebmx4/vatma-ios/actions).
+Репозиторий уже публичный. Выполнение на стандартном macos-26 runner бесплатно по
+[правилам GitHub](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+Хранение artifacts имеет отдельную квоту; результаты сохраняются только на один день.
+Платные larger runners и автоматические push/PR/schedule triggers не используются.
 
-1. `atma-testflight` - **1. ATMA standalone - iPhone + iPad check (M2)**.
-   Сначала static checks и XcodeGen, затем XCTest и реальный UI smoke на
-   доступных iPhone и iPad Simulator: домашний экран, настройки, пустая вкладка,
-   загрузка HTTPS-сайта и возврат домой после перезапуска. Компиляция независимых
-   content-blocker правил проверяется WebKit через XCTest. После успешного
-   завершения появляются xcresult, screenshots и `verified-commit.txt`.
-2. `atma-device-testflight` - **2. ATMA standalone - verified TestFlight (M2)**.
-   Ввести exact SHA из успешного `verified-commit.txt` для той же ревизии.
-   Первый шаг требует `verified_commit == HEAD`, затем повторяет static checks,
-   создаёт Xcode project, подписывает, архивирует и экспортирует `ATMA.app`.
-   До выдачи IPA в publishing проверяются подпись, entitlements, identity,
-   ресурсы и обе системные карты alternate icons. Непроверенный экспорт лежит
-   вне artifacts; в `out/ipa` попадает только прошедший проверки файл.
+1. [ATMA 1 - iPhone + iPad check](https://github.com/rebmx4/vatma-ios/actions/workflows/atma-ios-check.yml).
+   Нажать Run workflow после отдельной команды владельца на один запуск.
+   Поле revision по умолчанию — atma-browser-testflight; можно указать exact SHA.
+   Workflow вызывает общий release/ci.sh prepare/smoke: статические проверки,
+   XCTest на iPhone и UI smoke на iPad, включая клавиатуру, поворот, HTTPS и перезапуск.
+   В artifact atma-native-<run_id> сохраняются логи, xcresult, screenshots и, только
+   после успеха обоих устройств, verified-commit.txt с SHA исходников.
+2. [ATMA 2 - signed IPA and TestFlight upload](https://github.com/rebmx4/vatma-ios/actions/workflows/atma-testflight.yml).
+   Отдельный ручной запуск. Указать exact source SHA из verified-commit.txt и ID
+   успешного первого запуска. Проверяются его repository, workflow, event, status,
+   conclusion и совпадение SHA. SHA workflow на main может отличаться от SHA приложения.
+   Истёкший или неуспешный artifact не допускает подписанную сборку.
+   Поле upload_to_testflight по умолчанию выключено: после явного разрешения на
+   загрузку оно включает отправку проверенного IPA в App Store Connect. Отправка
+   на внешнее TestFlight beta review и App Store review автоматически не выполняется.
 
-Оба задания только ручные, на `mac_mini_m2`, Xcode `26.4`, лимит 30 минут.
-Идентификаторы workflows сохранены; automatic push/PR/tag triggers отсутствуют.
-XcodeGen устанавливается при необходимости только на CI. DerivedData cache
-дополняет сборку из исходников и не заменяет обязательные проверки.
+Оба job ограничены 30 минутами, используют Xcode 26.4.1 через установленный alias
+Xcode_26.4.app и Python 3.12. GitHub публикует состав
+[образа macos-26](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
+Actions закреплены по полным SHA. DerivedData собирается в рабочем каталоге; отдельного
+платного cache нет. CM_BUILD_DIR используется как совместимый alias GITHUB_WORKSPACE
+для существующего общего скрипта, а не как обращение к сервису Codemagic.
 
-Для подписи используются существующие integration `ATMA`, группа
-`atma_browser_signing` и `CERT_KEY_B64`. Секреты не требуется открывать или
-переносить в репозиторий. Запуск TestFlight workflow отдельно разрешает
-предусмотренную в нём отправку; ни один workflow в этой сессии не запускался.
+Для второго workflow нужны encrypted repository secrets:
+APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER,
+APP_STORE_CONNECT_PRIVATE_KEY, CERT_KEY_B64. Ключи нельзя коммитить в исходники.
+Open-source codemagic-cli-tools 0.70.0 устанавливаются в venv рабочего каталога
+только для подписи и общения с Apple; вычислительные мощности предоставляет GitHub.
+
+На main регистрируются только файлы workflows, чтобы GitHub показывал Run workflow.
+Приложение берётся из явно указанной revision. Старые источники main не смешиваются
+с standalone browser. codemagic.yaml сохранён как неавтоматический резерв; его запуск
+тоже требует отдельного разрешения и расходует платные минуты после квоты.
+
+Новый GitHub workflow ещё не подтверждён облачным выполнением. Предыдущий Mac-прогон
+скомпилировал приложение и прошёл 24 unit tests; UI остановился на устаревшем ожидании
+содержимого страницы. Подготовленная правка: docs/native-https-smoke-2026-10-24.md.
+Полное прохождение iPhone/iPad и доставка нового build в TestFlight пока не заявляются.
 
 ## Архив и границы проверки
 

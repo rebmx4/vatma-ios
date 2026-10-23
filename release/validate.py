@@ -8,6 +8,7 @@ import plistlib
 import re
 import ssl
 import struct
+from github_ci import validate_workflow as validate_github_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_PATHS = {"BrowserNative", "BrowserUI", "assets/certificates", "BrowserResources"}
@@ -140,6 +141,9 @@ def validate(root=ROOT):
     project = load_json(root / "project.yml")
     validate_project(project)
     validate_workflows(load_json(root / "codemagic.yaml"))
+    for filename in ("atma-ios-check.yml", "atma-testflight.yml"):
+        validate_github_workflow(load_json(root / ".github/workflows" / filename),
+                                 signing=filename == "atma-testflight.yml")
     info = plistlib.loads((root / "BrowserResources/Info.plist").read_bytes())
     validate_plist(info)
     plistlib.loads((root / "BrowserResources/PrivacyInfo.xcprivacy").read_bytes())

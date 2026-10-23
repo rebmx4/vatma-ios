@@ -1,0 +1,82 @@
+{
+  "name": "ATMA 1 - iPhone + iPad check",
+  "run-name": "ATMA check - ${{ inputs.revision }}",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "revision": {
+          "description": "Source branch or exact SHA to check",
+          "required": true,
+          "type": "string",
+          "default": "atma-browser-testflight"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "atma-native-${{ inputs.revision }}",
+    "cancel-in-progress": false
+  },
+  "defaults": {
+    "run": {
+      "shell": "bash"
+    }
+  },
+  "jobs": {
+    "ios": {
+      "name": "Xcode 26.4 - native tests and iPhone/iPad UI",
+      "runs-on": "macos-26",
+      "timeout-minutes": 30,
+      "env": {
+        "DEVELOPER_DIR": "/Applications/Xcode_26.4.app/Contents/Developer",
+        "CM_BUILD_DIR": "${{ github.workspace }}",
+        "HOMEBREW_NO_AUTO_UPDATE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "steps": [
+        {
+          "name": "Checkout requested source",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "${{ inputs.revision }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Use Python 3.12",
+          "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Check installed Xcode and runtimes",
+          "run": "test -x \"$DEVELOPER_DIR/usr/bin/xcodebuild\"\nxcodebuild -version\nxcrun simctl list runtimes"
+        },
+        {
+          "name": "Validate sources and generate Xcode project",
+          "run": "bash release/ci.sh prepare"
+        },
+        {
+          "name": "Run all iPhone tests and iPad UI smoke",
+          "run": "bash release/ci.sh smoke"
+        },
+        {
+          "name": "Save test results, screenshots and verified source SHA",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "atma-native-${{ github.run_id }}",
+            "path": "out/*.json\nout/*.log\nout/verified-commit.txt\nout/screenshots/**\nout/ATMA-*.xcresult/**\nout/*-final.png",
+            "retention-days": 1,
+            "if-no-files-found": "warn",
+            "overwrite": true
+          }
+        }
+      ]
+    }
+  }
+}
