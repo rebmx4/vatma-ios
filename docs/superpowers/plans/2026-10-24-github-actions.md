@@ -38,7 +38,7 @@ Files: .github/workflows/atma-ios-check.yml, .github/workflows/atma-testflight.y
 
 ## Task 2: Register and show GitHub
 
-- [ ] Commit/push working branch; register the two checked workflow files only on main with a non-forced update.
-- [ ] Migrate available signing credentials securely and identify any missing values without inventing them.
-- [ ] Confirm Actions exposes both workflows and has no new run; show the native workflow page in Chrome.
-- [ ] Independent final review; correct material findings, record verified state and remaining prerequisites.
+- [x] Commit/push working branch; register the two checked workflow files only on main with a non-forced update.
+- [x] Migrate available signing credentials securely and identify any missing values without inventing them.
+- [x] Confirm Actions exposes both workflows and has no new run; show the native workflow page in Chrome.
+- [x] Independent final review; correct material findings, record verified state and remaining prerequisites.
