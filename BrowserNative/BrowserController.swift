@@ -57,6 +57,7 @@ final class BrowserController: UIViewController {
         configuration.websiteDataStore = .default()
         configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "atma")
         ui = WKWebView(frame: .zero, configuration: configuration)
+        ui.accessibilityIdentifier = "atma.ui"
         ui.navigationDelegate = self
         ui.isOpaque = false
         ui.backgroundColor = .systemBackground
@@ -120,6 +121,7 @@ final class BrowserController: UIViewController {
         }
         // Website content receives only a bounded media-state handler, never UI RPC.
         let renderer = WKWebView(frame: .zero, configuration: config)
+        renderer.accessibilityIdentifier = "atma.site." + tab.id
         renderer.navigationDelegate = self
         renderer.uiDelegate = self
         renderer.allowsBackForwardNavigationGestures = true

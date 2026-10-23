@@ -77,10 +77,24 @@ final class BrowserWindowTests: XCTestCase {
         XCTAssertEqual(controller.mode, "browse")
     }
 
+    func testRestoredWebsiteStaysLazyOnHome() {
+        controller.model.tabs[controller.model.activeIndex].url = "https://example.com"
+        controller.model.save()
+        controller.ui.configuration.userContentController.removeScriptMessageHandler(forName: "atma", contentWorld: .page)
+        controller = BrowserController(model: BrowserModel(defaults: preferences))
+        controller.loadViewIfNeeded()
+
+        XCTAssertEqual(controller.model.active.url, "https://example.com")
+        XCTAssertEqual(controller.mode, "home")
+        XCTAssertTrue(controller.renderers.isEmpty, "Restoring a saved site must not create a hidden renderer on Home")
+        XCTAssertNil(controller.currentRenderer)
+    }
+
     func testProfilesSetConsistentUserAgentAndPageModeWithoutChangingTheUI() throws {
         let uiConfiguration = controller.ui.configuration
+        let systemWebView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         let actual = controller.renderer(for: controller.model.active)
-        XCTAssertNil(actual.customUserAgent)
+        XCTAssertEqual(actual.customUserAgent, systemWebView.customUserAgent)
         XCTAssertEqual(actual.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
 
         try controller.changeProfile("windows-chrome")
@@ -94,7 +108,7 @@ final class BrowserWindowTests: XCTestCase {
         XCTAssertEqual(mobile.configuration.defaultWebpagePreferences.preferredContentMode, .mobile)
         XCTAssertEqual(controller.ui.configuration.defaultWebpagePreferences.preferredContentMode,
                        uiConfiguration.defaultWebpagePreferences.preferredContentMode)
-        XCTAssertNil(controller.ui.customUserAgent)
+        XCTAssertEqual(controller.ui.customUserAgent, systemWebView.customUserAgent)
     }
 
     func testProfileStorageAndGoogleDefaultSurviveModelRecreation() {

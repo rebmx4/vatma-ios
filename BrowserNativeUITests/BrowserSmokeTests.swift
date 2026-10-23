@@ -12,8 +12,14 @@ final class BrowserSmokeTests: XCTestCase {
     func testHomeSettingsBlankTabWebsiteAndRelaunch() throws {
         let home = button(["Рабочий стол", "Home"])
         XCTAssertTrue(home.waitForExistence(timeout: 20), "Bundled native browser UI must load")
-        XCTAssertEqual(app.webViews.count, 1, "First home launch must not allocate a site renderer")
         screenshot("home")
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "home-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        XCTAssertTrue(home.isHittable, "Home controls must be visible and usable")
+        XCTAssertTrue(app.webViews.matching(identifier: "atma.ui").firstMatch.exists)
+        XCTAssertEqual(siteRenderers.count, 0, "First home launch must not allocate a site renderer")
 
         let settings = button(["Настройки", "Settings"])
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
@@ -31,7 +37,7 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         let value = address.value as? String ?? ""
         XCTAssertTrue(value.isEmpty || value == address.placeholderValue, "A new tab must have an empty address")
-        XCTAssertEqual(app.webViews.count, 1, "A blank tab must not allocate a site renderer")
+        XCTAssertEqual(siteRenderers.count, 0, "A blank tab must not allocate a site renderer")
         screenshot("blank-tab")
 
         address.tap()
@@ -39,15 +45,19 @@ final class BrowserSmokeTests: XCTestCase {
         button(["Перейти", "Go"]).tap()
         let heading = app.staticTexts["Example Domain"]
         XCTAssertTrue(heading.waitForExistence(timeout: 30), "The independent site renderer must load HTTPS content")
-        XCTAssertGreaterThanOrEqual(app.webViews.count, 2)
+        XCTAssertTrue(siteRenderers.firstMatch.exists, "HTTPS content must use an identified site renderer")
         screenshot("website")
 
         app.terminate()
         app.launch()
         XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
         XCTAssertFalse(app.staticTexts["Example Domain"].exists, "Relaunch must return to the desktop")
-        XCTAssertEqual(app.webViews.count, 1, "Restored tabs must remain lazy on home launch")
+        XCTAssertEqual(siteRenderers.count, 0, "Restored tabs must remain lazy on home launch")
         screenshot("relaunched-home")
+    }
+
+    private var siteRenderers: XCUIElementQuery {
+        app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site."))
     }
 
     private func button(_ labels: [String]) -> XCUIElement {
