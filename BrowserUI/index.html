@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="theme-color" content="#163842">
+  <title>ATMA — рабочий стол</title>
+  <link rel="icon" href="/assets/atma.png?v=romb-b2529185">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/appearance.css">
+  <link rel="stylesheet" href="/tabs.css">
+  <link rel="stylesheet" href="/assets/cookies.css">
+  <link rel="stylesheet" href="/assets/media.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <div class="wallpaper" aria-hidden="true"></div>
+  <main class="home">
+    <header class="home-header" hidden>
+      <div class="wordmark"><img src="/assets/atma.png?v=romb-b2529185" alt=""><span>ATMA</span></div>
+      <div class="home-actions"><button class="icon-button glass" id="edit-apps" aria-label="Редактировать приложения" title="Редактировать приложения"></button></div>
+    </header>
+    <section class="desktop-pages" id="apps" aria-label="Страницы рабочего стола"></section>
+    <p class="empty" id="empty" hidden>Приложений с таким названием нет.<br>Нажмите «Перейти» для поиска в интернете.</p>
+    <div class="page-dots" id="desktop-dots" aria-label="Выбрать страницу"></div>
+  </main>
+  <footer class="browser-bar" id="browser-bar">
+    <div class="device-row">
+      <button class="step-device" id="previous-device" aria-label="Предыдущая модель"></button>
+      <button class="device-picker" id="device-picker" aria-label="Выбрать устройство"><span id="device-icon"></span><span id="device-label">iPhone 13 Pro Max</span><span class="chevron" id="device-chevron"></span></button>
+      <button class="step-device" id="next-device" aria-label="Следующая модель"></button>
+      <button class="media-shortcut" id="media-shortcut" aria-label="Медиаплеер" title="Медиаплеер"></button>
+    </div>
+    <form class="address-form" id="address-form" role="search">
+      <div class="address-entry"><span class="search-symbol" id="search-symbol" aria-hidden="true"></span>
+      <input id="address" type="text" placeholder="Приложения, Google или адрес сайта" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Приложения, поисковый запрос или адрес сайта">
+      <button class="address-go" id="address-go" aria-label="Перейти" type="submit"></button></div>
+      <button class="pin-site" id="pin-site" type="button" aria-label="Добавить сайт на рабочий стол" hidden><span class="site-add-art" id="pin-site-art"></span><span class="site-add-badge" id="pin-site-badge" aria-hidden="true"></span></button>
+    </form>
+    <nav class="browser-nav" aria-label="Браузер">
+      <button class="nav-button" id="go-back" aria-label="Назад"></button>
+      <button class="nav-button" id="go-forward" aria-label="Вперёд"></button>
+      <button class="nav-button" id="refresh" aria-label="Обновить страницу"></button>
+      <button class="nav-button" id="lock-private" aria-label="Заблокировать закрытую страницу" hidden></button>
+      <button class="home-button" id="go-home" aria-label="Рабочий стол"><img src="/assets/atma.png?v=romb-b2529185" alt="ATMA"></button>
+      <button class="nav-button" id="tabs-button" aria-label="Новая вкладка"></button>
+      <button class="nav-button" id="new-tab-button" aria-label="Новая вкладка"></button>
+      <button class="nav-button" id="settings" aria-label="Настройки"></button>
+    </nav>
+    <div class="home-indicator" aria-hidden="true"></div>
+  </footer>
+  <div class="overlay" id="overlay" hidden>
+    <button class="scrim" id="scrim" aria-label="Закрыть окно"></button>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="sheet-header"><h1 id="sheet-title"></h1><button class="sheet-close" id="sheet-close" aria-label="Закрыть"></button></header>
+      <div class="sheet-content" id="sheet-content"></div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <input type="file" id="wallpaper-file" accept="image/*" hidden>
+</body>
+</html>

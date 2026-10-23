@@ -1,32 +1,125 @@
-name: ATMA
-
-options:
-  bundleIdPrefix: ru.atma
-  deploymentTarget:
-    iOS: "15.0"
-  developmentLanguage: ru
-  generateEmptyDirectories: true
-
-settings:
-  base:
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
-    SWIFT_VERSION: "5.0"
-    DEVELOPMENT_LANGUAGE: ru
-
-targets:
-  ATMA:
-    type: application
-    platform: iOS
-    sources:
-      - path: ATMA
-        excludes:
-          - "Entitlements/**"
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.atma.app
-        PRODUCT_NAME: ATMA
-        INFOPLIST_FILE: ATMA/Info.plist
-        CODE_SIGN_ENTITLEMENTS: ATMA/Entitlements/Entitlements.plist
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "1"
+{
+  "name": "ATMA",
+  "options": {
+    "bundleIdPrefix": "ru.atma",
+    "deploymentTarget": {
+      "iOS": "17.0"
+    },
+    "developmentLanguage": "ru",
+    "generateEmptyDirectories": true
+  },
+  "settings": {
+    "base": {
+      "MARKETING_VERSION": "1.0.0",
+      "CURRENT_PROJECT_VERSION": "1",
+      "SWIFT_VERSION": "5.0",
+      "DEVELOPMENT_TEAM": "GR3WB4Z646",
+      "TARGETED_DEVICE_FAMILY": "1,2",
+      "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
+      "SUPPORTS_MACCATALYST": "NO",
+      "ENABLE_USER_SCRIPT_SANDBOXING": "YES"
+    }
+  },
+  "targets": {
+    "ATMA": {
+      "type": "application",
+      "platform": "iOS",
+      "sources": [
+        {
+          "path": "BrowserNative"
+        },
+        {
+          "path": "BrowserUI",
+          "type": "folder",
+          "buildPhase": "resources"
+        },
+        {
+          "path": "assets/certificates",
+          "name": "certificates",
+          "type": "folder",
+          "buildPhase": "resources"
+        },
+        {
+          "path": "BrowserResources",
+          "excludes": [
+            "Info.plist",
+            "icon-manifest.json"
+          ]
+        }
+      ],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "ru.atma.app",
+          "PRODUCT_NAME": "ATMA",
+          "INFOPLIST_FILE": "BrowserResources/Info.plist",
+          "GENERATE_INFOPLIST_FILE": "NO",
+          "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+          "CODE_SIGN_STYLE": "Automatic",
+          "ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES": "AppIconA101 AppIconA102 AppIconA103 AppIconA104 AppIconA105 AppIconA106 AppIconA107 AppIconA108 AppIconA109 AppIconA110",
+          "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES"
+        }
+      }
+    },
+    "BrowserNativeTests": {
+      "type": "bundle.unit-test",
+      "platform": "iOS",
+      "sources": [
+        "BrowserNativeTests"
+      ],
+      "dependencies": [
+        {
+          "target": "ATMA"
+        }
+      ],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "ru.atma.app.tests",
+          "GENERATE_INFOPLIST_FILE": "YES"
+        }
+      }
+    },
+    "BrowserNativeUITests": {
+      "type": "bundle.ui-testing",
+      "platform": "iOS",
+      "sources": [
+        "BrowserNativeUITests"
+      ],
+      "dependencies": [
+        {
+          "target": "ATMA"
+        }
+      ],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "ru.atma.app.uitests",
+          "GENERATE_INFOPLIST_FILE": "YES",
+          "TEST_TARGET_NAME": "ATMA"
+        }
+      }
+    }
+  },
+  "schemes": {
+    "ATMA": {
+      "build": {
+        "targets": {
+          "ATMA": "all"
+        }
+      },
+      "run": {
+        "config": "Debug"
+      },
+      "test": {
+        "config": "Debug",
+        "targets": [
+          "BrowserNativeTests",
+          "BrowserNativeUITests"
+        ],
+        "captureScreenshotsAutomatically": true,
+        "deleteScreenshotsWhenEachTestSucceeds": false
+      },
+      "archive": {
+        "config": "Release"
+      }
+    }
+  }
+}

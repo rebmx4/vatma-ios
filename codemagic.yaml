@@ -1,56 +1,89 @@
-workflows:
-  atma-testflight:
-    name: "1. ATMA browser — iPhone check (M4)"
-    max_build_duration: 120
-    instance_type: mac_mini_m4
-    environment:
-      xcode: "26.4"
-      node: "24.16.0"
-    scripts:
-      - name: Prepare pinned native source and ATMA branding
-        script: bash release/ci.sh prepare
-      - name: Compile native core for iPhone simulator
-        script: bash release/ci.sh core-simulator
-      - name: Verify native browser on iPhone simulator
-        script: bash release/ci.sh smoke
-    artifacts:
-      - out/*.json
-      - out/*.log
-      - out/verified-commit.txt
-      - out/screenshots/**/*.png
-      - out/ATMA-smoke.xcresult
-  atma-device-testflight:
-    name: "2. ATMA browser — TestFlight (after iPhone check, M4)"
-    max_build_duration: 120
-    instance_type: mac_mini_m4
-    inputs:
-      verified_commit:
-        description: "Commit from verified-commit.txt in a successful iPhone check of this revision"
-        type: string
-    integrations:
-      app_store_connect: ATMA
-    environment:
-      xcode: "26.4"
-      node: "24.16.0"
-      groups:
-        - atma_browser_signing
-      vars:
-        ATMA_VERIFIED_COMMIT: ${{ inputs.verified_commit }}
-    scripts:
-      - name: Require the verified simulator revision
-        script: test "${ATMA_VERIFIED_COMMIT:?A passing simulator build is required}" = "$(git rev-parse HEAD)"
-      - name: Prepare pinned native source and ATMA branding
-        script: bash release/ci.sh prepare
-      - name: Compile native core for iPhone devices
-        script: bash release/ci.sh core-device
-      - name: Sign, archive and verify ATMA for TestFlight
-        script: bash release/ci.sh archive
-    artifacts:
-      - out/ipa/*.ipa
-      - out/*.json
-      - out/*.log
-      - out/build-number.txt
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
+{
+  "workflows": {
+    "atma-testflight": {
+      "name": "1. ATMA standalone - iPhone + iPad check (M2)",
+      "max_build_duration": 30,
+      "instance_type": "mac_mini_m2",
+      "environment": {
+        "xcode": "26.4"
+      },
+      "cache": {
+        "cache_paths": [
+          "$CM_BUILD_DIR/.cache/derived-simulator"
+        ]
+      },
+      "scripts": [
+        {
+          "name": "Validate standalone inputs and generate Xcode project",
+          "script": "bash release/ci.sh prepare"
+        },
+        {
+          "name": "Run XCTest and real iPhone/iPad UI smoke",
+          "script": "bash release/ci.sh smoke"
+        }
+      ],
+      "artifacts": [
+        "out/*.json",
+        "out/*.log",
+        "out/verified-commit.txt",
+        "out/screenshots/**/*.png",
+        "out/ATMA-*.xcresult",
+        "out/*-final.png"
+      ]
+    },
+    "atma-device-testflight": {
+      "name": "2. ATMA standalone - verified TestFlight (M2)",
+      "max_build_duration": 30,
+      "instance_type": "mac_mini_m2",
+      "inputs": {
+        "verified_commit": {
+          "description": "Exact verified-commit.txt from a successful iPhone + iPad check of this revision",
+          "type": "string"
+        }
+      },
+      "integrations": {
+        "app_store_connect": "ATMA"
+      },
+      "environment": {
+        "xcode": "26.4",
+        "groups": [
+          "atma_browser_signing"
+        ],
+        "vars": {
+          "ATMA_VERIFIED_COMMIT": "${{ inputs.verified_commit }}"
+        }
+      },
+      "cache": {
+        "cache_paths": [
+          "$CM_BUILD_DIR/.cache/derived-device"
+        ]
+      },
+      "scripts": [
+        {
+          "name": "Require the exact verified revision",
+          "script": "bash release/ci.sh gate"
+        },
+        {
+          "name": "Validate standalone inputs and generate Xcode project",
+          "script": "bash release/ci.sh prepare"
+        },
+        {
+          "name": "Sign, archive, export and validate ATMA IPA",
+          "script": "bash release/ci.sh archive"
+        }
+      ],
+      "artifacts": [
+        "out/ipa/*.ipa",
+        "out/*.json",
+        "out/*.log",
+        "out/build-number.txt"
+      ],
+      "publishing": {
+        "app_store_connect": {
+          "auth": "integration",
+          "submit_to_testflight": true
+        }
+      }
+    }
+  }
+}

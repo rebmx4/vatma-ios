@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "sourcePage": "https://status.tbank-online.com/certificates/",
+  "certificates": [
+    {
+      "id": "root-2022",
+      "file": "russian_trusted_root_ca_pem.crt",
+      "source": "https://help-static2.tbank-online.com/certs/linux_russian_trusted_root_ca_pem/russian_trusted_root_ca_pem.crt",
+      "type": "root",
+      "sha256": "ea5cef7aa71bb049a2fb599c8776dfa682a6ed969acf309291601f6fc066df9d",
+      "fingerprint256": "D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31",
+      "subject": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Root CA",
+      "issuer": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Root CA",
+      "validFrom": "Mar  1 21:04:15 2022 GMT",
+      "validTo": "Feb 27 21:04:15 2032 GMT"
+    },
+    {
+      "id": "intermediate-2022",
+      "file": "russian_trusted_sub_ca_pem.crt",
+      "source": "https://help-static2.tbank-online.com/certs/russian_trusted_sub_ca_pem/russian_trusted_sub_ca_pem.crt",
+      "type": "intermediate",
+      "sha256": "4da8501bc8a697f1039f13f711d9e84a37ecaa3645abec62678b6ef7303d88e1",
+      "fingerprint256": "BB:BD:E2:10:3E:79:0B:99:9E:C6:2B:D0:3C:F6:25:A5:A2:E7:C3:16:E1:0A:FE:6A:49:0E:ED:EA:D8:B3:FD:9B",
+      "subject": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Sub CA",
+      "issuer": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Root CA",
+      "validFrom": "Mar  2 11:25:19 2022 GMT",
+      "validTo": "Mar  6 11:25:19 2027 GMT"
+    },
+    {
+      "id": "intermediate-2024",
+      "file": "russian_trusted_sub_ca_2024_pem.crt",
+      "source": "https://help-static2.tbank-online.com/certs/russian_trusted_sub_ca_pem/russian_trusted_sub_ca_2024_pem.crt",
+      "type": "intermediate",
+      "sha256": "178de6bdeeda49343de7108c12017a0ed21a3052d17f9e43ee0db75d2011d8e0",
+      "fingerprint256": "21:55:78:50:36:C9:00:DB:B5:F1:BB:2A:15:69:C8:0C:55:59:5B:D6:BF:94:86:7A:29:BB:DD:BC:7D:88:A3:F2",
+      "subject": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Sub CA",
+      "issuer": "C=RU\nO=The Ministry of Digital Development and Communications\nCN=Russian Trusted Root CA",
+      "validFrom": "Jul 15 12:50:41 2024 GMT",
+      "validTo": "Jul 19 12:50:41 2029 GMT"
+    }
+  ]
+}

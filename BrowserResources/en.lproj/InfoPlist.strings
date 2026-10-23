@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "ATMA requests camera access when you allow the website you opened to use it.";
+"NSMicrophoneUsageDescription" = "ATMA requests microphone access when you allow the website you opened to use it.";

@@ -2,102 +2,118 @@
 set -euo pipefail
 
 task_root="${CM_BUILD_DIR:?Codemagic build directory is required}"
-native="$task_root/.native/src/brave"
-project="$native/ios/brave-ios/App/Client.xcodeproj"
-export npm_config_cache="$task_root/.cache/npm"
-export npm_config_store_dir="$task_root/.cache/pnpm"
-export PIP_CACHE_DIR="$task_root/.cache/pip"
+cd "$task_root"
 export TMPDIR="$task_root/.cache/tmp"
+export PIP_CACHE_DIR="$task_root/.cache/pip"
+export PYTHONPYCACHEPREFIX="$task_root/.cache/python"
 export PYTHONDONTWRITEBYTECODE=1
-export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096"
-export PYTHONPATH="$task_root/.cache/python:${PYTHONPATH:-}"
-export PATH="$task_root/.cache/tools/node_modules/.bin:$PATH"
-mkdir -p "$task_root/.cache/tmp" "$task_root/out"
+export HOMEBREW_CACHE="$task_root/.cache/homebrew"
+export HOMEBREW_LOGS="$task_root/.cache/homebrew-logs"
+export HOMEBREW_TEMP="$task_root/.cache/tmp"
+mkdir -p "$TMPDIR" "$task_root/out"
 
-config_value() {
-  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$task_root/release/config.json" "$1"
+require_verified_revision() {
+  test -n "${ATMA_VERIFIED_COMMIT:-}"
+  test "$ATMA_VERIFIED_COMMIT" = "$(git rev-parse HEAD)" || {
+    echo 'verified_commit must equal the successfully tested HEAD revision' >&2
+    return 1
+  }
 }
-bundle_id="$(config_value bundle_id)"
-app_id="$(config_value apple_app_id)"
-version="$(config_value marketing_version)"
-jobs=8
-if (( $(sysctl -n hw.memsize) < 12884901888 )); then jobs=6; fi
-export SISO_LIMITS="local=$jobs"
 
-case "${1:?Expected prepare, smoke or archive}" in
-  prepare)
-    cd "$task_root"
-    python3 -m pip install --target "$task_root/.cache/python" -r release/requirements.txt
-    python3 -m unittest discover -s tests -v
-    npm install --prefix "$task_root/.cache/tools" --ignore-scripts --no-audit --no-fund pnpm@11.11.0
-    git clone --depth 1 --branch "$(config_value upstream_tag)" https://github.com/brave/brave-core.git "$native"
-    test "$(git -C "$native" rev-parse HEAD)" = "$(config_value upstream_commit)"
-    python3 release/prepare_build.py --source "$native"
-    node tests/check_patch_concurrency.mjs "$native/build/commands/lib/gitPatcher.js"
-    cat > "$native/.env" <<'CONFIG'
-projects_chrome_custom_vars_checkout_clangd=false
-projects_chrome_custom_vars_checkout_clang_coverage_tools=false
-use_remoteexec=false
-concurrent_links=1
-gn_args={"symbol_level":0,"enable_dsyms":false,"use_thin_lto":false,"is_official_build":false,"action_pool_depth":1}
-CONFIG
-    cd "$native"
-    pnpm install --frozen-lockfile
-    node build/commands/scripts/sync.ts --init --target_os=ios --target_arch=arm64 --no-history
-    pnpm run ios_bootstrap
-    "$native/../third_party/node/mac_arm64/node-darwin-arm64/bin/node" -e 'const heap = require("node:v8").getHeapStatistics().heap_size_limit; if (heap < 4000000000) throw new Error("Node heap override was not applied"); console.log(JSON.stringify({native_node_heap_limit: heap}))'
-    cd "$task_root"
-    python3 release/prepare.py --source "$native" --report out/branding-preparation.json
-    python3 release/validate.py --source "$native" | tee out/source-validation.json
-    ruby release/add_smoke_target.rb "$native" "$task_root/release/ATMASmokeTests.swift" "$task_root/release/config.json"
+export_screenshots() {
+  for device in iphone ipad; do
+    result="$task_root/out/ATMA-$device.xcresult"
+    if [[ -d "$result" ]]; then
+      xcrun xcresulttool export attachments --path "$result" \
+        --output-path "$task_root/out/screenshots/$device" || true
+    fi
+  done
+}
+
+case "${1:?Expected gate, prepare, smoke or archive}" in
+  gate)
+    require_verified_revision
     ;;
-  core-simulator|core-device)
-    cd "$native"
-    target_environment="${1#core-}"
-    pnpm run build Release --target_os=ios --target_arch=arm64 --target_environment="$target_environment" --ninja "j:$jobs" 2>&1 | tee "$task_root/out/core-$target_environment.log"
+  prepare)
+    python3 -B -m unittest discover -s tests -v
+    node --test tests/*.test.mjs
+    python3 -B release/validate.py --report out/source-validation.json
+    for script in BrowserUI/*.js BrowserUI/assets/*.js BrowserUI/assets/*.mjs; do
+      [[ ! -f "$script" ]] || node --check "$script"
+    done
+    if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
+    xcodegen --version | tee out/xcodegen-version.log
+    xcodebuild -version | tee out/xcode-version.log
+    xcodegen generate --spec project.yml
+    xcodebuild -list -project ATMA.xcodeproj > out/project-targets.log
+    plutil -lint BrowserResources/Info.plist BrowserResources/PrivacyInfo.xcprivacy
+    plutil -lint BrowserResources/ru.lproj/InfoPlist.strings BrowserResources/en.lproj/InfoPlist.strings
     ;;
   smoke)
-    cd "$native"
-    export_smoke_images() {
-      if [[ -d "$task_root/out/ATMA-smoke.xcresult" ]]; then
-        xcrun xcresulttool export attachments --path "$task_root/out/ATMA-smoke.xcresult" --output-path "$task_root/out/screenshots" || true
-      fi
-    }
-    trap export_smoke_images EXIT
-    xcodebuild test -project "$project" -scheme ATMA -configuration Release \
-      -destination 'platform=iOS Simulator,name=iPhone 17' \
-      -derivedDataPath "$task_root/.cache/derived-simulator" \
-      -resultBundlePath "$task_root/out/ATMA-smoke.xcresult" \
-      -only-testing:ATMASmokeTests CODE_SIGNING_ALLOWED=NO \
-      brave_ios_marketing_version="$version" brave_version_build=1 \
-      2>&1 | tee "$task_root/out/simulator-test.log"
-    git -C "$task_root" rev-parse HEAD > "$task_root/out/verified-commit.txt"
+    test -d ATMA.xcodeproj
+    trap export_screenshots EXIT
+    xcrun simctl list devices available -j | python3 -B release/simulators.py > out/simulators.json
+    for device in iphone ipad; do
+      simulator="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' out/simulators.json "$device")"
+      xcrun simctl boot "$simulator" 2>/dev/null || true
+      xcrun simctl bootstatus "$simulator" -b
+      options=()
+      if [[ "$device" = ipad ]]; then options=(-only-testing:BrowserNativeUITests); fi
+      xcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Debug \
+        -destination "platform=iOS Simulator,id=$simulator" \
+        -derivedDataPath "$task_root/.cache/derived-simulator" \
+        -resultBundlePath "$task_root/out/ATMA-$device.xcresult" \
+        -parallel-testing-enabled NO "${options[@]}" CODE_SIGNING_ALLOWED=NO \
+        2>&1 | tee "$task_root/out/test-$device.log"
+      xcrun simctl io "$simulator" screenshot "$task_root/out/$device-final.png"
+      xcrun simctl shutdown "$simulator"
+    done
+    git rev-parse HEAD > out/verified-commit.txt
     ;;
   archive)
-    cd "$task_root"
-    mkdir -p "$task_root/.cache/signing"
+    require_verified_revision
+    test -d ATMA.xcodeproj
+    python3 -B release/validate.py --report out/prearchive-validation.json
+    mkdir -p .cache/signing .cache/export
+    cleanup_signing() { rm -f "$task_root/.cache/signing/distribution-key.pem"; }
+    trap cleanup_signing EXIT
+    python3 - <<'PY'
+from pathlib import Path
+import base64, os
+destination = Path(os.environ['CM_BUILD_DIR']) / '.cache/signing/distribution-key.pem'
+destination.write_bytes(base64.b64decode(os.environ['CERT_KEY_B64'], validate=True))
+destination.chmod(0o600)
+PY
     keychain initialize
-    printf '%s' "$CERT_KEY_B64" | base64 --decode > "$task_root/.cache/signing/distribution-key.pem"
     export CERTIFICATE_PRIVATE_KEY
-    CERTIFICATE_PRIVATE_KEY="$(cat "$task_root/.cache/signing/distribution-key.pem")"
-    app-store-connect fetch-signing-files "$bundle_id" --type IOS_APP_STORE --create
+    CERTIFICATE_PRIVATE_KEY="$(cat .cache/signing/distribution-key.pem)"
+    app-store-connect fetch-signing-files ru.atma.app --type IOS_APP_STORE --create
     keychain add-certificates
-    xcode-project use-profiles --project "$project" --export-options-plist "$task_root/.cache/signing/export.plist"
-    next_build="$(app-store-connect get-latest-testflight-build-number "$app_id")"
-    next_build="$((next_build + 1))"
-    printf '%s\n' "$next_build" > "$task_root/out/build-number.txt"
-    cd "$native"
-    xcodebuild archive -project "$project" -scheme ATMA -configuration Release \
+    xcode-project use-profiles --project ATMA.xcodeproj \
+      --export-options-plist "$task_root/.cache/signing/export.plist"
+    latest_build="$(app-store-connect get-latest-testflight-build-number 6774934498)"
+    [[ "$latest_build" =~ ^[0-9]+$ ]]
+    next_build="$((latest_build + 1))"
+    printf '%s\n' "$next_build" > out/build-number.txt
+    xcodebuild archive -project ATMA.xcodeproj -scheme ATMA -configuration Release \
       -destination 'generic/platform=iOS' -archivePath "$task_root/out/ATMA.xcarchive" \
-      -derivedDataPath "$task_root/.cache/derived-device" \
-      brave_ios_marketing_version="$version" brave_version_build="$next_build" \
-      2>&1 | tee "$task_root/out/device-archive.log"
-    codesign --verify --deep --strict "$task_root/out/ATMA.xcarchive/Products/Applications/Client.app"
+      -derivedDataPath "$task_root/.cache/derived-device" CURRENT_PROJECT_VERSION="$next_build" \
+      2>&1 | tee out/device-archive.log
+    app="$task_root/out/ATMA.xcarchive/Products/Applications/ATMA.app"
+    codesign --verify --deep --strict "$app"
+    codesign -d --entitlements :- "$app" > out/signed-entitlements.plist 2>out/codesign.log
+    python3 -B release/verify_signing.py out/signed-entitlements.plist
     xcodebuild -exportArchive -archivePath "$task_root/out/ATMA.xcarchive" \
-      -exportPath "$task_root/out/ipa" -exportOptionsPlist "$task_root/.cache/signing/export.plist" \
-      2>&1 | tee "$task_root/out/export.log"
-    cd "$task_root"
-    python3 release/verify_ipa.py "$task_root/out/ipa/Client.ipa" --build "$next_build" | tee out/ipa-validation.json
+      -exportPath "$task_root/.cache/export" -exportOptionsPlist "$task_root/.cache/signing/export.plist" \
+      2>&1 | tee out/export.log
+    python3 -B release/verify_ipa.py .cache/export/ATMA.ipa --build "$next_build" | tee out/ipa-validation.json
+    ditto -x -k .cache/export/ATMA.ipa .cache/export-check
+    codesign --verify --deep --strict .cache/export-check/Payload/ATMA.app
+    codesign -d --entitlements :- .cache/export-check/Payload/ATMA.app > out/exported-entitlements.plist 2>out/exported-codesign.log
+    python3 -B release/verify_signing.py out/exported-entitlements.plist
+    # Publishing sees only this directory, populated after every validation passed.
+    mkdir -p out/ipa
+    cp .cache/export/ATMA.ipa out/ipa/ATMA.ipa
     ;;
-  *) echo 'Unknown release stage' >&2; exit 2 ;;
+  *) echo 'Unknown standalone release stage' >&2; exit 2 ;;
 esac
