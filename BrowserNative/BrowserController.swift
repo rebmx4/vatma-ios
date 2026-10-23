@@ -26,6 +26,7 @@ final class BrowserController: UIViewController {
         controller.didChange = { [weak self] in self?.publish() }
         return controller
     }()
+    private let browserViewport = UIView()
     var ui: WKWebView!
     var renderers: [String: WKWebView] = [:]
     var windowOpeners: [String: String] = [:]
@@ -53,6 +54,16 @@ final class BrowserController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        browserViewport.translatesAutoresizingMaskIntoConstraints = false
+        browserViewport.clipsToBounds = true
+        view.addSubview(browserViewport)
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            browserViewport.topAnchor.constraint(equalTo: safe.topAnchor),
+            browserViewport.leadingAnchor.constraint(equalTo: safe.leadingAnchor),
+            browserViewport.trailingAnchor.constraint(equalTo: safe.trailingAnchor),
+            browserViewport.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+        ])
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "atma")
@@ -63,7 +74,7 @@ final class BrowserController: UIViewController {
         ui.backgroundColor = .systemBackground
         ui.scrollView.isScrollEnabled = false
         ui.scrollView.contentInsetAdjustmentBehavior = .never
-        view.addSubview(ui)
+        browserViewport.addSubview(ui)
         downloads.didChange = { [weak self] tabID, error in
             guard let self else { return }
             if let error {
@@ -86,9 +97,7 @@ final class BrowserController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let safe = view.safeAreaLayoutGuide.layoutFrame
-        let bottom = min(safe.maxY, view.keyboardLayoutGuide.layoutFrame.minY)
-        let frame = CGRect(x: safe.minX, y: safe.minY, width: safe.width, height: max(0, bottom - safe.minY))
+        let frame = browserViewport.bounds
         let browsing = mode == "browse" && panel == nil
         ui.frame = browsing ? CGRect(x: frame.minX, y: max(frame.minY, frame.maxY - Self.footerHeight),
                                      width: frame.width, height: min(Self.footerHeight, frame.height)) : frame
@@ -97,7 +106,7 @@ final class BrowserController: UIViewController {
             renderer.frame = CGRect(x: frame.minX, y: frame.minY, width: frame.width,
                                     height: max(0, frame.height - Self.footerHeight))
         }
-        view.bringSubviewToFront(ui)
+        browserViewport.bringSubviewToFront(ui)
         publish()
     }
 
@@ -132,7 +141,7 @@ final class BrowserController: UIViewController {
         }
         blocker.apply(to: renderer, host: URL(string: tab.url)?.host)
         renderers[tab.id] = renderer
-        view.insertSubview(renderer, belowSubview: ui)
+        browserViewport.insertSubview(renderer, belowSubview: ui)
         return renderer
     }
 
@@ -213,7 +222,7 @@ final class BrowserController: UIViewController {
     func state() -> [String: Any] {
         let tab = model.active
         let host = URL(string: tab.url)?.host
-        let frame = view.safeAreaLayoutGuide.layoutFrame
+        let frame = browserViewport.bounds
         return ["id": "ios", "deviceName": UIDevice.current.model, "profileId": tab.profileId,
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
                 "siteName": tab.siteName, "iconUrl": tab.iconUrl,
