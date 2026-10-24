@@ -232,8 +232,9 @@ final class BrowserRenderingTests: XCTestCase {
         let pixel = try averageRGB(XCTUnwrap(stored))
         XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
         fixture.stop()
+        _ = try await script("window.__iconPreviousDocument=true; return true;", in: controller.ui)
         controller.ui.reload()
-        try await waitForUI()
+        try await waitFor("window.__iconPreviousDocument!==true && document.readyState==='complete' && !!document.body.dataset.mode", in: controller.ui)
         try await waitFor("[...document.querySelectorAll('.app-item')].some(item=>item.querySelector('img')?.naturalWidth===192)", in: controller.ui)
         let reloaded = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.iconUrl;", in: controller.ui, arguments: ["url": url]) as? String
         XCTAssertEqual(reloaded, stored, "Saved artwork must survive a fresh UI document without the website")
