@@ -95,8 +95,9 @@ final class BrowserRenderingTests: XCTestCase {
         controller.media.setBackground(!background)
         _ = try await rpc("panel", body: [:])
         controller.view.layoutIfNeeded()
-        page.load(URLRequest(url: URL(string: url + "?next-document")!))
-        try await waitFor("location.search==='?next-document' && document.readyState==='complete' && document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
+        _ = try await script("window.__mediaPreviousDocument=true; return true;", in: page)
+        page.reload()
+        try await waitFor("window.__mediaPreviousDocument!==true && document.readyState==='complete' && document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
         // Substitute only the transient browser activation at this boundary;
         // the real WebKit document, player and native lifecycle remain intact.
         _ = try await script("Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:true}}); await document.querySelector('video').play(); return true;", in: page)

@@ -54,3 +54,5 @@ Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserM
 - Final review 8e8ad39: four Important issues. Fix pass covers ambiguous current cookie profiles, pause→scripted resume, zero-size custom audio, and new-document visibility. Two new JS regressions were observed RED then GREEN; native profile/document regression cases are included in the forthcoming macOS gate.
 - Ruling: programmatic HTMLMediaElement.play() is gated separately so a true native PiP transport Play can work without a document click. Native transport and real lock event order still require owner-device retest; protected-data availability is not a guaranteed screen-lock signal.
 - No Critical findings and no deferred Minor findings from independent review.
+
+- Native run 40094095255 cancellation requested after read-only fixture audit found the new-document test URL query was unsupported by the fixture HTTP parser. The scenario now reloads the supported /video path and asserts the old document marker is gone; behavior predicate is preserved. No product code changed in this correction.
