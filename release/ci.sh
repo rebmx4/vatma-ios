@@ -35,7 +35,7 @@ capture_ui_diagnostics() {
   local diagnostic_log="$task_root/out/runtime-$device.log"
   if [[ ! -s "$diagnostic_log" ]]; then
     xcrun simctl spawn "$simulator" log show --last 5m --style compact \
-      --predicate 'process == "ATMA"' > "$diagnostic_log" 2>&1 || true
+      --predicate 'process == "ATMA" OR process BEGINSWITH "com.apple.WebKit"' > "$diagnostic_log" 2>&1 || true
   fi
 }
 

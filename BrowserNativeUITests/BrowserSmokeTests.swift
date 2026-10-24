@@ -19,7 +19,24 @@ final class BrowserSmokeTests: XCTestCase {
         let websiteURL = "https://httpbingo.org/html"
         let headingText = "Herman Melville - Moby-Dick"
         let home = button(["Рабочий стол", "Home"])
-        XCTAssertTrue(home.waitForExistence(timeout: 20), "Bundled native browser UI must load")
+        let startupBeginning = Date()
+        let homeReadyWithinDeadline = home.waitForExistence(timeout: 20)
+        if !homeReadyWithinDeadline {
+            screenshot("startup-at-20-seconds")
+            let initialHierarchy = XCTAttachment(string: app.debugDescription)
+            initialHierarchy.name = "startup-at-20-seconds-hierarchy"
+            initialHierarchy.lifetime = .keepAlways
+            add(initialHierarchy)
+            let remainingObservation = max(0, 60 - Date().timeIntervalSince(startupBeginning))
+            let appearedDuringObservation = home.waitForExistence(timeout: remainingObservation)
+            print("Startup diagnostic: initial20s=false, appearedLater=\(appearedDuringObservation), elapsed=\(Date().timeIntervalSince(startupBeginning))")
+            screenshot("startup-late-observation")
+            let finalHierarchy = XCTAttachment(string: app.debugDescription)
+            finalHierarchy.name = "startup-late-observation-hierarchy"
+            finalHierarchy.lifetime = .keepAlways
+            add(finalHierarchy)
+        }
+        XCTAssertTrue(homeReadyWithinDeadline, "Bundled native browser UI must load within 20 seconds")
         screenshot("home")
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "home-hierarchy"
