@@ -71,9 +71,24 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "refresh":
             if let currentRenderer { currentRenderer.reload() }
             else if !model.active.url.isEmpty { try open(model.active.url) }
+        case "site-resource":
+            let address = try string("url", body), kind = try string("kind", body)
+            _ = try AddressResolver.validated(address)
+            Task {
+                do { reply(try await BrowserSiteResource.load(address, kind: kind), nil) }
+                catch { reply(nil, error.localizedDescription) }
+            }
+            return
         case "current-site":
-            reply(["url": model.active.url, "profileId": model.active.profileId, "title": model.active.title,
-                   "siteName": model.active.siteName, "iconUrl": model.active.iconUrl], nil); return
+            let tab = model.active
+            var result: [String: Any] = ["url": tab.url, "profileId": tab.profileId, "title": tab.title,
+                                         "siteName": tab.siteName, "iconUrl": tab.iconUrl]
+            guard let page = currentRenderer else { reply(result, nil); return }
+            BrowserSiteResource.metadata(in: page) { metadata in
+                result.merge(metadata) { _, fresh in fresh }
+                reply(result, nil)
+            }
+            return
         case "tab-previews": previews(reply); return
         case "cookies", "cookies/delete":
             let profileId = model.active.profileId

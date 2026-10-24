@@ -100,6 +100,16 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             update(webView, loading: false)
+            let finishedURL = webView.url
+            BrowserSiteResource.metadata(in: webView) { [weak self, weak webView] metadata in
+                guard let self, let webView, webView.url == finishedURL,
+                      let id = self.renderers.first(where: { $0.value === webView })?.key,
+                      let index = self.model.tabs.firstIndex(where: { $0.id == id }) else { return }
+                let icons = (metadata["iconCandidates"] as? [String] ?? []) + (metadata["faviconCandidates"] as? [String] ?? [])
+                self.model.tabs[index].iconUrl = icons.first ?? ""
+                if let name = metadata["siteName"] as? String, !name.isEmpty { self.model.tabs[index].siteName = name }
+                self.model.save(); self.publish()
+            }
         }
     }
 

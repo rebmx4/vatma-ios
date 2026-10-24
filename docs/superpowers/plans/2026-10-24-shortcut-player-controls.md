@@ -58,3 +58,11 @@ Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserM
 - Native run 40094095255 cancellation requested after read-only fixture audit found the new-document test URL query was unsupported by the fixture HTTP parser. The scenario now reloads the supported /video path and asserts the old document marker is gone; behavior predicate is preserved. No product code changed in this correction.
 
 - Native c7dae2b run 40094459407: iPhone/iPad UI and four profile migration tests passed. Five actual-video tests failed at readyState=0 because the new native .all gesture policy suppressed metadata preload. Reverted that additional native restriction; the page adapter remains the intent gate and now rejects internal autoplay before any explicit playback request, while allowing native transport after one. Regression observed RED→GREEN. Dedicated native /video-autoplay route verifies actual HTML autoplay rejection; ordinary /video route exercises metadata preload and explicit playback.
+
+
+### Added scope: real website icons (owner 2026-10-24)
+- Root causes: native update cleared iconUrl without extracting page icons; manual creation never discovered website metadata; a single /favicon.ico fallback failed on sites using touch/manifest artwork.
+- New shared site-icons.js parses the actual document base, touch icons, manifests and favicon links. Native current-site reads this same parser in the live page; manual creation fetches inert bounded metadata. No external favicon service.
+- Artwork is decoded and stored as a 192px PNG in each shortcut. Missing legacy custom icons are repaired on the desktop, including folder miniatures; locked private scopes cannot be modified by late icon responses. Native icon requests have no profile cookies, credentials or disk cache and retain existing SiteTrust hostname/certificate policy.
+- Regression: manual and quick-add tests were observed RED (undefined/empty icon) then GREEN. Local total 37 JS + 23 Python pass; static check 268 product files passes after extracting the shared HTTP test fixture to keep each Swift test source below 400 lines.
+- Two real-WebKit cases cover touch artwork + offline UI reload, and manual manifest fallback + old-icon repair. Pending exact-source native gate.

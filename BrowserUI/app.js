@@ -8,6 +8,7 @@ import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
 import {renderCookieBrowser} from './assets/cookies-ui.js';
 import {createLocalization} from './assets/i18n.js';
+import {resolveWebsiteIcon} from './assets/site-icons.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
 const appLabel=app=>app.type==='system'?localization.t(app.name):app.name;
@@ -173,6 +174,15 @@ function brand(app) {
 async function api(action, body) {
   if(window.webkit?.messageHandlers?.atma)return window.webkit.messageHandlers.atma.postMessage({action,body:body||{}});
   if(action==='shortcut-profile')return {profileId:state.profileId};
+  if(action==='site-resource'){
+    const response=await fetch(body.url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw new Error('Значок сайта недоступен');
+    if(body.kind!=='image')return {url:response.url,text:await response.text()};
+    const blob=await response.blob();if(blob.size>1048576)throw new Error('Значок слишком большой');
+    const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+    return {url:response.url,dataUrl};
+  }
+
   if(action==='cookies'||action==='cookies/delete')return previewCookieRequest(action,body);
   if(action.startsWith('media/'))return previewMediaRequest(action,body);
   const response = await fetch(`/api/${action}${body ? '' : `?context=${encodeURIComponent(context)}`}`, {
@@ -191,6 +201,24 @@ async function action(name, data = {}) {
   const version=++stateActionVersion;
   try { const result = await api(name, data); if(version===stateActionVersion)consume(result); return result; }
   catch (error) { notify(error.message); throw error; }
+}
+const shortcutIconRequests=new Map();
+function resolveShortcutIcon(site){
+  const key=JSON.stringify([site.url,site.iconUrl,site.iconCandidates]);
+  if(!shortcutIconRequests.has(key))shortcutIconRequests.set(key,resolveWebsiteIcon(site,(kind,url)=>api('site-resource',{kind,url})).catch(()=>''));
+  return shortcutIconRequests.get(key);
+}
+function paintShortcutIcon(target,app,scope){
+  if(!app.custom)return;
+  const source=app.iconUrl||'',url=app.url,id=app.id,key=vaultKey;
+  const paint=source=>{if(!source)return;const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';image.addEventListener('load',()=>target.replaceChildren(image));image.src=source;};
+  if(/^data:image\/png;base64,/i.test(source)){paint(source);return;}
+  resolveShortcutIcon(app).then(iconUrl=>{
+    if(!iconUrl)return;paint(iconUrl);
+    if(scope==='private'&&(!vaultKey||key!==vaultKey))return;
+    const current=findEntry(poolFor(scope),id)?.entry;
+    if(current?.url===url&&current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope).catch(()=>{});}
+  });
 }
 let pinSiteBusy=false,pinSiteArtKey='';
 function normalizedSiteUrl(value) {
@@ -218,7 +246,8 @@ async function saveCurrentSite() {
     const site=await api('current-site'),url=normalizedSiteUrl(site.url);
     if(!url)throw new Error('Не удалось получить адрес сайта');
     if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
-    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,profileId:site.profileId||state.profileId,iconUrl:site.iconUrl,color:'#337b96',custom:true};
+    const iconUrl=await resolveShortcutIcon(site);
+    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,profileId:site.profileId||state.profileId,iconUrl,color:'#337b96',custom:true};
     const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
     try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
     notify('Добавлено на рабочий стол');
@@ -320,12 +349,10 @@ function createItem(app, parentId = null, index = 0, scope='public') {
   if (isFolder(app)) {
     item.classList.add('folder-item'); tile.classList.add('folder-tile');
     tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,9).map(child=>`<span>${brand(child)}</span>`).join('')}</span>`;
+    for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries())paintShortcutIcon(miniature,app.children[index],scope);
   } else {
     tile.innerHTML = brand(app);
-    if (app.custom) {
-      const image = new Image(); image.src = app.iconUrl || new URL('/favicon.ico', app.url).href; image.alt = ''; image.draggable = false;
-      image.referrerPolicy = 'no-referrer'; image.addEventListener('load', () => { if (!gesture?.active) tile.replaceChildren(image); });
-    }
+    paintShortcutIcon(tile,app,scope);
   }
   tile.addEventListener('click', () => { if (Date.now() >= suppressClickUntil) activate(app,scope); });
   tile.addEventListener('pointerdown', event => beginGesture(event, app, parentId,scope));
@@ -795,11 +822,17 @@ function renderAppForm(app) {
     event.preventDefault(); const form = new FormData(event.currentTarget); let url;
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
     catch { return notify('Введите корректный адрес http или https'); }
-    const entry = { ...app, profileId:app?app.profileId:state.profileId, id: app?.id || `custom-${Date.now()}`, name: String(form.get('name')).trim(), url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
+    const name=String(form.get('name')).trim();if(!name)return notify('Введите название приложения');
+    const submit=event.currentTarget.querySelector?.('[type="submit"]');
+    if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
+    const scope=editorScope,key=vaultKey,profileId=app?app.profileId:state.profileId;
+    const iconUrl=await resolveShortcutIcon({url:url.href,iconUrl:app?.url===url.href?app.iconUrl:''});
+    if(scope==='private'&&(!vaultKey||vaultKey!==key))return;
+    const entry = { ...app, iconUrl, profileId, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
     if (!entry.name) return;
-    const pool=poolFor(editorScope);
+    const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(editorScope);await setPanel(null);}catch(error){notify(error.message);}
+    try{await saveApps(scope);await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
   });
   if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
     if(editorScope==='private') {

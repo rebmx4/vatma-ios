@@ -338,9 +338,9 @@ final class BrowserController: UIViewController {
         guard let entry = renderers.first(where: { $0.value === webView }),
               let index = model.tabs.firstIndex(where: { $0.id == entry.key }) else { return }
         if let url = webView.url, ["http", "https"].contains(url.scheme ?? "") || url.absoluteString == "about:blank" {
+            if model.tabs[index].url != url.absoluteString { model.tabs[index].iconUrl = "" }
             model.tabs[index].url = url.absoluteString
             model.tabs[index].siteName = url.host ?? ""
-            model.tabs[index].iconUrl = ""
         }
         model.tabs[index].title = webView.title ?? ""
         model.tabs[index].loading = loading ?? webView.isLoading

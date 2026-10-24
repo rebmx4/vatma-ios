@@ -219,6 +219,50 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertGreaterThan(red[0], 150); XCTAssertLessThan(red[1], 110)
     }
 
+    func testQuickAddedWebsiteStoresItsDeclaredIconAndKeepsItOffline() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
+        try await waitForUI()
+        _ = try await rpc("open", body: ["url": url, "webApp": false])
+        try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(220, 38, 40)")
+        _ = try await script("document.getElementById('pin-site').click(); return true;", in: controller.ui)
+        try await waitFor("JSON.parse(localStorage.getItem('atma-preview-apps')).some(app=>app.url===\(jsonString(url)) && app.iconUrl?.startsWith('data:image/png;base64,'))", in: controller.ui)
+        _ = try await rpc("home")
+        let stored = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.iconUrl;", in: controller.ui, arguments: ["url": url]) as? String
+        let pixel = try averageRGB(XCTUnwrap(stored))
+        XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
+        fixture.stop()
+        controller.ui.reload()
+        try await waitForUI()
+        try await waitFor("[...document.querySelectorAll('.app-item')].some(item=>item.querySelector('img')?.naturalWidth===192)", in: controller.ui)
+        let reloaded = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.iconUrl;", in: controller.ui, arguments: ["url": url]) as? String
+        XCTAssertEqual(reloaded, stored, "Saved artwork must survive a fresh UI document without the website")
+    }
+
+    func testManualShortcutUsesManifestFallbackAndRepairsAnOldMissingIcon() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("manifest-only").absoluteString
+        try await waitForUI()
+        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
+        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
+        _ = try await script("const form=document.getElementById('app-form'); form.elements.name.value='Manual icon fixture'; form.elements.url.value=url; form.requestSubmit(); return true;", in: controller.ui, arguments: ["url": url])
+        let saved = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Manual icon fixture')"
+        try await waitFor("\(saved)?.iconUrl?.startsWith('data:image/png;base64,')", in: controller.ui)
+        let icon = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
+        let pixel = try averageRGB(XCTUnwrap(icon))
+        XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
+        _ = try await script("const apps=JSON.parse(localStorage.getItem('atma-preview-apps')); delete apps.find(app=>app.name==='Manual icon fixture').iconUrl; localStorage.setItem('atma-preview-apps',JSON.stringify(apps)); return true;", in: controller.ui)
+        controller.ui.reload()
+        try await waitForUI()
+        try await waitFor("\(saved)?.iconUrl?.startsWith('data:image/png;base64,')", in: controller.ui)
+        let repaired = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
+        XCTAssertEqual(repaired, icon, "Previously created shortcuts must recover their website artwork")
+    }
+
+    private func jsonString(_ value: String) -> String {
+        String(data: try! JSONSerialization.data(withJSONObject: [value]), encoding: .utf8)!.dropFirst().dropLast().description
+    }
+
     private func openVideo() async throws -> WKWebView {
         let url = try await startFixture(video: true)
         try controller.open(url.appendingPathComponent("video").absoluteString)
@@ -233,8 +277,16 @@ final class BrowserRenderingTests: XCTestCase {
     private func startFixture(video: Bool) async throws -> URL {
         var resources: [String: Data] = [:]
         for (path, color) in [("/red", "rgb(220,38,40)"), ("/blue", "rgb(30,70,220)")] {
-            resources[path] = Data("<!doctype html><html><head><title>\(path) fixture</title><style>html,body{margin:0;width:100%;height:100%;background:\(color)}</style></head><body></body></html>".utf8)
+            resources[path] = Data("<!doctype html><html><head><title>\(path) fixture</title><link rel='apple-touch-icon' href='/art/site.png'><style>html,body{margin:0;width:100%;height:100%;background:\(color)}</style></head><body></body></html>".utf8)
         }
+        let artwork = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).pngData { context in
+            context.cgContext.setFillColor(UIColor(red: 0.1, green: 0.85, blue: 0.2, alpha: 1).cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+        }
+        resources["/art/site.png"] = artwork
+        resources["/manifest/icons/logo.png"] = artwork
+        resources["/manifest-only"] = Data("<!doctype html><html><head><title>Manifest fixture</title><link rel='apple-touch-icon' href='/missing.png'><link rel='manifest' href='/manifest/app.json'></head><body>Manifest icon</body></html>".utf8)
+        resources["/manifest/app.json"] = Data(#"{"icons":[{"src":"icons/logo.png","sizes":"192x192","type":"image/png"}]}"#.utf8)
         if video {
             let bundle = Bundle(for: BrowserRenderingTests.self)
             let mediaURL = try XCTUnwrap(bundle.url(forResource: "playback", withExtension: "mp4"))
@@ -302,70 +354,5 @@ final class BrowserRenderingTests: XCTestCase {
             context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
         return pixel
-    }
-}
-
-private final class BrowserRenderingFixtureServer {
-    private let listener: NWListener
-    private let resources: [String: Data]
-    private let queue = DispatchQueue(label: "atma.tests.http")
-    private var connections: [UUID: NWConnection] = [:]
-
-    init(resources: [String: Data]) throws {
-        self.resources = resources
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        listener = try NWListener(using: parameters)
-        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
-    }
-
-    func start() async throws -> URL {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .ready:
-                    self.listener.stateUpdateHandler = nil
-                    continuation.resume(returning: URL(string: "http://127.0.0.1:\(self.listener.port!.rawValue)/")!)
-                case .failed(let error):
-                    self.listener.stateUpdateHandler = nil
-                    continuation.resume(throwing: error)
-                default: break
-                }
-            }
-            listener.start(queue: queue)
-        }
-    }
-
-    func stop() {
-        listener.cancel()
-        queue.async { self.connections.values.forEach { $0.cancel() }; self.connections.removeAll() }
-    }
-
-    private func accept(_ connection: NWConnection) {
-        let id = UUID(); connections[id] = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            if case .cancelled = state { self?.connections.removeValue(forKey: id) }
-        }
-        connection.start(queue: queue)
-        receive(connection, buffer: Data())
-    }
-
-    private func receive(_ connection: NWConnection, buffer: Data) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, complete, error in
-            guard let self else { connection.cancel(); return }
-            var request = buffer; request.append(data ?? Data())
-            guard request.count <= 8192 else { connection.cancel(); return }
-            guard request.range(of: Data("\r\n\r\n".utf8)) != nil else {
-                if complete || error != nil { connection.cancel() }
-                else { self.receive(connection, buffer: request) }
-                return
-            }
-            let path = String(data: request, encoding: .utf8)?.components(separatedBy: " ").dropFirst().first ?? ""
-            let body = self.resources[path] ?? Data("Not found".utf8)
-            let status = self.resources[path] == nil ? "404 Not Found" : "200 OK"
-            let header = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-            connection.send(content: Data(header.utf8) + body, completion: .contentProcessed { _ in connection.cancel() })
-        }
     }
 }
