@@ -8,7 +8,7 @@ function setup(){
  const document=new EventTarget();Object.assign(document,{title:'Fixture video',readyState:'complete',querySelectorAll:()=>[video],pictureInPictureEnabled:false});
  const context={document,location:{hostname:'example.invalid'},MutationObserver:class{observe(){}disconnect(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,Event,URL,console};context.window=context;context.addEventListener=()=>{};context.removeEventListener=()=>{};
  vm.createContext(context);if(fs.existsSync(path))vm.runInContext(`(${fs.readFileSync(path,'utf8')})({background:true})`,context);
- return{context,video,api:context.__atmaMediaPage};
+ return{context,document,video,api:context.__atmaMediaPage};
 }
 test('media commands use the original element, preserve position and honor deliberate pause',async()=>{
  const f=setup();assert.ok(f.api,'Media controller must be installed');
@@ -28,4 +28,38 @@ test('PiP reports actual presentation and invalid commands/values reject',async(
 test('releasing a media page pauses playback and closes the page presentation',async()=>{
  const f=setup();await f.api.command({type:'play'});await f.api.command({type:'pip'});
  assert.equal(typeof f.api.release,'function');await f.api.release();assert.equal(f.video.paused,true);assert.equal(f.video.webkitPresentationMode,'inline');
+});
+
+test('a website cannot start video before the user requests playback',async()=>{
+ const f=setup();await f.video.play();assert.equal(f.video.paused,true);
+ await f.api.command({type:'play'});assert.equal(f.video.paused,false);
+});
+test('closing a hidden PiP pauses and blocks automatic resume until explicit Play',async()=>{
+ const f=setup();await f.api.command({type:'play'});await f.api.command({type:'pip'});
+ f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));
+ f.api.setPageVisible?.(false);assert.equal(f.video.paused,false,'A visible PiP may play outside its website tab');
+ f.video.webkitPresentationMode='inline';f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));
+ assert.equal(f.video.paused,true,'Closing PiP must not leave hidden audio');
+ await f.video.play();assert.equal(f.video.paused,true,'The website must not undo the closure');
+ await f.api.command({type:'play'});assert.equal(f.video.paused,false,'An explicit Play can resume background listening');
+});
+test('hiding an inline page revokes its playback rather than leaving invisible audio',async()=>{
+ const f=setup();await f.api.command({type:'play'});f.api.setPageVisible?.(false);
+ assert.equal(f.video.paused,true);await f.video.play();assert.equal(f.video.paused,true);
+ f.api.setPageVisible?.(true);await f.api.command({type:'play'});assert.equal(f.video.paused,false);
+});
+test('locking the screen preserves an intentionally started player',async()=>{
+ const f=setup();await f.api.command({type:'play'});await f.api.command({type:'pip'});
+ f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));f.api.setScreenLocked?.(true);
+ f.document.hidden=true;f.document.dispatchEvent(new Event('visibilitychange'));
+ assert.equal(f.video.paused,false);
+ f.video.webkitPresentationMode='inline';f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));
+ assert.equal(f.video.paused,false,'Locking may hide the system window but must keep intentional audio');
+});
+
+test('closing PiP outside the app pauses even when its tab remains selected',async()=>{
+ const f=setup();await f.api.command({type:'play'});await f.api.command({type:'pip'});
+ f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));
+ f.document.hidden=true;f.video.webkitPresentationMode='inline';f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));
+ assert.equal(f.video.paused,true);
 });

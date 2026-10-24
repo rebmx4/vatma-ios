@@ -10,6 +10,7 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         weak var view: WKWebView?
         let tabID: String
         var revision = 0
+        var pageVisible: Bool?
         init(_ view: WKWebView, _ tabID: String) { self.view = view; self.tabID = tabID }
     }
     private var bindings: [ObjectIdentifier: Binding] = [:]
@@ -106,8 +107,32 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         didChange?()
     }
 
+    func setPageVisible(_ view: WKWebView, visible: Bool) {
+        guard let binding = bindings[ObjectIdentifier(view)], binding.pageVisible != visible else { return }
+        binding.pageVisible = visible
+        if !visible, !(owner === view && snapshot["pip"] as? Bool == true) {
+            // Covers cross-origin players that the main-frame adapter cannot inspect.
+            view.pauseAllMediaPlayback(completionHandler: nil)
+        }
+        view.callAsyncJavaScript("window.__atmaMediaPage?.setPageVisible(visible);", arguments: ["visible": visible],
+                                 in: nil, in: .page, completionHandler: nil)
+    }
+
+    private func setScreenLocked(_ locked: Bool) {
+        for binding in bindings.values {
+            binding.view?.callAsyncJavaScript("window.__atmaMediaPage?.setScreenLocked(locked);", arguments: ["locked": locked],
+                                              in: nil, in: .page, completionHandler: nil)
+        }
+    }
+
     private func observeAudioLifecycle() {
         let center = NotificationCenter.default
+        for name in [UIApplication.protectedDataWillBecomeUnavailableNotification, UIApplication.protectedDataDidBecomeAvailableNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                let locked = notification.name == UIApplication.protectedDataWillBecomeUnavailableNotification
+                Task { @MainActor in self?.setScreenLocked(locked) }
+            })
+        }
         observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !BrowserPageScripts.backgroundEnabled, self.snapshot["pip"] as? Bool != true else { return }

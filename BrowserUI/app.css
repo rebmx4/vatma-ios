@@ -32,17 +32,15 @@ body[data-mode=browse]{background:transparent}.home{transition:opacity .12s}body
 body[data-wallpaper=solid] .wallpaper:after{display:none}body[data-wallpaper=solid][data-mode=home] .browser-bar{background:#173b46}
 
 /* Native frames and this chrome use the same footerHeight from native state. */
-.device-row{padding-right:76px}
-.device-row .media-shortcut{right:38px;top:3px}
+.device-row{padding-right:38px}
 .device-collapse{position:absolute;right:0;top:3px;display:grid;place-items:center;width:34px;height:30px;background:transparent;color:var(--ink);border-radius:8px}
 .device-collapse svg{width:20px;height:20px}
-.app-chrome-toggle{display:none}
 body[data-mode=home] .device-collapse{display:none}
 body[data-mode=browse][data-web-app=false][data-controls-collapsed=true] .device-row{height:0;padding:0}
 body[data-mode=browse][data-web-app=false][data-controls-collapsed=true] .device-row>:not(.device-collapse){display:none}
 body[data-mode=browse][data-web-app=false][data-controls-collapsed=true] .device-collapse{top:9px;z-index:1}
 body[data-mode=browse][data-web-app=false][data-controls-collapsed=true] .address-form{padding-right:36px}
-body[data-web-app=true] .browser-bar{display:grid;grid-template-columns:36px 36px minmax(0,1fr) 32px 42px;grid-template-rows:52px;column-gap:4px;align-items:center;padding:0 12px}
+body[data-web-app=true] .browser-bar{display:grid;grid-template-columns:36px 36px minmax(0,1fr) 42px;grid-template-rows:52px;column-gap:4px;align-items:center;padding:0 12px}
 body[data-web-app=true] .device-row,body[data-web-app=true] .home-indicator,body[data-web-app=true] #pin-site,body[data-web-app=true] .search-symbol{display:none}
 body[data-web-app=true] .browser-nav{display:contents}
 body[data-web-app=true] .browser-nav>button{display:none;grid-row:1}
@@ -56,8 +54,5 @@ body[data-web-app=true] .address-go{visibility:hidden;flex-shrink:0}
 body[data-web-app=true] .address-form:focus-within .address-go{visibility:visible}
 body[data-web-app=true] #refresh{grid-column:3;justify-self:end;z-index:1;margin-right:5px;width:29px;height:36px}
 body[data-web-app=true]:has(#address:focus) #refresh{display:none}
-body[data-web-app=true] .app-chrome-toggle{display:grid;grid-column:4;grid-row:1;width:32px;height:36px}
-body[data-web-app=true] #go-home{grid-column:5;justify-self:end}
-body[data-web-app=true][data-controls-collapsed=true] .browser-bar{grid-template-columns:36px 36px minmax(0,1fr) 36px;grid-template-rows:36px}
-body[data-web-app=true][data-controls-collapsed=true] .address-form,body[data-web-app=true][data-controls-collapsed=true] #refresh,body[data-web-app=true][data-controls-collapsed=true] #go-home{display:none}
+body[data-web-app=true] #go-home{grid-column:4;justify-self:end}
 body[data-runtime=ios][data-mode=browse] .toast{bottom:8px}

@@ -44,9 +44,9 @@ final class BrowserController: UIViewController {
     var downloadTransitions: [ObjectIdentifier: DownloadNavigationTransition] = [:]
     static let footerHeight: CGFloat = 166
     var webApp: Bool { mode == "browse" && model.active.webApp == true }
-    var controlsCollapsed: Bool { mode == "browse" && (webApp ? model.active.appControlsCollapsed != false : deviceRowCollapsed) }
+    var controlsCollapsed: Bool { mode == "browse" && !webApp && deviceRowCollapsed }
     var currentFooterHeight: CGFloat {
-        if webApp { return (controlsCollapsed ? 36 : 52) + view.safeAreaInsets.bottom }
+        if webApp { return 52 + view.safeAreaInsets.bottom }
         return Self.footerHeight - (controlsCollapsed ? 38 : 0)
     }
 
@@ -167,6 +167,7 @@ final class BrowserController: UIViewController {
                                      width: frame.width, height: min(currentFooterHeight, frame.height)) : frame
         for (id, renderer) in renderers {
             renderer.isHidden = !browsing || id != model.activeTabId
+            media.setPageVisible(renderer, visible: !renderer.isHidden || (panel == "media" && id == model.activeTabId))
             renderer.frame = CGRect(x: frame.minX, y: frame.minY, width: frame.width,
                                     height: max(0, frame.height - currentFooterHeight))
         }
@@ -189,7 +190,7 @@ final class BrowserController: UIViewController {
         config.userContentController = WKUserContentController()
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
+        config.mediaTypesRequiringUserActionForPlayback = .all
         let profile = model.profile(tab.profileId)
         if tab.profileId != BrowserModel.actualProfile, let mobile = profile?["mobile"] as? Bool {
             config.defaultWebpagePreferences.preferredContentMode = mobile ? .mobile : .desktop
@@ -229,9 +230,8 @@ final class BrowserController: UIViewController {
             }
         }
         if let webApp {
-            let launchingShortcut = webApp && (model.active.webApp != true || profileID != nil)
             model.tabs[model.activeIndex].webApp = webApp
-            if launchingShortcut { model.tabs[model.activeIndex].appControlsCollapsed = true }
+            model.tabs[model.activeIndex].appControlsCollapsed = false
         }
         // End the native WebKit input session before shrinking its view into chrome.
         view.endEditing(true)

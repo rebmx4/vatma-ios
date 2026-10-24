@@ -39,8 +39,7 @@ const paths = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
-$('media-shortcut').innerHTML=icon('play');$('media-shortcut').onclick=()=>setPanel('media');
-for(const id of ['device-collapse','app-chrome-toggle'])$(id).addEventListener('click',()=>{
+$('device-collapse').addEventListener('click',()=>{
   $('address').blur();action('chrome',{collapsed:!state.controlsCollapsed}).catch(()=>{});
 });
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'previous-device': 'left', 'next-device': 'right', 'device-icon': 'phone', 'device-chevron': 'up', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
@@ -67,7 +66,7 @@ for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.
 }
 let state, profiles = [], panel = null, family = 'Все', editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
-let pendingShortcut=null;
+let shortcutLaunchVersion=0;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
@@ -173,6 +172,7 @@ function brand(app) {
 
 async function api(action, body) {
   if(window.webkit?.messageHandlers?.atma)return window.webkit.messageHandlers.atma.postMessage({action,body:body||{}});
+  if(action==='shortcut-profile')return {profileId:state.profileId};
   if(action==='cookies'||action==='cookies/delete')return previewCookieRequest(action,body);
   if(action.startsWith('media/'))return previewMediaRequest(action,body);
   const response = await fetch(`/api/${action}${body ? '' : `?context=${encodeURIComponent(context)}`}`, {
@@ -248,8 +248,6 @@ function consume(next) {
   if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
   $('device-collapse').innerHTML=icon(next.controlsCollapsed?'up':'down');
   $('device-collapse').setAttribute('aria-label',next.controlsCollapsed?'Показать выбор устройства':'Свернуть выбор устройства');
-  $('app-chrome-toggle').innerHTML=icon(next.controlsCollapsed?'up':'down');
-  $('app-chrome-toggle').setAttribute('aria-label',next.controlsCollapsed?'Развернуть панель приложения':'Свернуть панель приложения');
   updateTabSurface();
   $('go-back').disabled = next.mode !== 'browse';
   $('go-forward').disabled = next.mode !== 'browse';
@@ -573,11 +571,21 @@ async function launch(url,scope='public',options={}) {
   try { await action('open', { url, webApp:state?.mode==='browse'&&Boolean(state.webApp), ...options }); $('address').blur(); } catch {}
 }
 async function launchShortcut(app,scope='public') {
-  if(!app.profileId){pendingShortcut={app,scope};await setPanel('profiles');return;}
-  await launch(app.url,scope,{webApp:true,profileId:app.profileId});
+  const version=++shortcutLaunchVersion,key=vaultKey;
+  if(scope==='private'&&!key)return;
+  try{
+    if(!app.profileId){
+      const site=await api('shortcut-profile',{url:app.url});
+      if(version!==shortcutLaunchVersion||(scope==='private'&&vaultKey!==key))return;
+      if(!profiles.some(profile=>profile.id===site.profileId))throw new Error('Не удалось восстановить профиль приложения');
+      app.profileId=site.profileId;
+      try{await saveApps(scope);}catch(error){delete app.profileId;throw error;}
+    }
+    if(version!==shortcutLaunchVersion||(scope==='private'&&vaultKey!==key))return;
+    await launch(app.url,scope,{webApp:true,profileId:app.profileId});
+  }catch(error){notify(error.message);}
 }
 async function setPanel(name, options = {}) {
-  if(name!=='profiles')pendingShortcut=null;
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
   if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;}}
   panel = name; renderPanel();
@@ -598,7 +606,7 @@ function renderPanel() {
   const titles = {tabs:'Вкладки', profiles: 'Устройство для сайта', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', about: 'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
-  if (panel === 'profiles') {if(pendingShortcut)$('sheet-title').textContent='Устройство для '+pendingShortcut.app.name;renderProfiles();}
+  if (panel === 'profiles') renderProfiles();
   else if(panel==='pin')renderPIN();
   else if (panel === 'folder') { renderFolder(); if(!wasFolder) requestAnimationFrame(()=>animateFolder(true)); }
   else if (panel === 'settings') renderSettings();
@@ -613,7 +621,6 @@ function renderPanel() {
 }
 function renderProfiles() {
   $('sheet-content').innerHTML = `<label class="model-search">${icon('search')}<input id="model-filter" placeholder="Найти модель" aria-label="Найти модель"></label><div class="family-tabs" id="families"></div><div class="model-list" id="models"></div><p class="sheet-note">Размер и кнопки ATMA не меняются. У профилей отдельные cookies и входы в сайты. На iOS меняются User-Agent и мобильный или настольный режим сайта. Движок и экран остаются реальными.</p>`;
-  if(pendingShortcut)$('sheet-content').querySelector('.sheet-note').textContent='Выберите устройство для этого ярлыка. Оно сохранится и не будет зависеть от модели, выбранной в браузере.';
   for (const group of ['Все', 'iPhone', 'iPad', 'Android', 'Компьютер']) {
     const button = document.createElement('button'); button.textContent = group; button.classList.toggle('active', family === group);
     button.addEventListener('click', () => { family = group; renderProfiles(); }); $('families').append(button);
@@ -638,13 +645,6 @@ function renderProfiles() {
 }
 async function changeProfile(profileId) {
   if (busy) return;
-  if(pendingShortcut){
-    const target=pendingShortcut;busy=true;target.app.profileId=profileId;
-    try{await saveApps(target.scope);pendingShortcut=null;await launchShortcut(target.app,target.scope);}
-    catch(error){delete target.app.profileId;notify(error.message);}
-    finally{busy=false;}
-    return;
-  }
   busy = true; if (panel === 'profiles') renderProfiles();
   try { await action('profile', { profileId }); } catch {}
   finally { busy = false; if (state) consume(state); if (panel === 'profiles') renderProfiles(); }
@@ -856,7 +856,6 @@ async function finishVaultUnlock() {
 function lockVault() {
   if(!vaultKey)return;
   vaultKey=null;vaultApps=[];clearTimeout(vaultIdleTimer);
-  if(pendingShortcut?.scope==='private'){pendingShortcut=null;setPanel(null,{immediate:true});}
   if(gesture?.scope==='private'){clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);gesture.ghost?.remove();gesture=null;}
   if((panel==='folder'&&folderScope==='private')||(panel==='edit'&&editorScope==='private')||(panel==='add'&&editorScope==='private'))setPanel(null,{immediate:true});
   renderApps();

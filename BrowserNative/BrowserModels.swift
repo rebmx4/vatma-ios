@@ -86,6 +86,12 @@ final class BrowserModel {
         }
     }
 
+    var storedProfileIDs: [String] {
+        profiles.compactMap { $0["id"] as? String }.filter {
+            stores[$0] != nil || defaults.string(forKey: "atma.native.store." + $0).flatMap(UUID.init(uuidString:)) != nil
+        }
+    }
+
     func store(for profileId: String) -> WKWebsiteDataStore {
         if let existing = stores[profileId] { return existing }
         let key = "atma.native.store." + profileId

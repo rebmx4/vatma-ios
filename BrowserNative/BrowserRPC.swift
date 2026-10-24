@@ -39,6 +39,15 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "media/background":
             guard let enabled = body["enabled"] as? Bool else { throw BrowserFailure.invalid("Supply enabled:true or false.") }
             media.setBackground(enabled); reply(media.state, nil); return
+        case "shortcut-profile":
+            let address = try string("url", body)
+            _ = try AddressResolver.validated(address)
+            Task { @MainActor [weak self] in
+                guard let self else { reply(nil, "Browser closed."); return }
+                do { reply(["profileId": try await self.model.shortcutProfile(for: address)], nil) }
+                catch { reply(nil, error.localizedDescription) }
+            }
+            return
         case "open":
             guard body["profileId"] == nil || body["profileId"] is String,
                   body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Invalid site presentation or profile.") }
@@ -46,8 +55,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "chrome":
             guard mode == "browse", let collapsed = body["collapsed"] as? Bool else { throw BrowserFailure.invalid("Open a site and supply collapsed:true or false.") }
             view.endEditing(true)
-            if webApp { model.tabs[model.activeIndex].appControlsCollapsed = collapsed }
-            else { deviceRowCollapsed = collapsed }
+            if !webApp { deviceRowCollapsed = collapsed }
             changed()
         case "home": view.endEditing(true); mode = "home"; panel = nil; changed()
         case "panel":

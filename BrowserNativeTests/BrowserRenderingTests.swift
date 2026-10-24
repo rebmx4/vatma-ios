@@ -70,6 +70,28 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(paused, false, "The browser must not enqueue a second page pause from an audio-session notice")
     }
 
+    func testUnrequestedVideoDoesNotStartAndExplicitPlayStillWorks() async throws {
+        let url = try await startFixture(video: true)
+        try controller.open(url.appendingPathComponent("video").absoluteString)
+        let page = try XCTUnwrap(controller.currentRenderer)
+        try await waitFor("document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
+        _ = try await script("await document.querySelector('video').play().catch(()=>{}); return true;", in: page)
+        let paused = try await script("return document.querySelector('video').paused;", in: page) as? Bool
+        XCTAssertEqual(paused, true, "The site must not start audio without a playback request")
+        _ = try await script("await window.__atmaMediaPage.command({type:'play'}); return true;", in: page)
+        try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
+    }
+
+    func testLeavingAnInlineVideoStopsItAndRejectsAnAutomaticRestart() async throws {
+        let page = try await openVideo()
+        try await waitForUI()
+        _ = try await rpc("home")
+        try await waitFor("document.querySelector('video').paused", in: page)
+        _ = try await script("await document.querySelector('video').play().catch(()=>{}); return true;", in: page)
+        let paused = try await script("return document.querySelector('video').paused;", in: page) as? Bool
+        XCTAssertEqual(paused, true, "A hidden website must not undo the browser's pause")
+    }
+
     func testOverviewShowsBothVisitedPagesInsteadOfSnapshotsOfHiddenRenderers() async throws {
         let url = try await startFixture(video: false)
         try await waitForUI()
@@ -97,7 +119,7 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(preserved, true, "Native state reports must preserve the displayed tab card")
     }
 
-    func testShortcutKeepsItsProfileAndExpandsWithoutReloadingTheWebsite() async throws {
+    func testShortcutKeepsItsProfileAndCompactToolbarWithoutReloadingTheWebsite() async throws {
         let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
         try await waitForUI()
         let pinned = try XCTUnwrap(controller.model.profiles.compactMap { $0["id"] as? String }.first { $0 != BrowserModel.actualProfile })
@@ -106,18 +128,18 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitForPaint(in: page, color: "rgb(220, 38, 40)")
         XCTAssertEqual(controller.model.active.profileId, pinned)
         XCTAssertTrue(page.configuration.websiteDataStore === controller.model.store(for: pinned))
-        try await waitFor("document.body.dataset.webApp==='true' && document.body.dataset.controlsCollapsed==='true'", in: controller.ui)
+        try await waitFor("document.body.dataset.webApp==='true' && document.body.dataset.controlsCollapsed==='false' && document.getElementById('address').getBoundingClientRect().height>0", in: controller.ui)
         controller.view.layoutIfNeeded()
         let compactHeight = controller.ui.frame.height
         XCTAssertLessThan(compactHeight, 90)
         _ = try await script("window.__retainedPage='same document'; return true;", in: page)
-        _ = try await rpc("chrome", body: ["collapsed": false])
+        _ = try await rpc("chrome", body: ["collapsed": true])
         try await waitFor("document.body.dataset.controlsCollapsed==='false' && document.getElementById('address').getBoundingClientRect().height>0 && getComputedStyle(document.querySelector('.device-row')).display==='none'", in: controller.ui)
         controller.view.layoutIfNeeded()
-        XCTAssertGreaterThan(controller.ui.frame.height, compactHeight)
+        XCTAssertEqual(controller.ui.frame.height, compactHeight, accuracy: 1, "Saved apps must always retain their thin address toolbar")
         XCTAssertTrue(controller.currentRenderer === page)
         let marker = try await script("return window.__retainedPage;", in: page) as? String
-        XCTAssertEqual(marker, "same document", "Expanding the toolbar must not reload or replace the website")
+        XCTAssertEqual(marker, "same document", "Chrome actions must not reload or replace the website")
         let homeAtRight = try await script("return document.getElementById('go-home').getBoundingClientRect().left > document.getElementById('address-form').getBoundingClientRect().right;", in: controller.ui) as? Bool
         XCTAssertEqual(homeAtRight, true)
         _ = try await rpc("home")
@@ -180,7 +202,7 @@ final class BrowserRenderingTests: XCTestCase {
         try controller.open(url.appendingPathComponent("video").absoluteString)
         let page = try XCTUnwrap(controller.currentRenderer)
         try await waitFor("document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
-        _ = try await script("await document.querySelector('video').play(); return true;", in: page)
+        _ = try await script("await window.__atmaMediaPage.command({type:'play'}); return true;", in: page)
         try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
         XCTAssertEqual(controller.media.state["available"] as? Bool, true, "The real production media bridge must own the playing page")
         return page
