@@ -27,7 +27,14 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         return value
     }
 
-    override init() { super.init(); installRemoteControls(); observeAudioLifecycle() }
+    override init() {
+        super.init()
+        // Configure before any site starts playing. WebKit owns activation and
+        // interruptions of its player; passive state reports must not take over.
+        do { try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) }
+        catch { snapshot["error"] = error.localizedDescription }
+        installRemoteControls(); observeAudioLifecycle()
+    }
 
     func register(_ view: WKWebView, tabID: String) {
         bindings[ObjectIdentifier(view)] = Binding(view, tabID)
@@ -80,7 +87,6 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         let command = try BrowserMediaPolicy.command(body)
         guard let view = owner else { throw BrowserFailure.invalid("Open a video and activate the player first.") }
         let version = generation
-        if command["type"] as? String == "play" { try activateAudio() }
         view.callAsyncJavaScript("return await window.__atmaMediaPage.command(command);", arguments: ["command": command], in: nil, in: .page) { [weak self, weak view] result in
             guard let self, let view, self.owner === view, self.generation == version else { reply(nil, "Media page changed during the command."); return }
             switch result {
@@ -108,11 +114,6 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
                 try? self.command(["type": "pause"]) { _, _ in }
             }
         })
-        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
-            let began = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
-            guard began else { return }
-            Task { @MainActor in try? self?.command(["type": "pause"]) { _, _ in } }
-        })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
             let disconnected = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue
             guard disconnected else { return }
@@ -127,14 +128,7 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
             generation += 1; owner = view
         }
         snapshot = value
-        if value["paused"] as? Bool == false { do { try activateAudio() } catch { snapshot["error"] = error.localizedDescription } }
         updateRemote(); didChange?()
-    }
-
-    private func activateAudio() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .moviePlayback)
-        try session.setActive(true)
     }
 
     private func updateRemote() {
@@ -142,7 +136,7 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         for command in [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.skipForwardCommand, center.skipBackwardCommand, center.changePlaybackPositionCommand] { command.isEnabled = available }
         guard available else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation); return
+            return
         }
         var info: [String: Any] = [MPMediaItemPropertyTitle: snapshot["title"] as? String ?? "ATMA",
                                   MPNowPlayingInfoPropertyElapsedPlaybackTime: snapshot["currentTime"] as? Double ?? 0,
