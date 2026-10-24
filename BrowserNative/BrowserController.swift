@@ -27,6 +27,8 @@ final class BrowserController: UIViewController {
         return controller
     }()
     private let browserViewport = UIView()
+    private var keyboardBottomConstraint: NSLayoutConstraint!
+    private var windowBottomConstraint: NSLayoutConstraint!
     var ui: WKWebView!
     var renderers: [String: WKWebView] = [:]
     var windowOpeners: [String: String] = [:]
@@ -68,12 +70,17 @@ final class BrowserController: UIViewController {
         view.addSubview(browserViewport)
         view.keyboardLayoutGuide.usesBottomSafeArea = false
         let safe = view.safeAreaLayoutGuide
+        keyboardBottomConstraint = browserViewport.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+        windowBottomConstraint = browserViewport.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([
             browserViewport.topAnchor.constraint(equalTo: safe.topAnchor),
             browserViewport.leadingAnchor.constraint(equalTo: safe.leadingAnchor),
             browserViewport.trailingAnchor.constraint(equalTo: safe.trailingAnchor),
-            browserViewport.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+            windowBottomConstraint
         ])
+        for name in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillHideNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardPresentationChanged(_:)), name: name, object: nil)
+        }
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         if LocalUIServer.diagnosticsEnabled {
@@ -116,6 +123,28 @@ final class BrowserController: UIViewController {
         }
         if LocalUIServer.diagnosticsEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportPageDiagnostics("15 seconds") }
+        }
+    }
+
+    @objc private func keyboardPresentationChanged(_ notification: Notification) {
+        guard view.window != nil, notification.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool != false else { return }
+        let visible = notification.name == UIResponder.keyboardWillShowNotification
+        if LocalUIServer.diagnosticsEnabled { LocalUIServer.diagnostic("Keyboard presentation: visible=\(visible)") }
+        guard keyboardBottomConstraint.isActive != visible else { return }
+        view.layoutIfNeeded()
+        // The keyboard guide can retain an accessory-height inset after dismissal.
+        // Track the guide only while the system keyboard is presented.
+        if visible {
+            windowBottomConstraint.isActive = false
+            keyboardBottomConstraint.isActive = true
+        } else {
+            keyboardBottomConstraint.isActive = false
+            windowBottomConstraint.isActive = true
+        }
+        let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0
+        let curve = notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 0
+        UIView.animate(withDuration: duration, delay: 0, options: [UIView.AnimationOptions(rawValue: curve << 16), .beginFromCurrentState, .allowUserInteraction]) {
+            self.view.layoutIfNeeded()
         }
     }
 
