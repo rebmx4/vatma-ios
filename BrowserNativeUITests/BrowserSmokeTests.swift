@@ -63,7 +63,8 @@ final class BrowserSmokeTests: XCTestCase {
         address.typeText(websiteURL)
         var observedAddress: String?
         let enteredAddress = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            observedAddress = self.app.textFields.firstMatch.value as? String
+            guard let snapshot = try? self.app.snapshot() else { return false }
+            observedAddress = self.snapshots(in: snapshot).first { $0.elementType == .textField }?.value as? String
             return observedAddress == websiteURL
         }, object: nil)
         let entryResult = XCTWaiter.wait(for: [enteredAddress], timeout: 20)
@@ -104,25 +105,36 @@ final class BrowserSmokeTests: XCTestCase {
     private func assertAddressControlsAboveKeyboard() {
         var lastObservation = "Not evaluated"
         let visible = NSPredicate { _, _ in
-            // Rotation can replace WebKit accessibility elements. Resolve a
-            // fresh query for each poll instead of retaining the earlier match.
-            let keyboard = self.app.keyboards.firstMatch
-            let accessory = self.app.toolbars.matching(identifier: "Toolbar").firstMatch
-            let ui = self.app.webViews.matching(identifier: "atma.ui").firstMatch
-            let address = self.app.textFields.firstMatch
-            let go = self.button(["Перейти", "Go"])
-            let present = [keyboard.exists, ui.exists, address.exists, go.exists]
-            lastObservation = "Present keyboard/UI/address/Go: \(present)"
-            guard present.allSatisfy({ $0 }) else { return false }
-            let bounds = ui.frame
-            let keyboardTop = min(keyboard.frame.minY, accessory.exists ? accessory.frame.minY : keyboard.frame.minY)
-            let bottom = min(bounds.maxY, keyboardTop)
-            let controls = [address, go].map { ($0.frame, $0.isHittable) }
-            lastObservation = "UI=\(bounds), keyboardTop=\(keyboardTop), address=\(controls[0]), Go=\(controls[1])"
-            return controls.allSatisfy { control in
-                let frame = control.0
-                return frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
-                    && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX && control.1
+            do {
+                // Read all frames from one full accessibility snapshot. Separate
+                // firstMatch attribute requests returned zero frames after iPad
+                // rotation while the full hierarchy and recording were correct.
+                let elements = self.snapshots(in: try self.app.snapshot())
+                guard let keyboard = elements.first(where: { $0.elementType == .keyboard }),
+                      let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else {
+                    lastObservation = "Keyboard or bundled UI absent from snapshot"
+                    return false
+                }
+                let controls = self.snapshots(in: ui)
+                guard let address = controls.first(where: { $0.elementType == .textField }),
+                      let go = controls.first(where: { $0.elementType == .button && ["Перейти", "Go"].contains($0.label) }) else {
+                    lastObservation = "Address or Go absent from bundled UI snapshot"
+                    return false
+                }
+                let accessory = elements.first { $0.elementType == .toolbar && $0.identifier == "Toolbar" }
+                let bounds = ui.frame
+                let keyboardTop = min(keyboard.frame.minY, accessory?.frame.minY ?? keyboard.frame.minY)
+                let bottom = min(bounds.maxY, keyboardTop)
+                let frames = [address.frame, go.frame]
+                let hittable = [self.app.textFields.firstMatch.isHittable, self.button(["Перейти", "Go"]).isHittable]
+                lastObservation = "UI=\(bounds), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
+                return frames.allSatisfy { frame in
+                    frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
+                        && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX
+                } && hittable.allSatisfy { $0 }
+            } catch {
+                lastObservation = "Accessibility snapshot failed: \(error)"
+                return false
             }
         }
         let ready = XCTNSPredicateExpectation(predicate: visible, object: nil)
@@ -137,6 +149,10 @@ final class BrowserSmokeTests: XCTestCase {
         }
         XCTAssertEqual(result, .completed,
                        "The address field and Go button must stay above the keyboard and its accessory bar: \(lastObservation)")
+    }
+
+    private func snapshots(in root: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+        [root] + root.children.flatMap { snapshots(in: $0) }
     }
 
     private func rotate(_ orientation: UIDeviceOrientation, landscape: Bool) {

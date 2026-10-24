@@ -50,3 +50,8 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 
 - Run 40048326485: iPhone entire suite passed (UI 141.467 s); iPad geometry checks passed in both orientations but immediate post-typeText value read returned h. Video frame out/native-40048326485/ipad-input-97s.png shows the full exact URL already present by the failure time. Input handlers do not truncate text.
 - Ruling: poll a fresh accessibility query for the exact full URL for up to 20 seconds instead of comparing an immediate cached value after synthetic typing — actual recording confirms complete input while the earlier snapshot was partial — an actual wrong/missing URL still fails and blocks signing. Production input code is unchanged.
+
+- Current run after exact-address synchronization: https://github.com/rebmx4/vatma-ios/actions/runs/40050119695, job 120740709257, exact source 2e46d7cea91e7ebbf1d210b47cfdd2397f4d0897. Dispatched 2026-10-24 01:30:37 UTC. Signing/upload of the repair has not started; build 9 is still the latest uploaded build.
+
+- Run 40050119695: host regression, 24 native tests and iPhone UI (140.475 s) passed. iPad landscape failed with per-query address/Go frames (0,0,0,0), although its full hierarchy immediately afterward reports address (440,398,488,51), Go (937,409,29,29), UI (0,32,1376,502), keyboard y=589. Failure screenshot confirms visible controls above the keyboard.
+- Ruling: use the public XCUIElement.snapshot() API to read geometry and input values from a coherent full accessibility snapshot; retain all bounds, hittability, exact URL and real navigation requirements. No speculative production layout change. Snapshot errors and wrong geometry still fail the required run.
