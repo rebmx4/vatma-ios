@@ -71,7 +71,6 @@ let vaultKey=null, vaultApps=[], vaultWrite=Promise.resolve(), vaultIdleTimer, p
 let pinDigits='',firstPin=null,pinBusy=false,pinEpoch=0,pendingVaultMove=null,pendingVaultAdd=false,autoLockAfter=0;
 let filePreviewUrl=null;
 let disposeMediaPanel;
-let tabsSignature='';
 const desktopSurfaceKey=`atma-preview-desktop-tab:${context}`;
 let desktopTabId=null;try{desktopTabId=sessionStorage.getItem(desktopSurfaceKey);}catch{}
 const poolFor=scope=>scope==='private'?vaultApps:apps;
@@ -257,7 +256,7 @@ function consume(next) {
   if(previousMode!==next.mode)renderApps();
   const count=next.tabs?.length||0,button=$('tabs-button');
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
-  if(panel==='tabs'&&tabsSignature!==JSON.stringify([next.activeTabId,next.tabs]))renderTabs();
+  if(panel==='tabs')renderTabs();
   updateQuickAdd();
 }
 async function newBrowserTab(){
@@ -268,7 +267,6 @@ async function selectBrowserTab(tabId){
  try{await action('tabs/select',{tabId});chooseDesktopSurface(null);if(!state.url)$('address').value='';}catch{}
 }
 function renderTabs(){
- tabsSignature=JSON.stringify([state?.activeTabId,state?.tabs]);
  renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
 }
 function saveApps(scope='public') {
