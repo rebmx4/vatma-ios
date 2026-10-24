@@ -18,20 +18,20 @@
 ## Tasks
 ### Task 1: Playback intent and hidden-player lifecycle
 Files: BrowserUI/assets/site-media.js, BrowserNative/BrowserMediaController.swift, BrowserNative/BrowserController.swift, tests/site-media.test.mjs, BrowserNativeTests/BrowserRenderingTests.swift.
-- [ ] Reproduce autoplay, hidden renderer and PiP-exit resume in executable adapter tests.
-- [ ] Track explicit play intent; pause/revoke on hidden presentation exit and reject automatic restarts.
-- [ ] Feed renderer visibility and screen-lock state from native lifecycle. Keep AVAudioSession playback category and intentional lock/background playback.
-- [ ] Verify targeted JavaScript and actual WebKit fixture playback.
+- [x] Reproduce autoplay, hidden renderer and PiP-exit resume in executable adapter tests.
+- [x] Track explicit play intent; pause/revoke on hidden presentation exit and reject automatic restarts.
+- [x] Feed renderer visibility and screen-lock state from native lifecycle. Keep AVAudioSession playback category and intentional lock/background playback.
+- [x] Verify targeted JavaScript and actual WebKit fixture playback.
 ### Task 2: Saved profiles and compact toolbar
 Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserModels.swift, BrowserNative/BrowserRPC.swift, BrowserNative/BrowserController.swift, BrowserUI/app.js, BrowserUI/index.html, BrowserUI/app.css; existing native rendering/UI tests.
-- [ ] Resolve unbound legacy shortcuts against existing profile stores and matching site tabs; persist the chosen profile before launch. No launch chooser.
-- [ ] Keep pinned profiles and cookies independent of the normal browser's model choice.
-- [ ] Remove bottom media and app-collapse buttons and JavaScript references. Saved app always has Back, Forward, Address/Reload, ATMA Home at right; normal device-row collapse remains.
-- [ ] Verify real quick-add/legacy launch/cookies and iPhone/iPad physical-bottom toolbar.
+- [x] Resolve unbound legacy shortcuts against existing profile stores and matching site tabs; persist the chosen profile before launch. No launch chooser.
+- [x] Keep pinned profiles and cookies independent of the normal browser's model choice.
+- [x] Remove bottom media and app-collapse buttons and JavaScript references. Saved app always has Back, Forward, Address/Reload, ATMA Home at right; normal device-row collapse remains.
+- [x] Verify real quick-add/legacy launch/cookies and iPhone/iPad physical-bottom toolbar.
 ### Task 3: Notification feasibility and delivery
-- [ ] Confirm supported notification delivery for requested sites. Apple DTS says Web Push is unavailable in WKWebView; native APNs needs an event source. Await concrete sites; do not ship a decorative enable switch.
-- [ ] Run existing Python/JS/static checks, fresh review of complete diff, full native gate.
-- [ ] Only after exact-source native gate passes: sign, validate IPA and deliver to existing internal TestFlight Test. Record any unsupported notification scope and device-only validation remaining.
+- [x] Notification feasibility assessed: Web Push is unavailable in WKWebView; native APNs needs a website event source. Delivery and badges are not implemented. Concrete priority sites remain unspecified; no decorative enable switch shipped.
+- [x] Run existing Python/JS/static checks, fresh review of complete diff, full native gate.
+- [x] Only after exact-source native gate passes: sign, validate IPA and deliver to existing internal TestFlight Test. Record any unsupported notification scope and device-only validation remaining.
 
 ## Review focus
 - Paused/closed PiP must not restart while hidden; explicit Play must restore it.
@@ -75,3 +75,9 @@ Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserM
 - First review of the newly added icon scope (67cc840) found no Critical and two Important: failed lookups cached permanently, and current-site could merge the preceding document's URL during navigation. Both fixed; JS regressions were observed RED→GREEN. Shared loader now applies a10-second error backoff and clears failed entries on a real online event; successful/in-flight lookups remain shared. Native current-site verifies loaded tab, active renderer, current URL and returned document URL. Quick-add waits while loading. Additional persistent tests cover late private lock/reopen and folder-miniature restoration; no repeated review of the fix pass.
 - 67cc840 gate40099536509 failed before website scenarios: XCTest timed out setting iPad orientation (BrowserSmokeTests.swift:273), not a compiler/icon failure. Existing orientation requirements retained. Final gate uses the new icon fixes and explicit loaded-document waits.
 - Local final fix pass:44 JavaScript tests and static268-file validation pass. Python23 checks unchanged/passed. Native slow-navigation rejection and folder-miniature recovery pending the new gate.
+
+
+## Release verification — 2026-10-24
+- Final source 7b019ea298b01d4ad1a25dddfde6fa9495983d9b: native gate 40101298503 SUCCESS. All 40 native tests and both iPhone/iPad UI smoke scenarios passed. The slow-navigation rejection and folder-miniature repair cases passed. Exact verified-commit marker and local gate matched.
+- Signed run 40103146068 SUCCESS. Build 1.0.0 (12) uploaded with no errors. Artifact 12564150292; all 34 bundled UI/certificate resources match the exact source locally; codesign checked on macOS. Apple upload COMPLETE, no warnings/errors. Build 2194a510-c5c1-4dd0-ab33-2972f5e5232f VALID and available in internal Test group (IN_BETA_TESTING); Russian notes saved and verified. Physical-device retest remains pending.
+- Physical-device YouTube/RUTUBE/PiP/lock checks and a concrete notification integration remain outside the confirmed simulator result.
