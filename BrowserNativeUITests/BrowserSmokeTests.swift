@@ -99,9 +99,11 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(heading.waitForExistence(timeout: 60), "The independent site renderer must load HTTPS content")
         screenshot("website")
         button(["Свернуть выбор устройства"]).tap()
+        assertDeviceRowGeometry(collapsed: true)
         XCTAssertTrue(address.isHittable, "Hiding the device row must preserve address entry")
         screenshot("website-device-row-hidden")
         button(["Показать выбор устройства"]).tap()
+        assertDeviceRowGeometry(collapsed: false)
         XCTAssertTrue(button(["Выбрать устройство"]).isHittable)
 
         address.tap()
@@ -147,6 +149,35 @@ final class BrowserSmokeTests: XCTestCase {
 
     private var siteRenderers: XCUIElementQuery {
         app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site."))
+    }
+
+    private func assertDeviceRowGeometry(collapsed: Bool) {
+        var observation = "Not evaluated"
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let snapshot = try? self.app.snapshot() else { return false }
+            let elements = self.snapshots(in: snapshot)
+            guard let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else { return false }
+            let controls = self.snapshots(in: ui)
+            let label = collapsed ? "Показать выбор устройства" : "Свернуть выбор устройства"
+            guard let toggle = controls.first(where: { $0.elementType == .button && $0.label == label }) else { return false }
+            let picker = controls.first { $0.elementType == .button && $0.label == "Выбрать устройство" }
+            let offset = toggle.frame.midY - ui.frame.minY
+            observation = "collapsed=\(collapsed), ui=\(ui.frame), toggle=\(toggle.frame), offset=\(offset), picker=\(String(describing: picker?.frame))"
+            // WebKit may update the label before its accessibility coordinates
+            // catch up with the resized native view. Do not tap a stale point:
+            // the recorded failure hit Settings 38pt below the visible arrow.
+            return abs(ui.frame.height - (collapsed ? 128 : 166)) < 2
+                && offset >= 0 && offset < 45
+                && toggle.frame.width > 0 && toggle.frame.height > 0
+                && (collapsed || (picker?.frame.height ?? 0) > 0)
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [ready], timeout: 10)
+        if result != .completed {
+            screenshot("device-row-geometry-failure")
+            let details = XCTAttachment(string: observation + "\n" + app.debugDescription)
+            details.name = "device-row-geometry-failure"; details.lifetime = .keepAlways; add(details)
+        }
+        XCTAssertEqual(result, .completed, "Device row must settle before its next tap: \(observation)")
     }
 
     private func assertAddressControlsAboveKeyboard() {
