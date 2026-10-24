@@ -11,13 +11,18 @@ struct TabPreview {
 @MainActor
 final class TabPreviewCapture {
     var completions: [() -> Void] = []
+    func finish() {
+        let callbacks = completions
+        completions.removeAll()
+        callbacks.forEach { $0() }
+    }
 }
 
 extension BrowserController {
     func invalidatePreview(for id: String) {
         tabPreviews.removeValue(forKey: id)
         let pending = previewCaptures.removeValue(forKey: id)
-        pending?.completions.forEach { $0() }
+        pending?.finish()
     }
 
     func captureCurrentPreview(completion: @escaping () -> Void) {
@@ -29,11 +34,18 @@ extension BrowserController {
         if let pending = previewCaptures[id] { pending.completions.append(completion); return }
         let pending = TabPreviewCapture(); pending.completions.append(completion)
         previewCaptures[id] = pending
+        let finish = { [weak self] in
+            guard let self, self.previewCaptures[id] === pending else { return }
+            self.previewCaptures.removeValue(forKey: id)
+            pending.finish()
+        }
+        // WebKit snapshots are optional. A missing callback must never hold
+        // Home, tab switching or panel presentation indefinitely.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: finish)
         let config = WKSnapshotConfiguration(); config.snapshotWidth = NSNumber(value: 280)
         // Capture the visible renderer before a tab/panel transition hides it.
         page.takeSnapshot(with: config) { [weak self, weak page] image, _ in
             guard let self, self.previewCaptures[id] === pending else { return }
-            self.previewCaptures.removeValue(forKey: id)
             if let page, self.renderers[id] === page, page.url == url,
                self.model.tabs.contains(where: { $0.id == id && $0.url == url.absoluteString }), let image {
                 let width = min(280, image.size.width)
@@ -47,7 +59,7 @@ extension BrowserController {
                     }
                 }
             }
-            pending.completions.forEach { $0() }
+            finish()
         }
     }
 }
