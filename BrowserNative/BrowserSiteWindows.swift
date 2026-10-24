@@ -15,13 +15,20 @@ extension BrowserController {
         tab.webApp = opener.webApp
         tab.appControlsCollapsed = opener.appControlsCollapsed
         model.tabs.append(tab)
-        model.activeTabId = tab.id
         windowOpeners[tab.id] = opener.id
-        mode = "browse"; panel = nil; nativeError = nil
+        let selectedBefore = model.activeTabId
         let window = renderer(for: tab, configuration: configuration)
+        window.isHidden = true
+        captureCurrentPreview { [weak self, weak window] in
+            guard let self, let window, self.renderers[tab.id] === window,
+                  self.model.activeTabId == selectedBefore,
+                  self.model.tabs.contains(where: { $0.id == tab.id }) else { return }
+            self.model.activeTabId = tab.id
+            self.mode = "browse"; self.panel = nil; self.nativeError = nil
+            self.changed()
+        }
         // WebKit loads the original request itself, preserving POST bodies and window.opener.
         // Calling load() here would issue a second request and break that relationship.
-        changed()
         return window
     }
 }

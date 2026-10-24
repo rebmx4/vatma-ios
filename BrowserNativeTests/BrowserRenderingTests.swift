@@ -80,7 +80,9 @@ final class BrowserRenderingTests: XCTestCase {
         try controller.open(url.appendingPathComponent("blue").absoluteString)
         let blueID = controller.model.activeTabId
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(30, 70, 220)")
-        _ = try await rpc("panel", body: ["panel": "tabs"])
+        // Use the production button path: renderTabs requests previews before
+        // setPanel sends its native panel RPC.
+        _ = try await script("document.getElementById('tabs-button').click(); return true;", in: controller.ui)
         try await waitFor("document.querySelectorAll('.tab-shot').length===2 && [...document.querySelectorAll('.tab-shot')].every(image=>image.complete && image.naturalWidth>0)", in: controller.ui)
         let imagesValue = try await script("return Object.fromEntries([...document.querySelectorAll('.tab-card')].map(card=>[card.dataset.tabId,card.querySelector('.tab-shot')?.src]));", in: controller.ui)
         let images = try XCTUnwrap(imagesValue as? [String: String])
@@ -142,6 +144,33 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertTrue(controller.currentRenderer === page)
         _ = try await rpc("chrome", body: ["collapsed": false])
         try await waitFor("document.getElementById('device-picker').getBoundingClientRect().height>0", in: controller.ui)
+        _ = try await script("window.__modeChanges=[]; window.__modeObserver=new MutationObserver(()=>window.__modeChanges.push(document.body.dataset.mode)); window.__modeObserver.observe(document.body,{attributes:true,attributeFilter:['data-mode']}); document.getElementById('pin-site').click(); return true;", in: controller.ui)
+        try await waitFor("document.getElementById('pin-site').dataset.saved==='true'", in: controller.ui)
+        let stableMode = try await script("window.__modeObserver.disconnect(); return document.body.dataset.mode==='browse' && window.__modeChanges.every(mode=>mode==='browse');", in: controller.ui) as? Bool
+        XCTAssertEqual(stableMode, true, "Quick-add metadata is not a full native state and must not replace it")
+        let savedProfile = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.profileId;", in: controller.ui, arguments: ["url": url]) as? String
+        XCTAssertEqual(savedProfile, controller.model.active.profileId)
+    }
+
+    func testPopupTransitionCapturesItsVisibleOpener() async throws {
+        let url = try await startFixture(video: false)
+        try await waitForUI()
+        try controller.open(url.appendingPathComponent("red").absoluteString)
+        let openerID = controller.model.activeTabId
+        let opener = try XCTUnwrap(controller.currentRenderer)
+        try await waitForPaint(in: opener, color: "rgb(220, 38, 40)")
+        let popup = try controller.createSiteWindow(from: opener, configuration: WKWebViewConfiguration(), url: url.appendingPathComponent("blue"))
+        let deadline = Date().addingTimeInterval(5)
+        while controller.currentRenderer !== popup && Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
+        XCTAssertTrue(controller.currentRenderer === popup)
+        popup.load(URLRequest(url: url.appendingPathComponent("blue")))
+        try await waitForPaint(in: popup, color: "rgb(30, 70, 220)")
+        _ = try await script("document.getElementById('tabs-button').click(); return true;", in: controller.ui)
+        try await waitFor("document.querySelectorAll('.tab-shot').length===2 && [...document.querySelectorAll('.tab-shot')].every(image=>image.complete && image.naturalWidth>0)", in: controller.ui)
+        let imagesValue = try await script("return Object.fromEntries([...document.querySelectorAll('.tab-card')].map(card=>[card.dataset.tabId,card.querySelector('.tab-shot')?.src]));", in: controller.ui)
+        let images = try XCTUnwrap(imagesValue as? [String: String])
+        let red = try averageRGB(try XCTUnwrap(images[openerID]))
+        XCTAssertGreaterThan(red[0], 150); XCTAssertLessThan(red[1], 110)
     }
 
     private func openVideo() async throws -> WKWebView {

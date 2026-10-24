@@ -214,7 +214,7 @@ async function saveCurrentSite() {
   if(pinSiteBusy||state?.mode!=='browse')return;
   pinSiteBusy=true;updateQuickAdd();
   try{
-    const site=await action('current-site'),url=normalizedSiteUrl(site.url);
+    const site=await api('current-site'),url=normalizedSiteUrl(site.url);
     if(!url)throw new Error('Не удалось получить адрес сайта');
     if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
     const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,profileId:site.profileId||state.profileId,iconUrl:site.iconUrl,color:'#337b96',custom:true};
@@ -608,6 +608,7 @@ function renderPanel() {
 }
 function renderProfiles() {
   $('sheet-content').innerHTML = `<label class="model-search">${icon('search')}<input id="model-filter" placeholder="Найти модель" aria-label="Найти модель"></label><div class="family-tabs" id="families"></div><div class="model-list" id="models"></div><p class="sheet-note">Размер и кнопки ATMA не меняются. У профилей отдельные cookies и входы в сайты. На iOS меняются User-Agent и мобильный или настольный режим сайта. Движок и экран остаются реальными.</p>`;
+  if(pendingShortcut)$('sheet-content').querySelector('.sheet-note').textContent='Выберите устройство для этого ярлыка. Оно сохранится и не будет зависеть от модели, выбранной в браузере.';
   for (const group of ['Все', 'iPhone', 'iPad', 'Android', 'Компьютер']) {
     const button = document.createElement('button'); button.textContent = group; button.classList.toggle('active', family === group);
     button.addEventListener('click', () => { family = group; renderProfiles(); }); $('families').append(button);
@@ -850,6 +851,7 @@ async function finishVaultUnlock() {
 function lockVault() {
   if(!vaultKey)return;
   vaultKey=null;vaultApps=[];clearTimeout(vaultIdleTimer);
+  if(pendingShortcut?.scope==='private'){pendingShortcut=null;setPanel(null,{immediate:true});}
   if(gesture?.scope==='private'){clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);gesture.ghost?.remove();gesture=null;}
   if((panel==='folder'&&folderScope==='private')||(panel==='edit'&&editorScope==='private')||(panel==='add'&&editorScope==='private'))setPanel(null,{immediate:true});
   renderApps();

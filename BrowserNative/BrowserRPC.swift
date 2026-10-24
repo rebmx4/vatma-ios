@@ -115,11 +115,16 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
     }
 
     private func previews(_ reply: @escaping (Any?, String?) -> Void) {
-        let result = model.tabs.reduce(into: [String: String]()) { result, tab in
-            guard let preview = tabPreviews[tab.id], preview.url.absoluteString == tab.url,
-                  let renderer = renderers[tab.id], preview.renderer == ObjectIdentifier(renderer) else { return }
-            result[tab.id] = preview.source
+        // The UI may request previews before its panel RPC arrives. Join the
+        // current visible capture so the first overview receives the new image.
+        captureCurrentPreview { [weak self] in
+            guard let self else { reply(nil, "Browser closed."); return }
+            let result = self.model.tabs.reduce(into: [String: String]()) { result, tab in
+                guard let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
+                      let renderer = self.renderers[tab.id], preview.renderer == ObjectIdentifier(renderer) else { return }
+                result[tab.id] = preview.source
+            }
+            reply(["previews": result, "errors": [String: String]()], nil)
         }
-        reply(["previews": result, "errors": [String: String]()], nil)
     }
 }
