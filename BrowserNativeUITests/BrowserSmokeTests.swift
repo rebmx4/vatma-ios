@@ -51,9 +51,11 @@ final class BrowserSmokeTests: XCTestCase {
         let go = button(["Перейти", "Go"])
         assertAddressControlsAboveKeyboard(address, go: go)
         rotate(.landscapeLeft, landscape: true)
+        address.tap()
         assertAddressControlsAboveKeyboard(address, go: go)
         screenshot("blank-tab-landscape-keyboard")
         rotate(.portrait, landscape: false)
+        address.tap()
         assertAddressControlsAboveKeyboard(address, go: go)
         address.tap()
         address.typeText(websiteURL)
@@ -101,7 +103,15 @@ final class BrowserSmokeTests: XCTestCase {
             }
         }
         let ready = XCTNSPredicateExpectation(predicate: visible, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+        let result = XCTWaiter.wait(for: [ready], timeout: 5)
+        if result != .completed {
+            screenshot("address-keyboard-failure")
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "address-keyboard-failure-hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
+        XCTAssertEqual(result, .completed,
                        "The address field and Go button must stay above the keyboard and its accessory bar")
     }
 

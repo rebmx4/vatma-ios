@@ -4,7 +4,11 @@
 
 The owner explicitly authorized autonomous fixes and repeated standard GitHub Actions runs for the current ATMA browser build until delivery to TestFlight. This supersedes the earlier per-run confirmation requirement for this delivery. It does not authorize a public App Store review submission, paid runner upgrades, or changes to other applications.
 
-## Delivered
+## Physical-device startup failure after upload
+
+Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bundled UI index.html is missing.` on a physical iPhone. The IPA contains BrowserUI/index.html; canonical-path indexing is being repaired. Build 9 must not be treated as a successful physical-device startup. See `docs/superpowers/plans/2026-10-24-resource-path-fix.md` for the reproduced failure, repair and replacement build status.
+
+## Uploaded build 9
 
 - App: ATMA, App Store Connect ID `6774934498`, bundle `ru.atma.app`.
 - Version: **1.0.0 (9)**, minimum iOS 17.0, iPhone and iPad.

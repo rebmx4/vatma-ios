@@ -33,3 +33,10 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 - Final: Ruling: full Release simulator and host regression success remain mandatory before signing — no source-only conclusion substitutes for runtime results — failed checks block upload.
 - Final: Ruling: directory symlinks are explicitly included in the fixture after review — Foundation's documented non-recursion and containment guard are both retained — wrong enumeration assumptions would fail the fixture.
 - Final: Ruling: post-index filesystem mutation is outside this repair because the resource source is the signed immutable app bundle — no dynamic filesystem content is served — a different mutable resource source would need a new design.
+
+- GREEN host regression confirmed in CI 40045408456: `PASS: UI resources load through a container symlink; child symlinks remain excluded`. 20 Python checks, JavaScript suite and static validation passed in prepare.
+- Required Release iPhone/iPad run: https://github.com/rebmx4/vatma-ios/actions/runs/40045408456, exact source f5857fad5d3d1ee00d0a58bf4842eb6f472493ca. Still running; signing remains gated on its successful completion and artifact SHA.
+
+- Release run 40045408456: host alias regression PASS and native unit suite passed; UI failed after landscape rotation because Keyboard.exists became false. Video frame out/native-40045408456/rotation-release-45s.png confirms a closed keyboard, not an observed geometry violation.
+- Ruling: the geometry scenario explicitly taps the address field after each rotation to establish an open keyboard before asserting all existing bounds, hit-testing and exact typed URL checks — rotation focus persistence is not the contract of this geometry test — uninterrupted typing across rotation remains a separate behavior to assess on a physical device. No production UI code changed for this finding.
+- Added failure screenshot and accessibility hierarchy to the geometry assertion to diagnose any subsequent failure directly.
