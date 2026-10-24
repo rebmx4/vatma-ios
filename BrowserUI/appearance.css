@@ -15,7 +15,6 @@ body[data-theme] .address-form input::placeholder{color:var(--appearance-muted)}
 body[data-theme] .address-go{background:var(--appearance-control);color:var(--ink)}
 body[data-theme][data-mode=browse] .browser-bar{background:var(--appearance-chrome)}
 body[data-theme][data-mode=browse] :is(.nav-button,.step-device){color:var(--ink)}
-body[data-theme][data-mode=browse] .device-picker{background:var(--appearance-control);color:var(--ink)}
 body[data-theme][data-mode=browse] .home-indicator{background:var(--appearance-muted)}
 .file-text{font-size:calc(13px * var(--text-scale,1))}
 .home-button>svg{display:block;width:36px;height:36px}
@@ -51,7 +50,6 @@ body[data-theme][data-wallpaper=solid] .app-name{color:var(--ink);text-shadow:no
 body[data-theme] .browser-bar{background:var(--appearance-chrome)}
 body[data-theme][data-wallpaper=solid][data-mode=home] .browser-bar{background:var(--appearance-chrome)}
 body[data-theme] :is(.nav-button,.step-device){color:var(--ink)}
-body[data-theme] .device-picker{background:var(--appearance-control);color:var(--ink)}
 body[data-theme] .home-indicator{background:var(--appearance-muted)}
 body[data-theme] :is(.tabs-new,.primary-button,.icon-option-tick){background:var(--appearance-accent);color:var(--appearance-accent-ink)}
 body[data-theme] .setting-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--appearance-accent)}

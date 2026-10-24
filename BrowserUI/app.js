@@ -41,10 +41,7 @@ const paths = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
-$('device-collapse').addEventListener('click',()=>{
-  $('address').blur();action('chrome',{collapsed:!state.controlsCollapsed}).catch(()=>{});
-});
-for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'previous-device': 'left', 'next-device': 'right', 'device-icon': 'phone', 'device-chevron': 'up', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
+for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
 
 const DEFAULT_APPS = [
   { id: 'vk', name: 'ВКонтакте', url: 'https://vk.com/', color: '#087fff' },
@@ -66,7 +63,7 @@ try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')) || DEFAULT_AP
 for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.id)){
   apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
 }
-let state, profiles = [], panel = null, family = 'Все', editing = false, busy = false, toastTimer;
+let state, panel = null, editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
@@ -174,7 +171,6 @@ function brand(app) {
 
 async function api(action, body) {
   if(window.webkit?.messageHandlers?.atma)return window.webkit.messageHandlers.atma.postMessage({action,body:body||{}});
-  if(action==='shortcut-profile')return {profileId:state.profileId};
   if(action==='site-resource'){
     const response=await fetch(body.url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
     if(!response.ok)throw new Error('Значок сайта недоступен');
@@ -245,7 +241,7 @@ async function saveCurrentSite() {
     if(!url)throw new Error('Не удалось получить адрес сайта');
     if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
     const iconUrl=await resolveShortcutIcon(site);
-    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,profileId:site.profileId||state.profileId,iconUrl,color:'#337b96',custom:true};
+    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true};
     const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
     try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
     notify('Добавлено на рабочий стол');
@@ -269,23 +265,14 @@ function consume(next) {
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
   if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
-  if (next.profiles) profiles = next.profiles;
   document.body.dataset.mode = next.mode;
   document.body.dataset.webApp=String(Boolean(next.webApp));
   document.body.dataset.controlsCollapsed=String(Boolean(next.controlsCollapsed));
   if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
-  $('device-collapse').innerHTML=icon(next.controlsCollapsed?'up':'down');
-  $('device-collapse').setAttribute('aria-label',next.controlsCollapsed?'Показать выбор устройства':'Свернуть выбор устройства');
   updateTabSurface();
   $('go-back').disabled = next.mode !== 'browse';
   $('go-forward').disabled = next.mode !== 'browse';
   $('refresh').disabled = next.mode !== 'browse';
-  const profile = profiles.find(item => item.id === next.profileId);
-  $('device-label').textContent = profile?.name || next.deviceName;
-  $('device-icon').innerHTML = icon(profile?.family === 'Компьютер' ? 'computer' : profile?.family === 'iPad' ? 'tablet' : 'phone');
-  const index = profiles.findIndex(item => item.id === next.profileId);
-  $('previous-device').disabled = index <= 0 || busy;
-  $('next-device').disabled = index >= profiles.length - 1 || busy;
   if(changedTab)$('address').value=next.mode==='browse'?(next.url||''):'';
   else if (document.activeElement !== $('address') && next.mode === 'browse') $('address').value = next.url === `${location.origin}/probe` ? '' : (next.url || '');
   if (panel !== next.panel) {
@@ -597,19 +584,8 @@ async function launch(url,scope='public',options={}) {
   try { await action('open', { url, webApp:state?.mode==='browse'&&Boolean(state.webApp), ...options }); $('address').blur(); } catch {}
 }
 async function launchShortcut(app,scope='public') {
-  const version=++shortcutLaunchVersion,key=vaultKey;
-  if(scope==='private'&&!key)return;
-  try{
-    if(!app.profileId){
-      const site=await api('shortcut-profile',{url:app.url});
-      if(version!==shortcutLaunchVersion||(scope==='private'&&vaultKey!==key))return;
-      if(!profiles.some(profile=>profile.id===site.profileId))throw new Error('Не удалось восстановить профиль приложения');
-      app.profileId=site.profileId;
-      try{await saveApps(scope);}catch(error){delete app.profileId;throw error;}
-    }
-    if(version!==shortcutLaunchVersion||(scope==='private'&&vaultKey!==key))return;
-    await launch(app.url,scope,{webApp:true,profileId:app.profileId});
-  }catch(error){notify(error.message);}
+  if(scope==='private'&&!vaultKey)return;
+  try{await launch(app.url,scope,{webApp:true});}catch(error){notify(error.message);}
 }
 async function setPanel(name, options = {}) {
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
@@ -629,11 +605,10 @@ function renderPanel() {
   $('overlay').hidden = !panel;
   $('sheet-content').replaceChildren();
   if (!panel) return;
-  const titles = {tabs:'Вкладки', profiles: 'Устройство для сайта', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
+  const titles = {tabs:'Вкладки', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
-  if (panel === 'profiles') renderProfiles();
-  else if(panel==='pin')renderPIN();
+  if(panel==='pin')renderPIN();
   else if (panel === 'folder') { renderFolder(); if(!wasFolder) requestAnimationFrame(()=>animateFolder(true)); }
   else if (panel === 'settings') renderSettings();
   else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{notify('Не удалось открыть страницу');}}});
@@ -644,37 +619,7 @@ function renderPanel() {
   else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
   else if (panel === 'add') {editorScope=currentScope();renderAppForm();}
-  else if (panel === 'about') $('sheet-content').innerHTML = window.webkit?.messageHandlers?.atma?'<div class="setting-card"><div class="setting-row">Независимый браузер ATMA на WebKit Apple</div></div><p class="sheet-note">Профили меняют User-Agent сайта. Движок и экран остаются реальными. Cookie и входы сохраняются отдельно для каждого профиля.</p>':'<div class="setting-card"><div class="setting-row">Локальный прототип ATMA в Responsively</div></div><p class="sheet-note">Профиль применяется к отдельной странице сайта. Интерфейс ATMA сохраняет размер выбранного экрана Responsively. Это не настоящий Safari или Android: движок, графика и сетевой стек остаются Chromium.</p><p class="sheet-note">Уведомления, синхронизация, перевод и диктовка Apple в этом этапе не подключены.</p>';
-}
-function renderProfiles() {
-  $('sheet-content').innerHTML = `<label class="model-search">${icon('search')}<input id="model-filter" placeholder="Найти модель" aria-label="Найти модель"></label><div class="family-tabs" id="families"></div><div class="model-list" id="models"></div><p class="sheet-note">Размер и кнопки ATMA не меняются. У профилей отдельные cookies и входы в сайты. На iOS меняются User-Agent и мобильный или настольный режим сайта. Движок и экран остаются реальными.</p>`;
-  for (const group of ['Все', 'iPhone', 'iPad', 'Android', 'Компьютер']) {
-    const button = document.createElement('button'); button.textContent = group; button.classList.toggle('active', family === group);
-    button.addEventListener('click', () => { family = group; renderProfiles(); }); $('families').append(button);
-  }
-  function list() {
-    const filter = $('model-filter').value.toLowerCase(); $('models').replaceChildren();
-    for (const profile of profiles.filter(item => (family === 'Все' || item.family === family) && item.name.toLowerCase().includes(filter))) {
-      const button = document.createElement('button'); button.className = 'model-row'; button.dataset.profile = profile.id;
-      button.classList.toggle('selected', state.profileId === profile.id); button.disabled = busy;
-      button.innerHTML = `<span class="model-symbol">${icon(profile.family === 'Компьютер' ? 'computer' : profile.family === 'iPad' ? 'tablet' : 'phone')}</span><span class="model-name">${escape(profile.name)}${profile.name === state.deviceName ? '<span class="model-current">Ваше устройство</span>' : ''}</span>${state.profileId === profile.id ? `<span class="model-check">${icon('check')}</span>` : ''}`;
-      button.addEventListener('click', () => changeProfile(profile.id)); $('models').append(button);
-    }
-  }
-  $('model-filter').addEventListener('input', list); list();
-  setTimeout(() => {
-    const selected = $('models')?.querySelector('.selected');
-    const scroller = $('sheet-content');
-    if (!selected || !scroller) return;
-    // scrollIntoView would also move Responsively's outer device canvas.
-    scroller.scrollTop += selected.getBoundingClientRect().top - scroller.getBoundingClientRect().top - (scroller.clientHeight - selected.clientHeight) / 2;
-  }, 50);
-}
-async function changeProfile(profileId) {
-  if (busy) return;
-  busy = true; if (panel === 'profiles') renderProfiles();
-  try { await action('profile', { profileId }); } catch {}
-  finally { busy = false; if (state) consume(state); if (panel === 'profiles') renderProfiles(); }
+  else if (panel === 'about') $('sheet-content').innerHTML = window.webkit?.messageHandlers?.atma?'<div class="setting-card"><div class="setting-row">Независимый браузер ATMA на WebKit Apple</div></div><p class="sheet-note">Сайты открываются через системный WebKit текущего iPhone или iPad. Cookie и входы сохраняются в браузере.</p>':'<div class="setting-card"><div class="setting-row">Локальный прототип ATMA в Responsively</div></div><p class="sheet-note">Это предпросмотр интерфейса. Работа сайтов в приложении iOS использует системный WebKit.</p><p class="sheet-note">Уведомления, синхронизация, перевод и диктовка Apple в этом этапе не подключены.</p>';
 }
 function settingButton(text, glyph, handler) {
   const button = document.createElement('button'); button.className = 'setting-row'; button.innerHTML = `${icon(glyph)}<span>${escape(text)}</span>${icon('right')}`;
@@ -821,10 +766,11 @@ function renderAppForm(app) {
     const name=String(form.get('name')).trim();if(!name)return notify('Введите название приложения');
     const submit=event.currentTarget.querySelector?.('[type="submit"]');
     if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
-    const scope=editorScope,key=vaultKey,profileId=app?app.profileId:state.profileId;
+    const scope=editorScope,key=vaultKey;
     const iconUrl=await resolveShortcutIcon({url:url.href,iconUrl:app?.url===url.href?app.iconUrl:''});
     if(scope==='private'&&(!vaultKey||vaultKey!==key))return;
-    const entry = { ...app, iconUrl, profileId, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
+    const entry = { ...app, iconUrl, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
+    delete entry.profileId;
     if (!entry.name) return;
     const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
@@ -841,7 +787,7 @@ function requestVault() {lockVault();pinDigits='';firstPin=null;pinBusy=false;pi
 function renderPIN() {
   $('sheet-title').textContent='Закрытая страница';
   const creating=!vaultRecord,title=creating?(firstPin?'Повторите код':'Придумайте код'):'Введите код';
-  $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>${title}</h2><p class="pin-subtitle">6 цифр для закрытой страницы</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div><p class="pin-note">${creating?'Код нельзя восстановить. ':''}Код закрывает страницу с ярлыками. Входы на сайты остаются в выбранном профиле браузера.</p>`;
+  $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>${title}</h2><p class="pin-subtitle">6 цифр для закрытой страницы</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div><p class="pin-note">${creating?'Код нельзя восстановить. ':''}Код закрывает страницу с ярлыками. Входы на сайты остаются в браузере.</p>`;
   for(const button of document.querySelectorAll('[data-pin]'))button.addEventListener('click',()=>pinKey(button.dataset.pin));
 }
 function pinKey(value) {
@@ -905,9 +851,6 @@ $('address-form').addEventListener('submit', event => {
   if(matching)activate(matching,scope);else launch(value,scope);
 });
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
-$('device-picker').addEventListener('click', () => setPanel('profiles'));
-$('previous-device').addEventListener('click', () => { const index = profiles.findIndex(item => item.id === state.profileId); if (index > 0) changeProfile(profiles[index - 1].id); });
-$('next-device').addEventListener('click', () => { const index = profiles.findIndex(item => item.id === state.profileId); if (index < profiles.length - 1) changeProfile(profiles[index + 1].id); });
 $('settings').addEventListener('click', () => setPanel('settings'));
 $('pin-site').addEventListener('click',saveCurrentSite);
 $('tabs-button').addEventListener('click',()=>{setEditing(false);lockVault();if(state?.tabs?.length)setPanel('tabs');else newBrowserTab();});

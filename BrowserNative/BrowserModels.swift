@@ -49,17 +49,12 @@ final class BrowserModel {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        var catalogue: [[String: Any]] = []
-        if let url = Bundle.main.url(forResource: "profiles", withExtension: "json", subdirectory: "BrowserUI"),
-           let data = try? Data(contentsOf: url), let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-            catalogue = rows.filter { ($0["id"] as? String) != Self.actualProfile }
-        }
         profiles = [["id": Self.actualProfile, "name": UIDevice.current.model,
-                     "family": "Apple", "actualDevice": true]] + catalogue
+                     "family": "Apple", "actualDevice": true]]
         let first = BrowserTab(profileId: Self.actualProfile)
         if let data = defaults.data(forKey: sessionKey), let saved = try? JSONDecoder().decode(BrowserSession.self, from: data),
            !saved.tabs.isEmpty {
-            let ids = Set(catalogue.compactMap { $0["id"] as? String } + [Self.actualProfile])
+            let ids = Set([Self.actualProfile])
             let restored = saved.tabs.map { row in
                 var tab = row
                 if !ids.contains(tab.profileId) { tab.profileId = Self.actualProfile }
@@ -86,13 +81,9 @@ final class BrowserModel {
         }
     }
 
-    var storedProfileIDs: [String] {
-        profiles.compactMap { $0["id"] as? String }.filter {
-            stores[$0] != nil || defaults.string(forKey: "atma.native.store." + $0).flatMap(UUID.init(uuidString:)) != nil
-        }
-    }
-
-    func store(for profileId: String) -> WKWebsiteDataStore {
+    func store(for _: String) -> WKWebsiteDataStore {
+        // All tabs and saved sites share the actual device website session.
+        let profileId = Self.actualProfile
         if let existing = stores[profileId] { return existing }
         let key = "atma.native.store." + profileId
         let identifier = defaults.string(forKey: key).flatMap(UUID.init(uuidString:)) ?? UUID()

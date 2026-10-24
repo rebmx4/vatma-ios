@@ -8,6 +8,7 @@ import plistlib
 import re
 import ssl
 import struct
+from app_identity import BUNDLE_ID, TEAM_ID
 from github_ci import validate_workflow as validate_github_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ def validate_project(project):
     require(project["options"]["deploymentTarget"]["iOS"] == "17.0", "Minimum iOS must be 17.0")
     base = project["settings"]["base"]
     require(base["TARGETED_DEVICE_FAMILY"] == "1,2", "Missing iPad support")
-    require(base["DEVELOPMENT_TEAM"] == "GR3WB4Z646", "Wrong Apple team")
+    require(base["DEVELOPMENT_TEAM"] == TEAM_ID, "Wrong Apple team")
     require(not any(project.get(key) for key in ("packages", "include", "projectReferences", "targetTemplates")),
             "External project/package inputs are not allowed")
     require(set(project["targets"]) == {"ATMA", "BrowserNativeTests", "BrowserNativeUITests"}, "Unexpected target")
@@ -50,7 +51,7 @@ def validate_project(project):
         row = next(row for row in app["sources"] if row["path"] == folder)
         require(row.get("type") == "folder" and row.get("buildPhase") == "resources", "Bundle folder must retain its name")
     settings = app["settings"]["base"]
-    require(settings["PRODUCT_BUNDLE_IDENTIFIER"] == "ru.atma.app" and settings["PRODUCT_NAME"] == "ATMA", "Wrong application identity")
+    require(settings["PRODUCT_BUNDLE_IDENTIFIER"] == BUNDLE_ID and settings["PRODUCT_NAME"] == "ATMA", "Wrong application identity")
     require(settings["INFOPLIST_FILE"] == "BrowserResources/Info.plist", "Wrong application plist")
     require(not settings.get("CODE_SIGN_ENTITLEMENTS"), "Unregistered legacy entitlements are not allowed")
     require(set(settings["ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES"].split()) == ALTERNATES, "Alternate icon sets missing")
@@ -165,15 +166,14 @@ def validate(root=ROOT):
                     json.loads(text)
                 if path.suffix == ".swift":
                     require("WKContentRuleList" not in text, "This release excludes native content filtering")
+                    require("customUserAgent =" not in text, "This release excludes custom device User-Agents")
                     require(len(text.splitlines()) < 400, "Swift source exceeds line limit")
                     imports = set(re.findall(r"\bimport\s+(\w+)", text))
                     require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit", "Security", "UniformTypeIdentifiers", "AVFoundation", "MediaPlayer"}, "Native code may import only approved Apple frameworks")
             require(path.suffix.lower() not in (".dylib", ".a", ".framework", ".xcframework"), "Embedded SDK binary is not an allowed product input")
             scanned += 1
-    profiles = load_json(root / "BrowserUI/profiles.json")
-    require(len({row["id"] for row in profiles}) == len(profiles), "Duplicate profile ID")
-    for excluded in ("BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
-        require(not (root / excluded).exists(), "This release must not bundle ad-blocking payloads: " + excluded)
+    for excluded in ("BrowserUI/profiles.json", "BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
+        require(not (root / excluded).exists(), "This release must not bundle excluded payloads: " + excluded)
     for folder in ("release", "tests"):
         for path in (root / folder).glob("*.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -184,7 +184,7 @@ def validate(root=ROOT):
     require(not (root / "ATMA").exists(), "Legacy application source remains active")
     return {"status": "passed", "scope": "static standalone source/config/resource validation",
             "product_files_checked": scanned, "apple_runtime": "not run by this validator",
-            "identity": "ru.atma.app", "minimum_ios": "17.0", "device_families": [1, 2]}
+            "identity": BUNDLE_ID, "minimum_ios": "17.0", "device_families": [1, 2]}
 
 
 if __name__ == "__main__":

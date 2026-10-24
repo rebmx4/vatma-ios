@@ -35,17 +35,16 @@ final class BrowserController: UIViewController {
     var nativeError: String?
     var tabPreviews: [String: TabPreview] = [:]
     var previewCaptures: [String: TabPreviewCapture] = [:]
-    var deviceRowCollapsed = false
     private var lastLayoutDiagnostic = ""
     var nativeTheme = "auto"
     var currentNavigations: [ObjectIdentifier: WKNavigation] = [:]
     var downloadTransitions: [ObjectIdentifier: DownloadNavigationTransition] = [:]
-    static let footerHeight: CGFloat = 166
+    static let footerHeight: CGFloat = 128
     var webApp: Bool { mode == "browse" && model.active.webApp == true }
-    var controlsCollapsed: Bool { mode == "browse" && !webApp && deviceRowCollapsed }
+    var controlsCollapsed: Bool { false }
     var currentFooterHeight: CGFloat {
         if webApp { return 52 + view.safeAreaInsets.bottom }
-        return Self.footerHeight - (controlsCollapsed ? 38 : 0)
+        return Self.footerHeight
     }
 
     init(model: BrowserModel? = nil) {
@@ -189,12 +188,7 @@ final class BrowserController: UIViewController {
         config.allowsPictureInPictureMediaPlayback = true
         // The page adapter gates intent without preventing WebKit metadata preload.
         config.mediaTypesRequiringUserActionForPlayback = []
-        let profile = model.profile(tab.profileId)
-        if tab.profileId != BrowserModel.actualProfile, let mobile = profile?["mobile"] as? Bool {
-            config.defaultWebpagePreferences.preferredContentMode = mobile ? .mobile : .desktop
-        } else {
-            config.defaultWebpagePreferences.preferredContentMode = .recommended
-        }
+        config.defaultWebpagePreferences.preferredContentMode = .recommended
         // Website content receives only a bounded media-state handler, never UI RPC.
         let renderer = WKWebView(frame: .zero, configuration: config)
         renderer.accessibilityIdentifier = "atma.site." + tab.id
@@ -203,30 +197,20 @@ final class BrowserController: UIViewController {
         renderer.allowsBackForwardNavigationGestures = true
         renderer.scrollView.contentInsetAdjustmentBehavior = .never
         media.register(renderer, tabID: tab.id)
-        if tab.profileId != BrowserModel.actualProfile {
-            renderer.customUserAgent = profile?["userAgent"] as? String
-        }
         BrowserPageScripts.configure(renderer)
         renderers[tab.id] = renderer
         browserViewport.insertSubview(renderer, belowSubview: ui)
         return renderer
     }
 
-    func open(_ input: String, profileID: String? = nil, webApp: Bool? = nil) throws {
+    func open(_ input: String, webApp: Bool? = nil) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
-        try open(URLRequest(url: url), profileID: profileID, webApp: webApp)
+        try open(URLRequest(url: url), webApp: webApp)
     }
 
-    func open(_ request: URLRequest, profileID: String? = nil, webApp: Bool? = nil) throws {
+    func open(_ request: URLRequest, webApp: Bool? = nil) throws {
         guard let url = request.url else { throw BrowserFailure.invalid("Missing navigation URL.") }
         _ = try AddressResolver.validated(url.absoluteString)
-        if let profileID {
-            guard model.profile(profileID) != nil else { throw BrowserFailure.invalid("Unknown shortcut profile.") }
-            if model.active.profileId != profileID {
-                removeRenderer(for: model.activeTabId)
-                model.tabs[model.activeIndex].profileId = profileID
-            }
-        }
         if let webApp {
             model.tabs[model.activeIndex].webApp = webApp
             model.tabs[model.activeIndex].appControlsCollapsed = false
@@ -257,8 +241,8 @@ final class BrowserController: UIViewController {
         changed()
     }
 
-    func newTab(profile: String? = nil) {
-        let tab = BrowserTab(profileId: profile ?? model.active.profileId)
+    func newTab() {
+        let tab = BrowserTab(profileId: BrowserModel.actualProfile)
         model.tabs.append(tab); model.activeTabId = tab.id; mode = "home"; panel = nil
         changed()
     }
@@ -269,21 +253,12 @@ final class BrowserController: UIViewController {
         windowOpeners = windowOpeners.filter { $0.value != id }
         removeRenderer(for: id)
         model.tabs.remove(at: index)
-        if model.tabs.isEmpty { newTab(profile: BrowserModel.actualProfile) }
+        if model.tabs.isEmpty { newTab() }
         else if model.activeTabId == id {
             let destination = opener.flatMap { candidate in model.tabs.first { $0.id == candidate }?.id }
                 ?? model.tabs[min(index, model.tabs.count - 1)].id
             try selectTab(destination)
         }
-        changed()
-    }
-
-    func changeProfile(_ id: String) throws {
-        guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown profile.") }
-        guard id != model.active.profileId else { return }
-        removeRenderer(for: model.activeTabId)
-        model.tabs[model.activeIndex].profileId = id
-        if mode == "browse", !model.active.url.isEmpty { try selectTab(model.activeTabId) }
         changed()
     }
 
@@ -313,7 +288,7 @@ final class BrowserController: UIViewController {
                 "webApp": webApp, "controlsCollapsed": controlsCollapsed,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
                 "capabilities": ["cookies": true, "downloads": true, "tabs": true,
-                                 "persistentProfiles": true, "contentBlocking": false, "media": true,
+                                 "persistentProfiles": false, "contentBlocking": false, "media": true,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,
                                  "translation": false, "googleAccount": false, "probe": false],

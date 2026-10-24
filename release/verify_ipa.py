@@ -5,13 +5,14 @@ import json
 import plistlib
 import re
 import zipfile
+from app_identity import BUNDLE_ID
 
 ROOT = Path(__file__).resolve().parents[1]
 ALTERNATES = {f"AppIconA1{i:02d}" for i in range(1, 11)}
 
 
 def validate_info(info, expected_build):
-    expected = {"CFBundleIdentifier": "ru.atma.app", "CFBundleName": "ATMA",
+    expected = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "ATMA",
                 "CFBundleDisplayName": "ATMA", "CFBundleExecutable": "ATMA",
                 "CFBundleShortVersionString": "1.0.0", "CFBundleVersion": str(expected_build)}
     for key, value in expected.items():
@@ -47,6 +48,9 @@ def verify(path, expected_build, root=ROOT):
         info = plistlib.loads(archive.read(expected_info))
         validate_info(info, expected_build)
         prefix = "Payload/ATMA.app/"
+        for excluded in ("BrowserUI/profiles.json", "BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
+            if prefix + excluded in names:
+                raise ValueError("Package contains an excluded payload: " + excluded)
         for name in names:
             lower = name.lower()
             if any(token in lower for token in ("brave", "chromium", "vatma", ".appex/", ".framework/")):

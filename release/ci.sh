@@ -105,11 +105,15 @@ PY
     keychain initialize
     export CERTIFICATE_PRIVATE_KEY
     CERTIFICATE_PRIVATE_KEY="$(cat .cache/signing/distribution-key.pem)"
-    app-store-connect fetch-signing-files ru.atma.app --type IOS_APP_STORE --create
+    bundle_id="$(python3 -B release/app_identity.py bundle-id)"
+    app_store_id="$(python3 -B release/app_identity.py app-id)"
+    app-store-connect fetch-signing-files "$bundle_id" --type IOS_APP_STORE --create
     keychain add-certificates
     xcode-project use-profiles --project ATMA.xcodeproj \
       --export-options-plist "$task_root/.cache/signing/export.plist"
-    latest_build="$(app-store-connect get-latest-testflight-build-number 6774934498)"
+    latest_build="$(app-store-connect get-latest-testflight-build-number "$app_store_id")"
+    # A new App Store record has no previous build; the CLI returns empty on a successful lookup.
+    latest_build="${latest_build:-0}"
     [[ "$latest_build" =~ ^[0-9]+$ ]]
     next_build="$((latest_build + 1))"
     printf '%s\n' "$next_build" > out/build-number.txt

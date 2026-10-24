@@ -23,7 +23,7 @@ TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 def packaged_info():
     icons = {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon"},
              "CFBundleAlternateIcons": {name: {"CFBundleIconName": name} for name in verify_ipa.ALTERNATES}}
-    return {"CFBundleIdentifier": "ru.atma.app", "CFBundleName": "ATMA", "CFBundleDisplayName": "ATMA",
+    return {"CFBundleIdentifier": "ru.atma.browser", "CFBundleName": "ATMA", "CFBundleDisplayName": "ATMA",
             "CFBundleExecutable": "ATMA", "CFBundleShortVersionString": "1.0.0", "CFBundleVersion": "7",
             "MinimumOSVersion": "17.0", "UIDeviceFamily": [1, 2],
             "UIBackgroundModes": ["audio"],
@@ -94,6 +94,15 @@ class PackageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_ipa.validate_info(info, "7")
 
+    def test_previous_app_identity_is_rejected(self):
+        old_info = {**packaged_info(), "CFBundleIdentifier": "ru.atma.app"}
+        with self.assertRaises(ValueError):
+            verify_ipa.validate_info(old_info, "7")
+        old_signing = {"application-identifier": "GR3WB4Z646.ru.atma.app",
+                       "com.apple.developer.team-identifier": "GR3WB4Z646"}
+        with self.assertRaises(ValueError):
+            verify_signing.verify(plistlib.dumps(old_signing))
+
     def test_ipa_resource_matching_and_vendor_framework_rejection(self):
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
             fixture = Path(temporary)
@@ -110,13 +119,19 @@ class PackageTests(unittest.TestCase):
                 archive.writestr("Payload/ATMA.app/BrowserUI/index.html", b"ATMA fixture")
                 archive.writestr("Payload/ATMA.app/certificates/manifest.json", b"{}")
             self.assertEqual(verify_ipa.verify(package, "7", root=fixture)["app"], "ATMA.app")
+            injected = fixture / "with-device-catalogue.ipa"
+            shutil.copyfile(package, injected)
+            with zipfile.ZipFile(injected, "a") as archive:
+                archive.writestr("Payload/ATMA.app/BrowserUI/profiles.json", b"[]")
+            with self.assertRaisesRegex(ValueError, "excluded payload"):
+                verify_ipa.verify(injected, "7", root=fixture)
             with zipfile.ZipFile(package, "a") as archive:
                 archive.writestr("Payload/ATMA.app/Frameworks/BraveCore.framework/BraveCore", b"forbidden")
             with self.assertRaisesRegex(ValueError, "embedded browser"):
                 verify_ipa.verify(package, "7", root=fixture)
 
     def test_signing_rejects_shared_groups_push_debug_or_wrong_team(self):
-        clean = {"application-identifier": "GR3WB4Z646.ru.atma.app", "com.apple.developer.team-identifier": "GR3WB4Z646"}
+        clean = {"application-identifier": "GR3WB4Z646.ru.atma.browser", "com.apple.developer.team-identifier": "GR3WB4Z646"}
         verify_signing.verify(plistlib.dumps(clean))
         for change in ({"aps-environment": "production"}, {"get-task-allow": True},
                        {"com.apple.security.application-groups": ["group.old"]},

@@ -24,15 +24,11 @@ final class StoreScreenshotsTests: XCTestCase {
         button(["Настройки", "Settings"]).tap()
         let privacy = button(["Политика конфиденциальности", "Privacy Policy"])
         waitUntilUsable(privacy, "Privacy policy must be reachable from Settings")
+        capture("store-ru-04-settings")
         privacy.tap()
         let policyHeading = app.staticTexts["О приложении"]
         XCTAssertTrue(policyHeading.waitForExistence(timeout: 10), "Bundled policy must open without a website request")
         capture("store-ru-privacy")
-        closePanel()
-
-        button(["Выбрать устройство", "Choose device"]).tap()
-        XCTAssertTrue(app.textFields.matching(NSPredicate(format: "placeholderValue IN %@", ["Найти модель", "Find model"])).firstMatch.waitForExistence(timeout: 10))
-        capture("store-ru-04-profiles")
         closePanel()
 
         button(["Настройки", "Settings"]).tap()

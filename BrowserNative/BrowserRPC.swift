@@ -17,7 +17,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
     }
 
     private func dispatch(_ action: String, body: [String: Any], reply: @escaping (Any?, String?) -> Void) throws {
-        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close", "profile"].contains(action), mode == "browse", panel == nil {
+        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close"].contains(action), mode == "browse", panel == nil {
             captureCurrentPreview { [weak self] in
                 guard let self else { reply(nil, "Browser closed."); return }
                 do { try self.perform(action, body: body, reply: reply) }
@@ -39,24 +39,10 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "media/background":
             guard let enabled = body["enabled"] as? Bool else { throw BrowserFailure.invalid("Supply enabled:true or false.") }
             media.setBackground(enabled); reply(media.state, nil); return
-        case "shortcut-profile":
-            let address = try string("url", body)
-            _ = try AddressResolver.validated(address)
-            Task { @MainActor [weak self] in
-                guard let self else { reply(nil, "Browser closed."); return }
-                do { reply(["profileId": try await self.model.shortcutProfile(for: address)], nil) }
-                catch { reply(nil, error.localizedDescription) }
-            }
-            return
         case "open":
-            guard body["profileId"] == nil || body["profileId"] is String,
-                  body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Invalid site presentation or profile.") }
-            try open(try string("url", body), profileID: body["profileId"] as? String, webApp: body["webApp"] as? Bool)
-        case "chrome":
-            guard mode == "browse", let collapsed = body["collapsed"] as? Bool else { throw BrowserFailure.invalid("Open a site and supply collapsed:true or false.") }
-            view.endEditing(true)
-            if !webApp { deviceRowCollapsed = collapsed }
-            changed()
+            guard body["profileId"] == nil,
+                  body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Device switching is not supported.") }
+            try open(try string("url", body), webApp: body["webApp"] as? Bool)
         case "home": view.endEditing(true); mode = "home"; panel = nil; changed()
         case "panel":
             guard body["panel"] == nil || body["panel"] is NSNull || body["panel"] is String else { throw BrowserFailure.invalid("Invalid panel.") }
@@ -64,7 +50,6 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "tabs/new": newTab()
         case "tabs/select": try selectTab(try string("tabId", body))
         case "tabs/close": try closeTab(try string("tabId", body))
-        case "profile": try changeProfile(try string("profileId", body))
         case "preferences": try preferences(body)
         case "back": currentRenderer?.goBack()
         case "forward": currentRenderer?.goForward()

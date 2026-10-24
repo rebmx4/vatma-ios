@@ -14,7 +14,7 @@ function setup(){
 }
 test('manual shortcut creation resolves and stores the website icon',async()=>{
  const f=setup();f.context.renderAppForm();await f.element('app-form').submit({preventDefault(){},currentTarget:{name:'Example',url:'example.com'}});
- assert.equal(f.apps[0].iconUrl,'data:image/png;base64,site-icon');assert.equal(f.apps[0].profileId,'iphone-13-pro-max');assert.deepEqual(f.effects.filter(item=>item[0]==='icon'),[['icon','https://example.com/']]);
+ assert.equal(f.apps[0].iconUrl,'data:image/png;base64,site-icon');assert.equal(f.apps[0].profileId,undefined);assert.deepEqual(f.effects.filter(item=>item[0]==='icon'),[['icon','https://example.com/']]);
 });
 test('quick add resolves a durable website icon before storing the shortcut',async()=>{
  const f=setup();await f.context.saveCurrentSite();assert.equal(f.context.apps[0].iconUrl,'data:image/png;base64,site-icon');assert.deepEqual(f.effects.filter(item=>item[0]==='icon'),[['icon','https://example.com/account']]);

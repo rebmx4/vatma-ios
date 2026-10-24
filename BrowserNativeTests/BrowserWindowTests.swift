@@ -25,17 +25,16 @@ final class BrowserWindowTests: XCTestCase {
         super.tearDown()
     }
 
-    func testWindowKeepsItsSourceProfileAndWebKitConfigurationWhenAnotherTabIsActive() throws {
-        try controller.changeProfile("iphone-13-pro-max")
+    func testWindowKeepsItsWebsiteSessionAndWebKitConfigurationWhenAnotherTabIsActive() throws {
         let sourceID = controller.model.activeTabId
         let source = controller.renderer(for: controller.model.active)
-        controller.newTab(profile: BrowserModel.actualProfile)
+        controller.newTab()
         let configuration = WKWebViewConfiguration()
         configuration.processPool = source.configuration.processPool
         configuration.websiteDataStore = source.configuration.websiteDataStore
         let popup = try controller.createSiteWindow(from: source, configuration: configuration, url: nil)
 
-        XCTAssertEqual(controller.model.active.profileId, "iphone-13-pro-max")
+        XCTAssertEqual(controller.model.active.profileId, BrowserModel.actualProfile)
         XCTAssertEqual(controller.model.active.url, "about:blank")
         XCTAssertTrue(popup.configuration.processPool === configuration.processPool)
         XCTAssertTrue(popup.configuration.websiteDataStore === source.configuration.websiteDataStore)
@@ -59,14 +58,13 @@ final class BrowserWindowTests: XCTestCase {
             configuration: WKWebViewConfiguration(), url: URL(string: "https://example.com")))
     }
 
-    func testBlankWindowCanChangeProfileAndRecreateItsRenderer() throws {
+    func testBlankWindowCanRecreateItsRenderer() throws {
         let source = controller.renderer(for: controller.model.active)
         _ = try controller.createSiteWindow(from: source, configuration: WKWebViewConfiguration(), url: nil)
         let windowID = controller.model.activeTabId
-        try controller.changeProfile("windows-chrome")
         XCTAssertEqual(controller.model.activeTabId, windowID)
         XCTAssertEqual(controller.model.active.url, "about:blank")
-        XCTAssertEqual(controller.model.active.profileId, "windows-chrome")
+        XCTAssertEqual(controller.model.active.profileId, BrowserModel.actualProfile)
         let renderer = try XCTUnwrap(controller.currentRenderer)
         controller.media.unregister(renderer)
         renderer.stopLoading()
@@ -90,22 +88,14 @@ final class BrowserWindowTests: XCTestCase {
         XCTAssertNil(controller.currentRenderer)
     }
 
-    func testProfilesSetConsistentUserAgentAndPageModeWithoutChangingTheUI() throws {
+    func testOnlyTheRealDeviceWebKitConfigurationIsUsedEvenForLegacyTabMetadata() throws {
         let uiConfiguration = controller.ui.configuration
         let systemWebView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        let actual = controller.renderer(for: controller.model.active)
-        XCTAssertEqual(actual.customUserAgent, systemWebView.customUserAgent)
-        XCTAssertEqual(actual.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
-
-        try controller.changeProfile("windows-chrome")
-        let desktop = controller.renderer(for: controller.model.active)
-        XCTAssertTrue(try XCTUnwrap(desktop.customUserAgent).contains("Windows NT 10.0"))
-        XCTAssertEqual(desktop.configuration.defaultWebpagePreferences.preferredContentMode, .desktop)
-
-        try controller.changeProfile("iphone-13-pro-max")
-        let mobile = controller.renderer(for: controller.model.active)
-        XCTAssertTrue(try XCTUnwrap(mobile.customUserAgent).contains("iPhone"))
-        XCTAssertEqual(mobile.configuration.defaultWebpagePreferences.preferredContentMode, .mobile)
+        controller.model.tabs[0].profileId = "windows-chrome"
+        let website = controller.renderer(for: controller.model.active)
+        XCTAssertEqual(website.customUserAgent, systemWebView.customUserAgent)
+        XCTAssertEqual(website.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
+        XCTAssertTrue(website.configuration.websiteDataStore === controller.model.store(for: BrowserModel.actualProfile))
         XCTAssertEqual(controller.ui.configuration.defaultWebpagePreferences.preferredContentMode,
                        uiConfiguration.defaultWebpagePreferences.preferredContentMode)
         XCTAssertEqual(controller.ui.customUserAgent, systemWebView.customUserAgent)
@@ -120,7 +110,7 @@ final class BrowserWindowTests: XCTestCase {
         XCTAssertNotNil(firstID)
         XCTAssertEqual(preferences.string(forKey: "atma.native.store.actual-device"), firstID)
         _ = restored.store(for: "iphone-13-pro-max")
-        XCTAssertNotEqual(preferences.string(forKey: "atma.native.store.iphone-13-pro-max"), firstID)
+        XCTAssertNil(preferences.string(forKey: "atma.native.store.iphone-13-pro-max"))
         XCTAssertEqual(restored.preferences.searchEngine, "google")
     }
 

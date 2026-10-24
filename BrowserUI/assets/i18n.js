@@ -5,10 +5,11 @@ export const normalizeLanguage=value=>LANGUAGES.includes(value)?value:'ru';
 const russian=new Map(Object.entries(english).filter(([ru,en])=>ru!==en).map(([ru,en])=>[en,ru]));
 export function translate(value,language){
  const text=String(value),trimmed=text.trim();
- const source=russian.get(trimmed)||trimmed;
+ const source=russian.get(trimmed)||trimmed.replace(/^Website cookies: (\d+)$/,'Cookie сайтов: $1');
  let result=language==='en'?(english[source]||source):source;
  if(language==='en'&&!english[source]){
   const patterns=[
+   [/^Cookie сайтов: (\d+)$/,(_,n)=>`Website cookies: ${n}`],
    [/^Автоматическая · сейчас (тёмная|светлая)$/,(_,theme)=>`Automatic · currently ${theme==='тёмная'?'dark':'light'}`],
    [/^Открытые вкладки: (\d+)$/,(_,n)=>`Open tabs: ${n}`],
    [/^Страница (\d+)$/,(_,n)=>`Page ${n}`],

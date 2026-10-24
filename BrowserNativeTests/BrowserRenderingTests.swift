@@ -142,11 +142,11 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(preserved, true, "Native state reports must preserve the displayed tab card")
     }
 
-    func testShortcutKeepsItsProfileAndCompactToolbarWithoutReloadingTheWebsite() async throws {
+    func testShortcutKeepsItsWebsiteSessionAndCompactToolbarWithoutReloadingTheWebsite() async throws {
         let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
         try await waitForUI()
-        let pinned = try XCTUnwrap(controller.model.profiles.compactMap { $0["id"] as? String }.first { $0 != BrowserModel.actualProfile })
-        _ = try await rpc("open", body: ["url": url, "profileId": pinned, "webApp": true])
+        let pinned = BrowserModel.actualProfile
+        _ = try await rpc("open", body: ["url": url, "webApp": true])
         let page = try XCTUnwrap(controller.currentRenderer)
         try await waitForPaint(in: page, color: "rgb(220, 38, 40)")
         XCTAssertEqual(controller.model.active.profileId, pinned)
@@ -156,8 +156,8 @@ final class BrowserRenderingTests: XCTestCase {
         let compactHeight = controller.ui.frame.height
         XCTAssertLessThan(compactHeight, 90)
         _ = try await script("window.__retainedPage='same document'; return true;", in: page)
-        _ = try await rpc("chrome", body: ["collapsed": true])
-        try await waitFor("document.body.dataset.controlsCollapsed==='false' && document.getElementById('address').getBoundingClientRect().height>0 && getComputedStyle(document.querySelector('.device-row')).display==='none'", in: controller.ui)
+        _ = try await rpc("state")
+        try await waitFor("document.getElementById('address').getBoundingClientRect().height>0 && !document.getElementById('device-picker')", in: controller.ui)
         controller.view.layoutIfNeeded()
         XCTAssertEqual(controller.ui.frame.height, compactHeight, accuracy: 1, "Saved apps must always retain their thin address toolbar")
         XCTAssertTrue(controller.currentRenderer === page)
@@ -166,13 +166,12 @@ final class BrowserRenderingTests: XCTestCase {
         let homeAtRight = try await script("return document.getElementById('go-home').getBoundingClientRect().left > document.getElementById('address-form').getBoundingClientRect().right;", in: controller.ui) as? Bool
         XCTAssertEqual(homeAtRight, true)
         _ = try await rpc("home")
-        _ = try await rpc("profile", body: ["profileId": BrowserModel.actualProfile])
-        _ = try await rpc("open", body: ["url": url, "profileId": pinned, "webApp": true])
-        XCTAssertEqual(controller.model.active.profileId, pinned, "A later global profile choice must not override a pinned shortcut")
+        _ = try await rpc("open", body: ["url": url, "webApp": true])
+        XCTAssertEqual(controller.model.active.profileId, pinned, "Saved sites must use the same actual-device session")
         XCTAssertTrue(controller.currentRenderer?.configuration.websiteDataStore === controller.model.store(for: pinned))
     }
 
-    func testNormalBrowserCanHideOnlyTheDeviceRowAtThePhysicalBottom() async throws {
+    func testNormalBrowserHasNoDeviceRowAndKeepsTheToolbarAtThePhysicalBottom() async throws {
         let url = try await startFixture(video: false).appendingPathComponent("blue").absoluteString
         try await waitForUI()
         _ = try await rpc("open", body: ["url": url, "webApp": false])
@@ -182,19 +181,23 @@ final class BrowserRenderingTests: XCTestCase {
         let fullHeight = page.frame.height
         let bottom = controller.ui.convert(controller.ui.bounds, to: controller.view).maxY
         XCTAssertEqual(bottom, controller.view.bounds.maxY, accuracy: 1, "Closed-keyboard chrome must use the physical bottom edge")
-        _ = try await rpc("chrome", body: ["collapsed": true])
-        try await waitFor("document.body.dataset.webApp==='false' && document.body.dataset.controlsCollapsed==='true' && document.getElementById('address').getBoundingClientRect().height>0 && document.getElementById('go-home').getBoundingClientRect().height>0 && document.getElementById('device-picker').getBoundingClientRect().height===0", in: controller.ui)
+        XCTAssertEqual(controller.ui.frame.height, 128, accuracy: 1)
+        try await waitFor("!document.getElementById('device-picker') && document.getElementById('address').getBoundingClientRect().height>0 && document.getElementById('go-home').getBoundingClientRect().height>0", in: controller.ui)
+        for (action, body) in [("profile", ["profileId": "windows-chrome"] as [String: Any]),
+                               ("shortcut-profile", ["url": url]),
+                               ("open", ["url": url, "profileId": "windows-chrome"])] {
+            do { _ = try await rpc(action, body: body); XCTFail("Device switching must be unavailable") }
+            catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
+        }
         controller.view.layoutIfNeeded()
-        XCTAssertGreaterThan(page.frame.height, fullHeight + 25)
+        XCTAssertEqual(page.frame.height, fullHeight, accuracy: 1)
         XCTAssertTrue(controller.currentRenderer === page)
-        _ = try await rpc("chrome", body: ["collapsed": false])
-        try await waitFor("document.getElementById('device-picker').getBoundingClientRect().height>0", in: controller.ui)
         _ = try await script("window.__modeChanges=[]; window.__modeObserver=new MutationObserver(()=>window.__modeChanges.push(document.body.dataset.mode)); window.__modeObserver.observe(document.body,{attributes:true,attributeFilter:['data-mode']}); document.getElementById('pin-site').click(); return true;", in: controller.ui)
         try await waitFor("document.getElementById('pin-site').dataset.saved==='true'", in: controller.ui)
         let stableMode = try await script("window.__modeObserver.disconnect(); return document.body.dataset.mode==='browse' && window.__modeChanges.every(mode=>mode==='browse');", in: controller.ui) as? Bool
         XCTAssertEqual(stableMode, true, "Quick-add metadata is not a full native state and must not replace it")
         let savedProfile = try await script("window.__savedShortcutURL=url; return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.profileId;", in: controller.ui, arguments: ["url": url]) as? String
-        XCTAssertEqual(savedProfile, controller.model.active.profileId)
+        XCTAssertNil(savedProfile, "Saved sites must not persist a selectable device")
         _ = try await script("document.getElementById('go-home').click(); return true;", in: controller.ui)
         try await waitFor("document.body.dataset.mode==='home' && innerHeight>300 && (()=>{const app=JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===window.__savedShortcutURL); const tile=document.querySelector('[data-app=\"'+app.id+'\"] button').getBoundingClientRect(); const desktop=document.getElementById('apps').getBoundingClientRect(); return tile.width>0 && tile.left>=desktop.left && tile.right<=desktop.right && tile.top>=desktop.top && tile.bottom<=desktop.bottom;})()", in: controller.ui)
     }

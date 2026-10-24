@@ -27,10 +27,10 @@ export async function renderCookieBrowser(root,{api,onBack,notify,t=value=>value
   }
   updateControls();
  }
- async function refresh(){const result=await api('cookies');if(!current())return;cookies=result.cookies;profile.textContent=`${t('Профиль')}: ${result.profile.name} · ${cookies.length}`;render();}
+ async function refresh(){const result=await api('cookies');if(!current())return;cookies=result.cookies;profile.textContent=t(`Cookie сайтов: ${cookies.length}`);render();}
  async function remove(selection){
   if(busy)return;busy=true;updateControls();
-  try{const result=await api('cookies/delete',selection);if(!current())return;cookies=result.cookies;selected.clear();profile.textContent=`${t('Профиль')}: ${result.profile.name} · ${cookies.length}`;render();notify(t('Cookie удалены'));}catch(error){notify(error.message);}finally{busy=false;if(current())updateControls();}
+  try{const result=await api('cookies/delete',selection);if(!current())return;cookies=result.cookies;selected.clear();profile.textContent=t(`Cookie сайтов: ${cookies.length}`);render();notify(t('Cookie удалены'));}catch(error){notify(error.message);}finally{busy=false;if(current())updateControls();}
  }
  search.addEventListener('input',render);
  selectAll.addEventListener('click',()=>{const filter=search.value.toLocaleLowerCase();selected=new Set(cookies.filter(c=>`${c.domain} ${c.name}`.toLocaleLowerCase().includes(filter)).map(c=>c.id));render();});
