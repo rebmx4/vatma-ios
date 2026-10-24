@@ -61,7 +61,19 @@ final class BrowserSmokeTests: XCTestCase {
         address.tap()
         assertAddressControlsAboveKeyboard()
         address.typeText(websiteURL)
-        XCTAssertEqual(address.value as? String, websiteURL, "Typing an address must not hit keyboard keys beneath hidden controls")
+        var observedAddress: String?
+        let enteredAddress = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            observedAddress = self.app.textFields.firstMatch.value as? String
+            return observedAddress == websiteURL
+        }, object: nil)
+        let entryResult = XCTWaiter.wait(for: [enteredAddress], timeout: 20)
+        if entryResult != .completed {
+            print("Address input mismatch: expected=\(websiteURL), observed=\(String(describing: observedAddress))")
+            screenshot("typed-address-mismatch")
+        }
+        XCTAssertEqual(entryResult, .completed,
+                       "Typing must produce the exact website URL; observed: \(String(describing: observedAddress))")
+        go = button(["Перейти", "Go"])
         go.tap()
         assertKeyboardDismissed()
         let site = siteRenderers.firstMatch
