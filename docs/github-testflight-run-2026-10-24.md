@@ -1,12 +1,14 @@
 # ATMA GitHub TestFlight delivery — 2026-10-24
 
+Current replacement: **1.0.0 (10)** is available for internal testing. See [startup repair and exact build evidence](resource-path-fix-2026-10-24.md). Build 9 below is historical and failed physical startup.
+
 ## Authorization and scope
 
 The owner explicitly authorized autonomous fixes and repeated standard GitHub Actions runs for the current ATMA browser build until delivery to TestFlight. This supersedes the earlier per-run confirmation requirement for this delivery. It does not authorize a public App Store review submission, paid runner upgrades, or changes to other applications.
 
 ## Physical-device startup failure after upload
 
-Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bundled UI index.html is missing.` on a physical iPhone. The IPA contains BrowserUI/index.html; canonical-path indexing is being repaired. Build 9 must not be treated as a successful physical-device startup. See `docs/superpowers/plans/2026-10-24-resource-path-fix.md` for the reproduced failure, repair and replacement build status.
+Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bundled UI index.html is missing.` on a physical iPhone. The IPA contains BrowserUI/index.html; canonical-path indexing was corrected in replacement build 10. Build 9 must not be treated as a successful physical-device startup. See `docs/superpowers/plans/2026-10-24-resource-path-fix.md` for the reproduced failure, repair and replacement build status.
 
 ## Uploaded build 9
 
@@ -42,6 +44,6 @@ Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bund
 
 ## Limits and remaining user steps
 
-Build 9 is superseded by its confirmed physical-device startup failure and must not be recommended for installation. A corrected replacement is being checked under the linked repair plan. A public App Store release and external beta review were not submitted. Physical startup, website account sign-in, media playback and background audio must be checked on the replacement; simulator success is not evidence for every website or real-device behavior.
+Build 9 is superseded by its confirmed physical-device startup failure and must not be recommended for installation. Replacement build 10 passed the required Release checks and is available internally; its physical-device retest remains pending. A public App Store release and external beta review were not submitted. Physical startup, website account sign-in, media playback and background audio must be checked on the replacement; simulator success is not evidence for every website or real-device behavior.
 
 No Codemagic cloud build was started during this delivery. GitHub used standard hosted macOS runners in the existing public repository; no paid runner or subscription upgrade was enabled.
