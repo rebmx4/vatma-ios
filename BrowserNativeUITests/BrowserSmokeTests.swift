@@ -115,6 +115,8 @@ final class BrowserSmokeTests: XCTestCase {
 
         let pin = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Добавить httpbingo.org")).firstMatch
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        let pinReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in pin.isEnabled }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [pinReady], timeout: 10), .completed, "Quick-add waits for the current document to finish loading")
         pin.tap()
         XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 20))
         home.tap()

@@ -225,6 +225,7 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitForUI()
         _ = try await rpc("open", body: ["url": url, "webApp": false])
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(220, 38, 40)")
+        try await waitFor("!document.getElementById('pin-site').disabled", in: controller.ui)
         _ = try await script("document.getElementById('pin-site').click(); return true;", in: controller.ui)
         try await waitFor("JSON.parse(localStorage.getItem('atma-preview-apps')).some(app=>app.url===\(jsonString(url)) && app.iconUrl?.startsWith('data:image/png;base64,'))", in: controller.ui)
         _ = try await rpc("home")
@@ -253,12 +254,31 @@ final class BrowserRenderingTests: XCTestCase {
         let icon = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
         let pixel = try averageRGB(XCTUnwrap(icon))
         XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
-        _ = try await script("const apps=JSON.parse(localStorage.getItem('atma-preview-apps')); delete apps.find(app=>app.name==='Manual icon fixture').iconUrl; localStorage.setItem('atma-preview-apps',JSON.stringify(apps)); return true;", in: controller.ui)
+        _ = try await script("const apps=JSON.parse(localStorage.getItem('atma-preview-apps')); const index=apps.findIndex(app=>app.name==='Manual icon fixture'),app=apps[index];delete app.iconUrl;apps.splice(index,1,{id:'icon-fixture-folder',type:'folder',name:'Icons',children:[app]}); localStorage.setItem('atma-preview-apps',JSON.stringify(apps)); return true;", in: controller.ui)
         controller.ui.reload()
         try await waitForUI()
-        try await waitFor("\(saved)?.iconUrl?.startsWith('data:image/png;base64,')", in: controller.ui)
-        let repaired = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
+        let repairedApp = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.id==='icon-fixture-folder').children[0]"
+        try await waitFor("\(repairedApp)?.iconUrl?.startsWith('data:image/png;base64,') && document.querySelector('[data-app=icon-fixture-folder] .folder-miniatures img')?.naturalWidth===192", in: controller.ui)
+        let repaired = try await script("return \(repairedApp).iconUrl;", in: controller.ui) as? String
         XCTAssertEqual(repaired, icon, "Previously created shortcuts must recover their website artwork")
+    }
+
+    func testCurrentSiteRejectsMetadataFromThePreviousDocumentDuringNavigation() async throws {
+        let base = try await startFixture(video: false)
+        try await waitForUI()
+        try controller.open(base.appendingPathComponent("red").absoluteString)
+        try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(220, 38, 40)")
+        let destination = base.appendingPathComponent("slow").absoluteString
+        try controller.open(destination)
+        let rejection = try await script("try {await window.webkit.messageHandlers.atma.postMessage({action:'current-site'});return '';} catch(error){return String(error.message||error);}", in: controller.ui) as? String
+        XCTAssertTrue(rejection?.contains("Дождитесь") == true || rejection?.contains("Страница") == true,
+                      "Quick-add must reject the preceding document during navigation: \(String(describing: rejection))")
+        try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(30, 70, 220)")
+        try await waitFor("document.getElementById('address').value===\(jsonString(destination)) && !document.getElementById('pin-site').disabled", in: controller.ui)
+        let value = try await rpc("current-site")
+        let site = try XCTUnwrap(value as? [String: Any])
+        XCTAssertEqual(site["url"] as? String, destination)
+        XCTAssertEqual(site["profileId"] as? String, controller.model.active.profileId)
     }
 
     private func jsonString(_ value: String) -> String {
@@ -278,7 +298,7 @@ final class BrowserRenderingTests: XCTestCase {
 
     private func startFixture(video: Bool) async throws -> URL {
         var resources: [String: Data] = [:]
-        for (path, color) in [("/red", "rgb(220,38,40)"), ("/blue", "rgb(30,70,220)")] {
+        for (path, color) in [("/red", "rgb(220,38,40)"), ("/blue", "rgb(30,70,220)"), ("/slow", "rgb(30,70,220)")] {
             resources[path] = Data("<!doctype html><html><head><title>\(path) fixture</title><link rel='apple-touch-icon' href='/art/site.png'><style>html,body{margin:0;width:100%;height:100%;background:\(color)}</style></head><body></body></html>".utf8)
         }
         let artwork = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).pngData { context in
@@ -297,7 +317,7 @@ final class BrowserRenderingTests: XCTestCase {
             resources["/video"] = Data(videoPage.utf8)
             resources["/video-autoplay"] = Data(videoPage.replacingOccurrences(of: "<video playsinline controls ", with: "<video playsinline controls autoplay ").utf8)
         }
-        fixture = try BrowserRenderingFixtureServer(resources: resources)
+        fixture = try BrowserRenderingFixtureServer(resources: resources, delays: ["/slow": 3])
         return try await fixture.start()
     }
 

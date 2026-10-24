@@ -31,3 +31,18 @@ export async function resolveWebsiteIcon(site,request,{parseHTML=text=>new DOMPa
  }
  return '';
 }
+
+
+export function createWebsiteIconLoader(request,{now=()=>Date.now(),...options}={}){
+ const entries=new Map();
+ return {
+  resolve(site){
+   const key=JSON.stringify([site.url,site.iconUrl,site.iconCandidates]),cached=entries.get(key);
+   if(cached&&now()<cached.retryAt)return cached.promise;
+   const entry={retryAt:Infinity,promise:null};
+   entry.promise=resolveWebsiteIcon(site,request,options).catch(()=>'').then(icon=>{entry.retryAt=icon?Infinity:now()+10000;return icon;});
+   entries.set(key,entry);return entry.promise;
+  },
+  retryFailed(){for(const [key,entry] of entries)if(Number.isFinite(entry.retryAt))entries.delete(key);}
+ };
+}

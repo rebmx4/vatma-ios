@@ -8,7 +8,7 @@ import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
 import {renderCookieBrowser} from './assets/cookies-ui.js';
 import {createLocalization} from './assets/i18n.js';
-import {resolveWebsiteIcon} from './assets/site-icons.js';
+import {createWebsiteIconLoader} from './assets/site-icons.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
 const appLabel=app=>app.type==='system'?localization.t(app.name):app.name;
@@ -202,12 +202,9 @@ async function action(name, data = {}) {
   try { const result = await api(name, data); if(version===stateActionVersion)consume(result); return result; }
   catch (error) { notify(error.message); throw error; }
 }
-const shortcutIconRequests=new Map();
-function resolveShortcutIcon(site){
-  const key=JSON.stringify([site.url,site.iconUrl,site.iconCandidates]);
-  if(!shortcutIconRequests.has(key))shortcutIconRequests.set(key,resolveWebsiteIcon(site,(kind,url)=>api('site-resource',{kind,url})).catch(()=>''));
-  return shortcutIconRequests.get(key);
-}
+const shortcutIcons=createWebsiteIconLoader((kind,url)=>api('site-resource',{kind,url}));
+window.addEventListener('online',()=>{shortcutIcons.retryFailed();renderApps();});
+function resolveShortcutIcon(site){return shortcutIcons.resolve(site);}
 function paintShortcutIcon(target,app,scope){
   if(!app.custom)return;
   const source=app.iconUrl||'',url=app.url,id=app.id,key=vaultKey;
@@ -229,7 +226,7 @@ function updateQuickAdd() {
   const button=$('pin-site'),url=normalizedSiteUrl(state?.url);
   button.hidden=state?.mode!=='browse'||!url;if(button.hidden)return;
   const name=state.siteName||state.title||new URL(url).hostname;
-  const saved=savedSite(url);button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved;
+  const saved=savedSite(url);button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
   button.setAttribute('aria-label',saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`);
   button.title=button.getAttribute('aria-label');$('pin-site-badge').innerHTML=icon(saved?'check':'plus');
   const source=state.iconUrl||new URL('/favicon.ico',url).href,key=`${url}|${source}|${name}`;
@@ -240,7 +237,7 @@ function updateQuickAdd() {
   image.addEventListener('load',()=>{if(pinSiteArtKey===key)art.replaceChildren(image);});image.src=source;
 }
 async function saveCurrentSite() {
-  if(pinSiteBusy||state?.mode!=='browse')return;
+  if(pinSiteBusy||state?.mode!=='browse'||state.loading)return;
   pinSiteBusy=true;updateQuickAdd();
   try{
     const site=await api('current-site'),url=normalizedSiteUrl(site.url);

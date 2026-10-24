@@ -22,3 +22,10 @@ test('unavailable and unsafe icons do not break shortcut creation or fetch other
  const urls=[];assert.equal(await resolveWebsiteIcon({url:'https://site.example/',iconCandidates:['file:///private/icon','javascript:alert(1)','https://user:pass@site.example/icon']},async(kind,url)=>{urls.push(url);throw Error('offline');}), '');
  assert.deepEqual(urls,['https://site.example/apple-touch-icon.png','https://site.example/favicon.ico']);
 });
+
+test('a real online event can retry failed icons immediately without discarding good cached images',async()=>{
+ const {createWebsiteIconLoader}=await import('../BrowserUI/assets/site-icons.js');let online=false,calls=0;
+ const loader=createWebsiteIconLoader(async(kind,url)=>{calls++;if(online&&kind==='image')return{dataUrl:'data:image/png;base64,restored'};throw Error('offline');},{normalize:async value=>value});
+ const site={url:'https://online.example/'};assert.equal(await loader.resolve(site),'');const offline=calls;assert.equal(await loader.resolve(site),'');assert.equal(calls,offline);
+ online=true;loader.retryFailed();assert.equal(await loader.resolve(site),'data:image/png;base64,restored');const restored=calls;loader.retryFailed();await loader.resolve(site);assert.equal(calls,restored);
+});

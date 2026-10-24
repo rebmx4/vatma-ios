@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import * as websiteIcons from '../BrowserUI/assets/site-icons.js';
 const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
 function setup(){
  const effects=[],elements=new Map(),apps=[];
@@ -17,4 +18,29 @@ test('manual shortcut creation resolves and stores the website icon',async()=>{
 });
 test('quick add resolves a durable website icon before storing the shortcut',async()=>{
  const f=setup();await f.context.saveCurrentSite();assert.equal(f.context.apps[0].iconUrl,'data:image/png;base64,site-icon');assert.deepEqual(f.effects.filter(item=>item[0]==='icon'),[['icon','https://example.com/account']]);
+});
+
+function cacheFixture(){
+ let online=false,clock=1000;const requests=[];
+ const request=async(kind,url)=>{requests.push([kind,url]);if(online&&kind==='image'&&url.endsWith('/favicon.ico'))return{dataUrl:'data:image/png;base64,recovered'};throw Error('unavailable');};
+ const options={now:()=>clock,normalize:async value=>value};
+ const context={shortcutIconRequests:new Map(),shortcutIcons:websiteIcons.createWebsiteIconLoader?.(request,options),resolveWebsiteIcon:(site,request)=>websiteIcons.resolveWebsiteIcon(site,request,options),api:(_action,{kind,url})=>request(kind,url),Date:{now:()=>clock}};
+ vm.createContext(context);const start=source.indexOf('function resolveShortcutIcon('),end=source.indexOf('function paintShortcutIcon(',start);vm.runInContext(source.slice(start,end),context);
+ return{context,requests,goOnline(){online=true;},advance(ms){clock+=ms;}};
+}
+test('a failed icon lookup retries after the backoff when the website is reachable again',async()=>{
+ const f=cacheFixture(),site={url:'https://retry.example/'};assert.equal(await f.context.resolveShortcutIcon(site),'');const first=f.requests.length;
+ assert.equal(await f.context.resolveShortcutIcon(site),'');assert.equal(f.requests.length,first,'Failed lookups must not create a request storm');
+ f.goOnline();f.advance(10001);assert.equal(await f.context.resolveShortcutIcon(site),'data:image/png;base64,recovered');assert.ok(f.requests.length>first);
+ const successful=f.requests.length;assert.equal(await f.context.resolveShortcutIcon(site),'data:image/png;base64,recovered');assert.equal(f.requests.length,successful);
+});
+
+test('quick add waits for the new document rather than saving the preceding page during navigation',async()=>{
+ const f=setup();f.context.state.loading=true;await f.context.saveCurrentSite();assert.equal(f.context.apps.length,0);assert.deepEqual(f.effects,[]);
+});
+
+for(const nextKey of [null,{}])test('late private icon lookup does not write after vault lock or re-opening',async()=>{
+ let finish;const effects=[],context={vaultKey:{},resolveShortcutIcon:()=>new Promise(resolve=>{finish=resolve;}),Image:class{addEventListener(){}},poolFor:()=>{effects.push('pool');return[];},findEntry:()=>{effects.push('find');return null;},saveApps:async()=>effects.push('save')};
+ vm.createContext(context);const start=source.indexOf('function paintShortcutIcon('),end=source.indexOf('let pinSiteBusy=',start);vm.runInContext(source.slice(start,end),context);
+ context.paintShortcutIcon({replaceChildren(){}},{id:'private',url:'https://private.example/',custom:true},'private');context.vaultKey=nextKey;finish('data:image/png;base64,private');await Promise.resolve();await Promise.resolve();assert.deepEqual(effects,[]);
 });

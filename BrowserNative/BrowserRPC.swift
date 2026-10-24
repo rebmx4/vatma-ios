@@ -81,11 +81,17 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             return
         case "current-site":
             let tab = model.active
-            var result: [String: Any] = ["url": tab.url, "profileId": tab.profileId, "title": tab.title,
-                                         "siteName": tab.siteName, "iconUrl": tab.iconUrl]
-            guard let page = currentRenderer else { reply(result, nil); return }
-            BrowserSiteResource.metadata(in: page) { metadata in
-                result.merge(metadata) { _, fresh in fresh }
+            guard mode == "browse", !tab.loading, let page = currentRenderer else {
+                throw BrowserFailure.invalid("Дождитесь загрузки сайта перед добавлением на рабочий стол.")
+            }
+            BrowserSiteResource.metadata(in: page) { [weak self, weak page] metadata in
+                guard let self, let page, self.currentRenderer === page, self.mode == "browse",
+                      self.model.activeTabId == tab.id, !self.model.active.loading,
+                      self.model.active.url == tab.url, metadata["url"] as? String == tab.url else {
+                    reply(nil, "Страница изменилась. Дождитесь загрузки и повторите добавление."); return
+                }
+                var result = metadata
+                result["url"] = tab.url; result["profileId"] = tab.profileId
                 reply(result, nil)
             }
             return
