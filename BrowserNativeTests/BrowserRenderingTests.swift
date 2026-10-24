@@ -148,8 +148,10 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitFor("document.getElementById('pin-site').dataset.saved==='true'", in: controller.ui)
         let stableMode = try await script("window.__modeObserver.disconnect(); return document.body.dataset.mode==='browse' && window.__modeChanges.every(mode=>mode==='browse');", in: controller.ui) as? Bool
         XCTAssertEqual(stableMode, true, "Quick-add metadata is not a full native state and must not replace it")
-        let savedProfile = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.profileId;", in: controller.ui, arguments: ["url": url]) as? String
+        let savedProfile = try await script("window.__savedShortcutURL=url; return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.profileId;", in: controller.ui, arguments: ["url": url]) as? String
         XCTAssertEqual(savedProfile, controller.model.active.profileId)
+        _ = try await script("document.getElementById('go-home').click(); return true;", in: controller.ui)
+        try await waitFor("document.body.dataset.mode==='home' && innerHeight>300 && (()=>{const app=JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===window.__savedShortcutURL); const tile=document.querySelector('[data-app=\"'+app.id+'\"] button').getBoundingClientRect(); const desktop=document.getElementById('apps').getBoundingClientRect(); return tile.width>0 && tile.left>=desktop.left && tile.right<=desktop.right && tile.top>=desktop.top && tile.bottom<=desktop.bottom;})()", in: controller.ui)
     }
 
     func testPopupTransitionCapturesItsVisibleOpener() async throws {

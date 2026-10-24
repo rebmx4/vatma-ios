@@ -238,6 +238,7 @@ function chooseDesktopSurface(tabId){
 function consume(next) {
   if (!next?.profileId) return;
   const previousMode=state?.mode,changedTab=state?.activeTabId!==next.activeTabId;
+  const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
   if (next.profiles) profiles = next.profiles;
   document.body.dataset.mode = next.mode;
@@ -264,7 +265,7 @@ function consume(next) {
     panel = next.panel;
     renderPanel();
   }
-  if(previousMode!==next.mode)renderApps();
+  if(previousMode!==next.mode||geometryChanged)renderApps();
   const count=next.tabs?.length||0,button=$('tabs-button');
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
   if(panel==='tabs')renderTabs();
@@ -348,6 +349,8 @@ function activate(app,scope='public') {
 }
 function renderApps() {
   $('lock-private').hidden=!vaultKey;
+  if(state?.mode==='browse'||document.body.dataset.surface==='blank')return;
+  if(document.body.dataset.runtime==='ios'&&state&&Math.abs(innerHeight-state.height)>1)return;
   const filter = state?.mode === 'browse' ? '' : $('address').value.trim().toLocaleLowerCase();
   const matches = app => app.name.toLocaleLowerCase().includes(filter) || appLabel(app).toLocaleLowerCase().includes(filter) || app.url?.toLocaleLowerCase().includes(filter);
   const visible = !filter ? apps : apps.flatMap(app => matches(app) ? [app] : isFolder(app) ? app.children.filter(matches) : []);
@@ -396,6 +399,7 @@ function renderApps() {
   $('empty').hidden = visible.length > 0;
   animatePositions($('apps'), previous);
 }
+new ResizeObserver(()=>{if(!gesture)renderApps();}).observe($('apps'));
 function gridMetrics() {
   const columns=innerWidth>=700?6:4, cell=innerWidth>=700?98:86, gap=innerWidth>=700?32:20;
   return{columns,rows:Math.max(1,Math.floor(($('apps').clientHeight-14+gap)/(cell+gap)))};
