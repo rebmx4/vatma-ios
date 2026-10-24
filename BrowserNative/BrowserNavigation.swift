@@ -88,6 +88,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView !== ui else { return }
         blocker.apply(to: webView, host: webView.url?.host)
+        media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
         update(webView)
     }
 
@@ -96,6 +97,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         else {
             reportPageDiagnostics("Site navigation finished", webView: webView)
             blocker.apply(to: webView, host: webView.url?.host)
+            media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             update(webView, loading: false)
         }

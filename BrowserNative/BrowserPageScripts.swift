@@ -21,7 +21,7 @@ enum BrowserPageScripts {
         // This standalone renderer owns only the site adapters, never the UI RPC.
         controller.removeAllUserScripts()
         for (name, source) in resources {
-            let options = name == "site-media" ? "{background:\(backgroundEnabled),visible:\(!view.isHidden),screenLocked:\(!UIApplication.shared.isProtectedDataAvailable)}" : name == "youtube-protection" ? "{enabled:\(blocking)}" : "{}"
+            let options = name == "site-media" ? "{background:\(backgroundEnabled),screenLocked:\(!UIApplication.shared.isProtectedDataAvailable)}" : name == "youtube-protection" ? "{enabled:\(blocking)}" : "{}"
             controller.addUserScript(WKUserScript(source: "(\(source))(\(options));", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         }
         view.callAsyncJavaScript("window.__atmaYouTubeProtection?.setEnabled(enabled); window.__atmaMediaPage?.setBackground(background);",

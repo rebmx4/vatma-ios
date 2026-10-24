@@ -2,7 +2,7 @@ function installAtmaMediaPage(options = {}) {
   if (window.__atmaMediaPage) { window.__atmaMediaPage.element ||= select; window.__atmaMediaPage.setBackground(options.background !== false); return; }
   let background = options.background !== false, lastSent = 0, current, interval;
   let pageVisible = options.visible !== false, screenLocked = options.screenLocked === true;
-  let gesture = 0, gestureUntil = 0;
+  let gesture = 0, gestureUntil = 0, playWrapped = false;
   const approved = new WeakSet(), blockedAt = new WeakMap(), presentations = new WeakMap();
   let visibilityOriginal, hiddenOriginal, visibilityPatched = false;
   const watched = new WeakSet();
@@ -41,6 +41,7 @@ function installAtmaMediaPage(options = {}) {
   function inPiP(video) { return video.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === video; }
   function inlineVisible(video) {
     if (!pageVisible || realHidden()) return false;
+    if(video.tagName==='AUDIO')return true;
     const r=video.getBoundingClientRect();
     if (r.width<=0 || r.height<=0 || (r.bottom??1)<=0 || (r.right??1)<=0 || (r.top??0)>=(window.innerHeight??Infinity) || (r.left??0)>=(window.innerWidth??Infinity)) return false;
     if (typeof getComputedStyle==='function') for(let node=video;node;node=node.parentElement){
@@ -49,13 +50,30 @@ function installAtmaMediaPage(options = {}) {
     return true;
   }
   function approve(video) { approved.add(video); blockedAt.delete(video); }
-  function stop(video) { approved.delete(video);blockedAt.set(video,gesture);video.pause(); }
-  function enforcePlay(video) {
+  function revoke(video) { approved.delete(video);blockedAt.set(video,gesture); }
+  function stop(video) { revoke(video);video.pause(); }
+  function allowPlay(video) {
     const freshGesture=Date.now()<=gestureUntil && (!blockedAt.has(video)||gesture>blockedAt.get(video));
     const activeGesture=!blockedAt.has(video) && window.navigator?.userActivation?.isActive===true;
     if (!approved.has(video) && inlineVisible(video) && (freshGesture||activeGesture)) approve(video);
-    if (!approved.has(video)) video.pause();
+    return approved.has(video);
   }
+  function enforcePlay(video,event) {
+    // Native controls do not call the page's JavaScript play() method.
+    // Scripted calls are checked before WebKit receives them below.
+    if(!allowPlay(video) && playWrapped && event?.isTrusted && (inPiP(video)||inlineVisible(video)))approve(video);
+    if(!approved.has(video))video.pause();
+  }
+  const mediaPrototype=window.HTMLMediaElement?.prototype;
+  const playDescriptor=mediaPrototype&&Object.getOwnPropertyDescriptor(mediaPrototype,'play');
+  if(playDescriptor?.value)try{
+    const originalPlay=playDescriptor.value;
+    Object.defineProperty(mediaPrototype,'play',{...playDescriptor,value:function play(...args){
+      if(!allowPlay(this))return Promise.reject(new DOMException('Press Play to start this media.','NotAllowedError'));
+      return originalPlay.apply(this,args);
+    }});
+    playWrapped=true;
+  }catch{}
   function presentationChanged(video) {
     const pip=inPiP(video),previous=presentations.get(video);presentations.set(video,pip);
     // A lock may hide the system window without ending intentional listening.
@@ -75,8 +93,9 @@ function installAtmaMediaPage(options = {}) {
     for (const video of document.querySelectorAll('video,audio')) if (!watched.has(video)) {
       watched.add(video);
       presentations.set(video,inPiP(video));
-      video.addEventListener('play',()=>{enforcePlay(video);report(true);});
-      for (const event of ['pause','ended','loadedmetadata','durationchange']) video.addEventListener(event,()=>report(true));
+      video.addEventListener('play',event=>{enforcePlay(video,event);report(true);});
+      for (const event of ['pause','ended']) video.addEventListener(event,()=>{revoke(video);report(true);});
+      for (const event of ['loadedmetadata','durationchange']) video.addEventListener(event,()=>report(true));
       for (const event of ['webkitpresentationmodechanged','enterpictureinpicture','leavepictureinpicture']) video.addEventListener(event,()=>presentationChanged(video));
       if(!video.paused)enforcePlay(video);
       video.addEventListener('timeupdate',()=>report());

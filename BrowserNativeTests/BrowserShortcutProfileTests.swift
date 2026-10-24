@@ -46,7 +46,8 @@ final class BrowserShortcutProfileTests: XCTestCase {
     func testMultipleStoredAccountsAreNotChosenArbitrarily() async throws {
         try await addCookie(to: model.store(for: BrowserModel.actualProfile), value: "account-one")
         try await addCookie(to: model.store(for: "iphone-13-pro-max"), value: "account-two")
-        model.tabs[0].profileId = "windows-chrome"
+        model.tabs[0].url = "https://unrelated.example.org/"
+        model.tabs[0].profileId = BrowserModel.actualProfile
         do {
             _ = try await model.shortcutProfile(for: "https://account.example.invalid/")
             XCTFail("Ambiguous stored accounts must not be opened arbitrarily")

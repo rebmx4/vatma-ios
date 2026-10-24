@@ -28,7 +28,6 @@ extension BrowserModel {
         if cookieProfiles.contains(current), matchingTabs.contains(current) { return current }
         if cookieProfiles.count == 1, let id = cookieProfiles.first { return id }
         if matchingTabs.count == 1, let id = matchingTabs.first, cookieProfiles.isEmpty || cookieProfiles.contains(id) { return id }
-        if cookieProfiles.contains(current) { return current }
         if cookieProfiles.count > 1 {
             throw BrowserFailure.invalid("Для сайта сохранено несколько профилей. Откройте нужный вход в обычном браузере и повторите запуск ярлыка.")
         }

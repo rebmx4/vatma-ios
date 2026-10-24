@@ -82,6 +82,27 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
     }
 
+    func testMediaPanelSettingsDoNotLeaveTheNextVisibleDocumentHidden() async throws {
+        let url = try await startFixture(video: true).appendingPathComponent("video").absoluteString
+        try await waitForUI()
+        _ = try await rpc("open", body: ["url": url, "webApp": false])
+        let page = try XCTUnwrap(controller.currentRenderer)
+        try await waitFor("document.readyState==='complete' && !!window.__atmaMediaPage", in: page)
+        let background = BrowserPageScripts.backgroundEnabled
+        defer { controller.media.setBackground(background) }
+        _ = try await rpc("panel", body: ["panel": "media"])
+        controller.view.layoutIfNeeded()
+        controller.media.setBackground(!background)
+        _ = try await rpc("panel", body: [:])
+        controller.view.layoutIfNeeded()
+        page.load(URLRequest(url: URL(string: url + "?next-document")!))
+        try await waitFor("location.search==='?next-document' && document.readyState==='complete' && document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
+        // Substitute only the transient browser activation at this boundary;
+        // the real WebKit document, player and native lifecycle remain intact.
+        _ = try await script("Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:true}}); await document.querySelector('video').play(); return true;", in: page)
+        try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
+    }
+
     func testLeavingAnInlineVideoStopsItAndRejectsAnAutomaticRestart() async throws {
         let page = try await openVideo()
         try await waitForUI()

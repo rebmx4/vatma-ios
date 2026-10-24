@@ -52,6 +52,7 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
 
     func invalidate(_ view: WKWebView) {
         bindings[ObjectIdentifier(view)]?.revision += 1
+        bindings[ObjectIdentifier(view)]?.pageVisible = nil
         guard owner === view else { return }
         generation += 1; owner = nil; snapshot = ["available": false]
         updateRemote(); didChange?()
@@ -107,8 +108,8 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         didChange?()
     }
 
-    func setPageVisible(_ view: WKWebView, visible: Bool) {
-        guard let binding = bindings[ObjectIdentifier(view)], binding.pageVisible != visible else { return }
+    func setPageVisible(_ view: WKWebView, visible: Bool, force: Bool = false) {
+        guard let binding = bindings[ObjectIdentifier(view)], force || binding.pageVisible != visible else { return }
         binding.pageVisible = visible
         if !visible, !(owner === view && snapshot["pip"] as? Bool == true) {
             // Covers cross-origin players that the main-frame adapter cannot inspect.
