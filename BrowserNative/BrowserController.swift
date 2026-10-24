@@ -105,14 +105,14 @@ final class BrowserController: UIViewController {
             }
         }
         if LocalUIServer.diagnosticsEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportUIDiagnostics("15 seconds") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportPageDiagnostics("15 seconds") }
         }
     }
 
-    func reportUIDiagnostics(_ stage: String) {
-        guard LocalUIServer.diagnosticsEnabled, ui != nil else { return }
-        LocalUIServer.diagnostic("\(stage): loading=\(ui.isLoading), path=\(ui.url?.path ?? "nil"), port=\(ui.url?.port ?? 0)")
-        ui.evaluateJavaScript("JSON.stringify({ready:document.readyState,title:document.title,bodyChildren:document.body?.children.length||0,home:!!document.getElementById('go-home'),mode:document.body?.dataset.mode,errors:window.__atmaStartupErrors||[]})") { result, error in
+    func reportPageDiagnostics(_ stage: String, webView: WKWebView? = nil) {
+        guard LocalUIServer.diagnosticsEnabled, let page = webView ?? ui else { return }
+        LocalUIServer.diagnostic("\(stage): loading=\(page.isLoading), host=\(page.url?.host ?? "nil"), port=\(page.url?.port ?? 0)")
+        page.evaluateJavaScript("JSON.stringify({ready:document.readyState,title:document.title,bodyChildren:document.body?.children.length||0,home:!!document.getElementById('go-home'),mode:document.body?.dataset.mode,heading:document.querySelector('h1')?.textContent?.slice(0,100),errors:window.__atmaStartupErrors||[]})") { result, error in
             if let error {
                 let failure = error as NSError
                 LocalUIServer.diagnostic("DOM evaluation: \(failure.domain) \(failure.code)")

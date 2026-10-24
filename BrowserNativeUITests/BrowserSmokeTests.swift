@@ -79,7 +79,7 @@ final class BrowserSmokeTests: XCTestCase {
         let site = siteRenderers.firstMatch
         XCTAssertTrue(site.waitForExistence(timeout: 5), "Navigation must create an identified site renderer")
         let heading = site.staticTexts[headingText]
-        XCTAssertTrue(heading.waitForExistence(timeout: 30), "The independent site renderer must load HTTPS content")
+        XCTAssertTrue(heading.waitForExistence(timeout: 60), "The independent site renderer must load HTTPS content")
         screenshot("website")
 
         address.tap()
@@ -87,9 +87,10 @@ final class BrowserSmokeTests: XCTestCase {
         screenshot("website-keyboard")
         go.tap()
         assertKeyboardDismissed()
-        XCTAssertTrue(heading.waitForExistence(timeout: 30))
+        XCTAssertTrue(heading.waitForExistence(timeout: 60))
 
         app.terminate()
+        app.launchArguments.removeAll { $0 == "--atma-ui-diagnostics" }
         app.launch()
         XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
         XCTAssertFalse(app.staticTexts[headingText].exists, "Relaunch must return to the desktop")

@@ -38,6 +38,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             LocalUIServer.diagnostic("Navigation response: \(status), MIME=\(navigationResponse.response.mimeType ?? "nil"), displayable=\(navigationResponse.canShowMIMEType)")
             decisionHandler(.allow); return
         }
+        LocalUIServer.diagnostic("Site response: status=\((navigationResponse.response as? HTTPURLResponse)?.statusCode ?? 0), MIME=\(navigationResponse.response.mimeType ?? "nil")")
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let shouldDownload = !navigationResponse.canShowMIMEType || disposition.lowercased().hasPrefix("attachment")
         if navigationResponse.isForMainFrame {
@@ -90,8 +91,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === ui { reportUIDiagnostics("Navigation finished"); publish() }
+        if webView === ui { reportPageDiagnostics("Navigation finished"); publish() }
         else {
+            reportPageDiagnostics("Site navigation finished", webView: webView)
             blocker.apply(to: webView, host: webView.url?.host)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             update(webView, loading: false)
@@ -110,10 +112,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         let failure = error as NSError
         if webView === ui {
             LocalUIServer.diagnostic("Navigation failed: \(failure.domain) \(failure.code)")
-            reportUIDiagnostics("Navigation failed")
+            reportPageDiagnostics("Navigation failed")
             if failure.domain != NSURLErrorDomain || failure.code != NSURLErrorCancelled { nativeError = error.localizedDescription }
             return
         }
+        LocalUIServer.diagnostic("Site navigation failed: \(failure.domain) \(failure.code), host=\(webView.url?.host ?? "nil")")
         let key = ObjectIdentifier(webView)
         let navigationID = navigation.map { String(describing: ObjectIdentifier($0)) }
         let failingURL = (failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
@@ -140,9 +143,12 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
             completionHandler(.performDefaultHandling, nil); return
         }
-        guard webView !== ui, let trust = challenge.protectionSpace.serverTrust, SiteTrust.evaluate(trust) else {
+        guard webView !== ui, let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
+        let trusted = SiteTrust.evaluate(trust)
+        LocalUIServer.diagnostic("Site TLS trust: host=\(challenge.protectionSpace.host), trusted=\(trusted)")
+        guard trusted else { completionHandler(.cancelAuthenticationChallenge, nil); return }
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 
