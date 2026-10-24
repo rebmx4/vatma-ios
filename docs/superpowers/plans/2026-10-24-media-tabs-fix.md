@@ -47,3 +47,10 @@ Recommended implementation model: GPT-6.1-sol, high reasoning; WebKit, media ses
 - CI layout diagnostics show the keyboard guide first becomes zero-height, then returns to a 68pt height even after native editing ends. The viewport follows that stale guide. This isolates the extra gap to the native constraint, not CSS.
 - Use the keyboard guide only between system keyboard-will-show and keyboard-will-hide notifications. Otherwise constrain the viewport to the physical view bottom. Keep the guide during presentation for native keyboard resizing/rotation; use system animation timing when switching. No fixed 68pt correction and no renderer replacement.
 - Re-run the existing red physical-bottom scenario and the full iPhone/iPad gate; inspect actual new screenshot pixels before signing.
+
+### Viewport event ordering, 10:21 UTC
+
+- Source1adaac5/run40083212629: both Release UI smoke scenarios passed, including real keyboard/rotation and physical-bottom assertions. Actual iPhone screenshot footer heights are now normal166pt, device-row-hidden128pt, minimal web-app70pt and expanded86pt. The68pt excess is gone.
+- The full gate still failed: native quick-add/Home scenario timed out waiting for the newly saved tile inside the visible desktop. Other29native cases passed. The timeout previously emitted only video data, insufficient to distinguish hidden DOM from scroll/geometry.
+- Desktop rendering was retried only by element ResizeObserver. A callback can run while window.innerHeight still has the footer height; the native-height guard defers rendering, and there was no window resize subscriber to retry it. Extracted the existing observer into a small desktop-viewport module: a behavior test reproduces a missed final viewport event (RED), then passes after subscribing to window resize too (GREEN). No polling, timer or changes to slot/page layout. Whether this accounts for the actual native failure must be confirmed by the full regression.
+- Native timeout diagnostics now include viewport, desktop rect/scroll/pages and bounded tile rectangles. The strict visibility assertion and deadline are unchanged.

@@ -2,6 +2,7 @@ import {APPEARANCE_KEY,ICON_CHOICES,normalizeAppearance,parseAppearance,resolveT
 import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, freezeSlots, placeEntry } from './workspace-model.js';
 import { createVault, openVault, sealVault } from './vault.js';
 import {renderTabsOverview} from './tabs-view.js';
+import {observeDesktopViewport} from './desktop-viewport.js';
 import {previewCookieRequest} from './assets/cookie-rpc.js';
 import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
@@ -399,7 +400,7 @@ function renderApps() {
   $('empty').hidden = visible.length > 0;
   animatePositions($('apps'), previous);
 }
-new ResizeObserver(()=>{if(!gesture)renderApps();}).observe($('apps'));
+observeDesktopViewport($('apps'),()=>{if(!gesture)renderApps();});
 function gridMetrics() {
   const columns=innerWidth>=700?6:4, cell=innerWidth>=700?98:86, gap=innerWidth>=700?32:20;
   return{columns,rows:Math.max(1,Math.floor(($('apps').clientHeight-14+gap)/(cell+gap)))};

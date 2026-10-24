@@ -217,7 +217,15 @@ final class BrowserRenderingTests: XCTestCase {
             if (try? await script("return Boolean(\(expression));", in: page)) as? Bool == true { return }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        let details = try? await script("const v=document.querySelector('video'); return JSON.stringify({url:location.href,ready:document.readyState,mediaBridge:!!window.__atmaMediaPage,video:v?{ready:v.readyState,network:v.networkState,paused:v.paused,time:v.currentTime,error:v.error?.code}:null});", in: page)
+        let details = try? await script("""
+            const rect = element => element ? element.getBoundingClientRect().toJSON() : null;
+            const v = document.querySelector('video'), desktop = document.getElementById('apps');
+            return JSON.stringify({url:location.href,ready:document.readyState,mediaBridge:!!window.__atmaMediaPage,
+              video:v?{ready:v.readyState,network:v.networkState,paused:v.paused,time:v.currentTime,error:v.error?.code}:null,
+              viewport:{width:innerWidth,height:innerHeight},mode:document.body.dataset.mode,surface:document.body.dataset.surface,
+              desktop:{rect:rect(desktop),scrollLeft:desktop?.scrollLeft,pages:desktop?.children.length},
+              tiles:[...document.querySelectorAll('.app-item')].slice(0,24).map(item=>({id:item.dataset.app,rect:rect(item.querySelector('button'))}))});
+            """, in: page)
         XCTFail("Fixture condition timed out: \(expression); details: \(String(describing: details))")
         throw NSError(domain: "ATMA.RenderingFixture", code: 1)
     }
