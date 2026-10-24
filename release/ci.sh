@@ -35,6 +35,11 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
     require_verified_revision
     ;;
   prepare)
+    mkdir -p "$task_root/.cache/resource-tests"
+    xcrun swiftc -O -swift-version 5 -module-cache-path "$task_root/.cache/swift-module-cache" \
+      BrowserNative/BrowserSecurity.swift BrowserNative/LocalUIServer.swift tests/ui_resources.swift \
+      -o "$task_root/.cache/resource-tests/ui-resources"
+    "$task_root/.cache/resource-tests/ui-resources"
     python3 -B -m unittest discover -s tests -v
     node --test tests/*.test.mjs
     python3 -B release/validate.py --report out/source-validation.json

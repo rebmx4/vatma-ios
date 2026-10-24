@@ -9,22 +9,30 @@ final class LocalUIServer {
     private var connections: [UUID: NWConnection] = [:]
     private(set) var port: UInt16 = 0
 
+    static func resourceIndex(at root: URL) throws -> [String: URL] {
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+            throw BrowserFailure.invalid("Bundled BrowserUI is missing.")
+        }
+        var resources: [String: URL] = [:]
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            if values.isRegularFile == true {
+                let prefix = root.standardizedFileURL.path + "/"
+                guard url.resolvingSymlinksInPath().path.hasPrefix(prefix) else { continue }
+                resources[String(url.path.dropFirst(prefix.count))] = url
+            }
+        }
+        guard resources["index.html"] != nil else { throw BrowserFailure.invalid("Bundled UI index.html is missing.") }
+        return resources
+    }
+
     func start(completion: @escaping (Result<URL, Error>) -> Void) {
         do {
-            guard let root = Bundle.main.resourceURL?.appendingPathComponent("BrowserUI", isDirectory: true),
-                  let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+            guard let root = Bundle.main.resourceURL?.appendingPathComponent("BrowserUI", isDirectory: true) else {
                 throw BrowserFailure.invalid("Bundled BrowserUI is missing.")
             }
-            for case let url as URL in enumerator {
-                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
-                if values.isRegularFile == true {
-                    let prefix = root.standardizedFileURL.path + "/"
-                    guard url.resolvingSymlinksInPath().path.hasPrefix(prefix) else { continue }
-                    resources[String(url.path.dropFirst(prefix.count))] = url
-                }
-            }
-            guard resources["index.html"] != nil else { throw BrowserFailure.invalid("Bundled UI index.html is missing.") }
+            resources = try Self.resourceIndex(at: root)
             let saved = UserDefaults.standard.integer(forKey: "atma.ui.loopback.port")
             port = (1024...65535).contains(saved) ? UInt16(saved) : UInt16.random(in: 49152...65535)
             let parameters = NWParameters.tcp
