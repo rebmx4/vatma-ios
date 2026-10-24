@@ -17,9 +17,9 @@
 
 ## Tasks
 - [x] Register new bundle ru.atma.browser and create App Store record6826668990 in the owner’s open browser; read back API identity.
-- [ ] Remove catalogue, UA overrides, chooser/panel and switching API. Simplify website data and shortcut launch to actual-device session. Add targeted native/JavaScript regression cases for rejected switching, persisted tabs/shortcut login and standard WebKit.
-- [ ] Change app/test bundle identifiers and signing/upload identity coherently; validate first-build numbering for a new record. Test IPA/signing validation against new and old identifiers.
-- [ ] Update RU/EN metadata, common policy/support and screenshot scenario to remove device-profile claims. Generate matching support pages.
+- [x] Remove catalogue, UA overrides, chooser/panel and switching API. Simplify website data and shortcut launch to actual-device session. Add targeted native/JavaScript regression cases for rejected switching, persisted tabs/shortcut login and standard WebKit.
+- [x] Change app/test bundle identifiers and signing/upload identity coherently; validate first-build numbering for a new record. Test IPA/signing validation against new and old identifiers.
+- [x] Update RU/EN metadata, common policy/support and screenshot scenario to remove device-profile claims. Generate matching support pages.
 - [ ] Run local checks, fresh independent code review and exact-source iPhone/iPad native gate. Only a green exact revision can be signed and uploaded.
 - [ ] Verify IPA resources/signature/identity, TestFlight processing and new group delivery. Capture and inspect current iPhone/iPad screenshots.
 - [ ] Populate new card including free price, age, privacy, review notes and actual screenshots; submit public review when all mandatory validation is satisfied. Report Apple state honestly.
@@ -40,3 +40,9 @@
 - Fresh reviewer caught an overbroad listener removal before any native build. Restored all original footer/navigation/edit-dismiss handlers except the3device controls; actual handler scenarios went3RED→3GREEN. Minor PIN/About/cookie localization issues corrected. No remaining Critical/Important review finding.
 - Final local checks:47JavaScript,25Python(previous result unchanged),267-file source validation, syntax, bilingual dynamic labels, generated11site files and git diff checks passed. Native Swift/iPhone/iPad execution remains pending.
 - First-build lookup inspected in pinned codemagic-cli-tools0.70.0 source: successful no-build lookup returns no value, default to0 only after successful command; errors still stop the shell.
+
+## First native gate and media correction
+- Exact source7add3254a9b4701f124d456c39c5dac72000121c: native run40130058588 failed one playback case (2assertions in40unit tests). Both iPhone UI2/2 and iPad UI2/2 passed. No verified revision was produced; signing/upload did not start.
+- Reproduced queued browser-guard pause cancelling a newer explicit Play. Guard pause tokens now preserve the newer intent, while real system/site pauses still revoke playback approval. Two meaningful event-queue regression cases added; native playback assertion strengthened from0.3to1.2seconds, with event diagnostics on failure.
+- Read-only independent review found no Critical/Important/Minor issue and exercised additional queued interleavings.49JavaScript tests, source validation267files, changed-JavaScript syntax and diff checks passed; unchanged Python validation remains25/25. Full native gate must pass the corrected exact revision before signing.
+- New app privacy label published (no collection), all175territories priced free, age/DSA/regional declarations inspected, RU/ENmetadata and beta review notes saved. Public support site9b5341ec68fe7e984c3ae6b0fac75ff9517b0c64 deployed and HTTP content verified. Current screenshots and binary remain pending.

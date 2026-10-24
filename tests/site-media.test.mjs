@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const path=new URL('../BrowserUI/assets/site-media.js',import.meta.url);
-function setup(){
- const listeners=new Map();
- class Media extends EventTarget {addEventListener(type,callback,...args){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(callback);super.addEventListener(type,callback,...args);}play(){this.paused=false;this.dispatchEvent(new Event('play'));return Promise.resolve();}pause(){this.paused=true;this.dispatchEvent(new Event('pause'));}}
+function setup({queuedMediaEvents=false}={}){
+ const listeners=new Map(),pendingMediaEvents=[];
+ const emit=(target,type)=>{const fire=()=>target.dispatchEvent(new Event(type));if(queuedMediaEvents)pendingMediaEvents.push(fire);else fire();};
+ class Media extends EventTarget {addEventListener(type,callback,...args){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(callback);super.addEventListener(type,callback,...args);}play(){const changed=this.paused;this.paused=false;if(changed)emit(this,'play');return Promise.resolve();}pause(){if(this.paused)return;this.paused=true;emit(this,'pause');}}
  const video=new Media();Object.assign(video,{tagName:'VIDEO',paused:true,ended:false,currentTime:20,duration:100,readyState:4,videoWidth:640,videoHeight:360,webkitPresentationMode:'inline',getBoundingClientRect:()=>({width:640,height:360}),webkitSupportsPresentationMode:()=>true,webkitSetPresentationMode(mode){this.webkitPresentationMode=mode;}});
  const inputs=new Map(),document=new EventTarget(),addInput=document.addEventListener.bind(document);document.addEventListener=(type,callback,...args)=>{if(!inputs.has(type))inputs.set(type,[]);inputs.get(type).push(callback);addInput(type,callback,...args);};Object.assign(document,{title:'Fixture video',readyState:'complete',querySelectorAll:()=>[video],pictureInPictureEnabled:false});
  const context={document,HTMLMediaElement:Media,DOMException,navigator:{userActivation:{isActive:false}},location:{hostname:'example.invalid'},MutationObserver:class{observe(){}disconnect(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,Event,URL,console};context.window=context;context.addEventListener=()=>{};context.removeEventListener=()=>{};
  vm.createContext(context);if(fs.existsSync(path))vm.runInContext(`(${fs.readFileSync(path,'utf8')})({background:true})`,context);
- return{context,document,video,api:context.__atmaMediaPage,trustedInput(){for(const callback of inputs.get('pointerup')||[])callback({isTrusted:true});},nativePlay(){video.paused=false;for(const callback of listeners.get('play')||[])callback({isTrusted:true});}};
+ return{context,document,video,api:context.__atmaMediaPage,trustedInput(){for(const callback of inputs.get('pointerup')||[])callback({isTrusted:true});},nativePlay(){video.paused=false;const fire=()=>{for(const callback of listeners.get('play')||[])callback({isTrusted:true});};if(queuedMediaEvents)pendingMediaEvents.push(fire);else fire();},nativePause(){video.paused=true;emit(video,'pause');},flushNextMediaEvent(){pendingMediaEvents.shift()?.();},flushMediaEvents(){let count=0;while(pendingMediaEvents.length){if(++count>30)throw Error('Media event loop did not settle');pendingMediaEvents.shift()();}} };
 }
 test('media commands use the original element, preserve position and honor deliberate pause',async()=>{
  const f=setup();assert.ok(f.api,'Media controller must be installed');
@@ -93,4 +94,13 @@ test('native JavaScript activation without actual page input cannot authorize pl
 
 test('an internal inline play event cannot undo a user pause',async()=>{
  const f=setup();await f.api.command({type:'play'});f.video.pause();f.nativePlay();assert.equal(f.video.paused,true);
+});
+
+test('a queued autoplay-denial pause cannot cancel a newer explicit Play',async()=>{
+ const f=setup({queuedMediaEvents:true});f.nativePlay();f.flushNextMediaEvent();assert.equal(f.video.paused,true,'Unrequested autoplay must stop immediately');
+ await f.api.command({type:'play'});f.flushMediaEvents();assert.equal(f.video.paused,false,'The old guard pause must not revoke the newer user Play');
+});
+test('a genuine system pause still defeats an automatic restart before its pause event arrives',async()=>{
+ const f=setup({queuedMediaEvents:true});await f.api.command({type:'play'});f.flushMediaEvents();
+ f.nativePause();f.nativePlay();f.flushMediaEvents();assert.equal(f.video.paused,true,'A real pause must revoke the existing playback even when website events are queued');
 });

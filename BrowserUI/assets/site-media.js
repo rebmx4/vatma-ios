@@ -5,7 +5,7 @@ function installAtmaMediaPage(options = {}) {
   let gesture = 0, gestureUntil = 0, playWrapped = false;
   const approved = new WeakSet(), requested = new WeakSet(), blockedAt = new WeakMap(), presentations = new WeakMap();
   let visibilityOriginal, hiddenOriginal, visibilityPatched = false;
-  const watched = new WeakSet();
+  const watched = new WeakSet(), playIntents = new WeakMap(), guardPauses = new WeakMap();
   // Keep the actual document visibility before the YouTube background shim.
   const realHidden=(()=>{
     for(let target=document;target;target=Object.getPrototypeOf(target)){
@@ -49,9 +49,22 @@ function installAtmaMediaPage(options = {}) {
     }
     return true;
   }
-  function approve(video) { approved.add(video);requested.add(video);blockedAt.delete(video); }
+  function approve(video) { approved.add(video);requested.add(video);blockedAt.delete(video);playIntents.set(video,{}); }
   function revoke(video) { approved.delete(video);blockedAt.set(video,gesture); }
-  function stop(video) { revoke(video);video.pause(); }
+  function pauseFromGuard(video) {
+    if(!video.paused){
+      const pending=guardPauses.get(video)||[];pending.push(playIntents.get(video));guardPauses.set(video,pending);
+    }
+    video.pause();
+  }
+  function didPause(video) {
+    const pending=guardPauses.get(video),guarded=Boolean(pending?.length),intent=guarded?pending.shift():undefined;
+    // Media events are queued. A guard pause from an older request must not
+    // revoke a newer explicit Play; real system/site pauses still revoke it.
+    if(!guarded||video.paused||intent===playIntents.get(video))revoke(video);
+    report(true);
+  }
+  function stop(video) { revoke(video);pauseFromGuard(video); }
   function allowPlay(video) {
     const freshGesture=Date.now()<=gestureUntil && (!blockedAt.has(video)||gesture>blockedAt.get(video));
     // WKWebView's native JS evaluation forces transient activation even for
@@ -63,7 +76,7 @@ function installAtmaMediaPage(options = {}) {
     // Native controls do not call the page's JavaScript play() method.
     // Scripted calls are checked before WebKit receives them below.
     if(!allowPlay(video) && playWrapped && event?.isTrusted && requested.has(video) && inPiP(video))approve(video);
-    if(!approved.has(video))video.pause();
+    if(!approved.has(video))pauseFromGuard(video);
   }
   const mediaPrototype=window.HTMLMediaElement?.prototype;
   const playDescriptor=mediaPrototype&&Object.getOwnPropertyDescriptor(mediaPrototype,'play');
@@ -95,7 +108,8 @@ function installAtmaMediaPage(options = {}) {
       watched.add(video);
       presentations.set(video,inPiP(video));
       video.addEventListener('play',event=>{enforcePlay(video,event);report(true);});
-      for (const event of ['pause','ended']) video.addEventListener(event,()=>{revoke(video);report(true);});
+      video.addEventListener('pause',()=>didPause(video));
+      video.addEventListener('ended',()=>{revoke(video);report(true);});
       for (const event of ['loadedmetadata','durationchange']) video.addEventListener(event,()=>report(true));
       for (const event of ['webkitpresentationmodechanged','enterpictureinpicture','leavepictureinpicture']) video.addEventListener(event,()=>presentationChanged(video));
       if(!video.paused)enforcePlay(video);

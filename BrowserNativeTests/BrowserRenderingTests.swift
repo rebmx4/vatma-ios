@@ -79,7 +79,7 @@ final class BrowserRenderingTests: XCTestCase {
         let paused = try await script("return document.querySelector('video').paused;", in: page) as? Bool
         XCTAssertEqual(paused, true, "The site must not start audio without a playback request")
         _ = try await script("await window.__atmaMediaPage.command({type:'play'}); return true;", in: page)
-        try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
+        try await waitFor("document.querySelector('video').currentTime>1.2 && !document.querySelector('video').paused", in: page)
     }
 
     func testMediaPanelSettingsDoNotLeaveTheNextVisibleDocumentHidden() async throws {
@@ -316,7 +316,7 @@ final class BrowserRenderingTests: XCTestCase {
             let bundle = Bundle(for: BrowserRenderingTests.self)
             let mediaURL = try XCTUnwrap(bundle.url(forResource: "playback", withExtension: "mp4"))
             let media = try Data(contentsOf: mediaURL).base64EncodedString()
-            let videoPage = "<!doctype html><html><head><title>Playback fixture</title><script>const setVisible=window.__atmaMediaPage.setPageVisible;window.__atmaMediaPage.setPageVisible=visible=>{window.__fixturePageVisible=visible;return setVisible(visible);};</script></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>"
+            let videoPage = "<!doctype html><html><head><title>Playback fixture</title><script>const setVisible=window.__atmaMediaPage.setPageVisible;window.__atmaMediaPage.setPageVisible=visible=>{window.__fixturePageVisible=visible;return setVisible(visible);};window.__fixtureMediaEvents=[];for(const type of ['play','playing','pause'])document.addEventListener(type,event=>{if(event.target instanceof HTMLMediaElement){window.__fixtureMediaEvents.push({type,at:performance.now(),paused:event.target.paused,time:event.target.currentTime});if(window.__fixtureMediaEvents.length>30)window.__fixtureMediaEvents.shift();}},true);</script></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>"
             resources["/video"] = Data(videoPage.utf8)
             resources["/video-autoplay"] = Data(videoPage.replacingOccurrences(of: "<video playsinline controls ", with: "<video playsinline controls autoplay ").utf8)
         }
@@ -343,7 +343,7 @@ final class BrowserRenderingTests: XCTestCase {
         let details = try? await script("""
             const rect = element => element ? element.getBoundingClientRect().toJSON() : null;
             const v = document.querySelector('video'), desktop = document.getElementById('apps');
-            return JSON.stringify({url:location.href,ready:document.readyState,mediaBridge:!!window.__atmaMediaPage,
+            return JSON.stringify({url:location.href,ready:document.readyState,mediaBridge:!!window.__atmaMediaPage,mediaVisible:window.__fixturePageVisible,mediaEvents:window.__fixtureMediaEvents,
               video:v?{ready:v.readyState,network:v.networkState,paused:v.paused,time:v.currentTime,error:v.error?.code}:null,
               viewport:{width:innerWidth,height:innerHeight},mode:document.body.dataset.mode,surface:document.body.dataset.surface,
               desktop:{rect:rect(desktop),scrollLeft:desktop?.scrollLeft,pages:desktop?.children.length},
