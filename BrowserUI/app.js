@@ -8,6 +8,7 @@ import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
 import {renderCookieBrowser} from './assets/cookies-ui.js';
 import {createLocalization} from './assets/i18n.js';
+import {renderLegalInfo} from './assets/legal-ui.js';
 import {createWebsiteIconLoader} from './assets/site-icons.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
@@ -267,6 +268,7 @@ function consume(next) {
   const previousMode=state?.mode,changedTab=state?.activeTabId!==next.activeTabId;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
+  if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
   if (next.profiles) profiles = next.profiles;
   document.body.dataset.mode = next.mode;
   document.body.dataset.webApp=String(Boolean(next.webApp));
@@ -627,13 +629,14 @@ function renderPanel() {
   $('overlay').hidden = !panel;
   $('sheet-content').replaceChildren();
   if (!panel) return;
-  const titles = {tabs:'Вкладки', profiles: 'Устройство для сайта', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', about: 'О предпросмотре' };
+  const titles = {tabs:'Вкладки', profiles: 'Устройство для сайта', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
   if (panel === 'profiles') renderProfiles();
   else if(panel==='pin')renderPIN();
   else if (panel === 'folder') { renderFolder(); if(!wasFolder) requestAnimationFrame(()=>animateFolder(true)); }
   else if (panel === 'settings') renderSettings();
+  else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{notify('Не удалось открыть страницу');}}});
   else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,notify,t:localization.t,openTab:async tabId=>{await action('tabs/select',{tabId});}});
   else if(panel==='appearance')renderAppearance();
   else if(panel==='app-icon')renderAppIconPicker();
@@ -758,6 +761,8 @@ function settingsPickers(container) {
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
   const appearanceButton=settingButton('Оформление','image',()=>setPanel('appearance'));appearanceButton.id='open-appearance';card.append(appearanceButton);
+  const policyButton=settingButton('Политика конфиденциальности','lock',()=>setPanel('privacy'));policyButton.id='open-privacy';card.append(policyButton);
+  const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
   card.append(settingButton('Закрытая страница · код из 6 цифр','lock',()=>{showDesktopPage(privatePageStart);requestVault();}));
   card.append(settingButton('Добавить страницу рабочего стола','plus',async()=>{publicPages++;localStorage.setItem('atma-preview-page-count',publicPages);await setPanel(null);renderApps();showDesktopPage(publicPages-1);}));

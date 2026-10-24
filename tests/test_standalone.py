@@ -126,6 +126,16 @@ class PackageTests(unittest.TestCase):
 
 
 class SimulatorSelectionTests(unittest.TestCase):
+    def test_prefers_store_screenshot_sizes_on_the_matching_runtime(self):
+        payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-4": [
+            {"name": "iPhone 17 Pro", "udid": "small-phone", "isAvailable": True},
+            {"name": "iPad Pro 11-inch (M5)", "udid": "small-tablet", "isAvailable": True},
+            {"name": "iPhone 17 Pro Max", "udid": "store-phone", "isAvailable": True},
+            {"name": "iPad Pro 13-inch (M5)", "udid": "store-tablet", "isAvailable": True}]}}
+        selected = select(payload, ios_version="26.4")
+        self.assertEqual(selected["iphone"], "store-phone")
+        self.assertEqual(selected["ipad"], "store-tablet")
+
     def test_latest_available_runtime_requires_phone_and_ipad(self):
         payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-4": [
             {"name": "iPhone 17", "udid": "phone", "isAvailable": True},

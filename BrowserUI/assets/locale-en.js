@@ -1,4 +1,5 @@
 export default {
+ 'Политика конфиденциальности':'Privacy Policy','Поддержка':'Support','Не удалось открыть страницу':'Could not open the page',
  'Настройки':'Settings','Файлы':'Files','‹ Файлы':'‹ Files','Рабочий стол':'Home','Браузер':'Browser','Основная':'Default','Размер текста интерфейса':'Interface text size',
  'Оформление':'Appearance','Тема интерфейса':'Interface theme','Обои':'Wallpaper','Тема':'Theme','Авто':'Auto','Светлая':'Light','Тёмная':'Dark',
  'Автоматическая тема':'Automatic theme','Тёмная тема':'Dark theme','Светлая тема':'Light theme','Размер текста':'Text size','Иконка приложения':'App icon',

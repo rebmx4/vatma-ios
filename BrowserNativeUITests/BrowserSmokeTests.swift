@@ -37,6 +37,9 @@ final class BrowserSmokeTests: XCTestCase {
             add(finalHierarchy)
         }
         XCTAssertTrue(homeReadyWithinDeadline, "Bundled native browser UI must load within 20 seconds")
+        let desktopShortcut = button(["Открыть ВКонтакте", "Open ВКонтакте"])
+        XCTAssertTrue(desktopShortcut.waitForExistence(timeout: 10), "First launch must show the saved website desktop")
+        XCTAssertTrue(desktopShortcut.isHittable)
         screenshot("home")
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "home-hierarchy"

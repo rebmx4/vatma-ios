@@ -17,8 +17,11 @@ def select(payload, ios_version=None):
         if ".iOS-" not in runtime or (requested is not None and not runtime.endswith(requested)):
             continue
         rows = [row for row in payload["devices"][runtime] if row.get("isAvailable")]
-        phone = next((row for row in rows if row["name"].startswith("iPhone")), None)
-        tablet = next((row for row in rows if row["name"].startswith("iPad")), None)
+        # Prefer actual App Store screenshot families; retain the runtime-safe fallback.
+        phone = next((row for row in rows if re.fullmatch(r"iPhone \d+ Pro Max", row["name"])), None)
+        phone = phone or next((row for row in rows if row["name"].startswith("iPhone")), None)
+        tablet = next((row for row in rows if row["name"].startswith("iPad") and "13-inch" in row["name"]), None)
+        tablet = tablet or next((row for row in rows if row["name"].startswith("iPad")), None)
         if phone and tablet:
             return {"iphone": phone["udid"], "ipad": tablet["udid"], "runtime": runtime}
     suffix = f" matching iOS SDK {ios_version}" if ios_version is not None else ""

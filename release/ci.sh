@@ -51,6 +51,7 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
     "$task_root/.cache/resource-tests/ui-resources"
     python3 -B -m unittest discover -s tests -v
     node --test tests/*.test.mjs
+    python3 -B release/store_assets.py --check
     python3 -B release/validate.py --report out/source-validation.json
     for script in BrowserUI/*.js BrowserUI/assets/*.js BrowserUI/assets/*.mjs; do
       [[ ! -f "$script" ]] || node --check "$script"
