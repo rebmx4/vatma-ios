@@ -71,6 +71,9 @@ done
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         tests = [line for line in calls if line.startswith("test ")]
         self.assertEqual(len(tests), 2)
+        for command in tests:
+            self.assertIn("-configuration Release", command)
+            self.assertIn("ENABLE_TESTABILITY=YES", command)
         self.assertIn("id=phone", tests[0])
         self.assertNotIn("-only-testing:", tests[0])
         self.assertIn("id=tablet", tests[1])

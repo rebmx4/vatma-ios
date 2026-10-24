@@ -9,7 +9,11 @@ final class LocalUIServer {
     private var connections: [UUID: NWConnection] = [:]
     private(set) var port: UInt16 = 0
 
-    static func resourceIndex(at root: URL) throws -> [String: URL] {
+    static func resourceIndex(at directory: URL) throws -> [String: URL] {
+        // iOS container paths may use aliases such as /var and /private/var.
+        // Use the same canonical root for containment checks and relative keys.
+        let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        let prefix = root.path + "/"
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
             throw BrowserFailure.invalid("Bundled BrowserUI is missing.")
         }
@@ -18,9 +22,9 @@ final class LocalUIServer {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
             if values.isRegularFile == true {
-                let prefix = root.standardizedFileURL.path + "/"
-                guard url.resolvingSymlinksInPath().path.hasPrefix(prefix) else { continue }
-                resources[String(url.path.dropFirst(prefix.count))] = url
+                let file = url.resolvingSymlinksInPath().standardizedFileURL
+                guard file.path.hasPrefix(prefix) else { continue }
+                resources[String(file.path.dropFirst(prefix.count))] = file
             }
         }
         guard resources["index.html"] != nil else { throw BrowserFailure.invalid("Bundled UI index.html is missing.") }

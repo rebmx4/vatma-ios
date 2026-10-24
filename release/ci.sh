@@ -64,11 +64,11 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
       xcrun simctl bootstatus "$simulator" -b
       # macOS Bash 3.2 treats an empty array as unset under nounset.
       # Keep the command nonempty so iPhone tests cannot be skipped at expansion.
-      test_command=(xcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Debug
+      test_command=(xcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Release
         -destination "platform=iOS Simulator,id=$simulator"
         -derivedDataPath "$task_root/.cache/derived-simulator"
         -resultBundlePath "$task_root/out/ATMA-$device.xcresult"
-        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO)
+        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES)
       if [[ "$device" = ipad ]]; then test_command+=(-only-testing:BrowserNativeUITests); fi
       "${test_command[@]}" 2>&1 | tee "$task_root/out/test-$device.log"
       xcrun simctl io "$simulator" screenshot "$task_root/out/$device-final.png"

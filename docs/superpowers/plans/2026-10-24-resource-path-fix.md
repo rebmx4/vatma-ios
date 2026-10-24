@@ -22,3 +22,6 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 - Base: 3a75850. Branch atma-browser-testflight is an existing isolated worktree on D:.
 - Test written before behavior fix. Mechanical extraction preserves the failing indexing algorithm so a fast host-native test can prove the defect before another simulator run.
 - Build 9 reached internal TestFlight but failed startup on the owner's physical iPhone. Its earlier delivery status is superseded by this report.
+
+- RED confirmed: GitHub native run 40044862013 compiled the actual production indexer and failed before simulator startup with `FAIL: Bundled UI index.html is missing.` (log: out/resource-alias-red-40044862013.log).
+- Release command regression also failed locally because the real smoke command used Debug. Both causes are now being corrected before the full native run.
