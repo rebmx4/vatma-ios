@@ -63,6 +63,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard webView !== ui else { return }
         let key = ObjectIdentifier(webView)
+        if let id = renderers.first(where: { $0.value === webView })?.key { invalidatePreview(for: id) }
         media.invalidate(webView)
         if let navigation { currentNavigations[key] = navigation }
         if var transition = downloadTransitions[key] {

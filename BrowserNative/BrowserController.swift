@@ -33,11 +33,19 @@ final class BrowserController: UIViewController {
     var mode = "home"
     var panel: String?
     var nativeError: String?
-    var snapshotBusy = false
+    var tabPreviews: [String: TabPreview] = [:]
+    var previewCaptures: [String: TabPreviewCapture] = [:]
+    var deviceRowCollapsed = false
     var nativeTheme = "auto"
     var currentNavigations: [ObjectIdentifier: WKNavigation] = [:]
     var downloadTransitions: [ObjectIdentifier: DownloadNavigationTransition] = [:]
-    static let footerHeight: CGFloat = 174
+    static let footerHeight: CGFloat = 166
+    var webApp: Bool { mode == "browse" && model.active.webApp == true }
+    var controlsCollapsed: Bool { mode == "browse" && (webApp ? model.active.appControlsCollapsed != false : deviceRowCollapsed) }
+    var currentFooterHeight: CGFloat {
+        if webApp { return (controlsCollapsed ? 36 : 52) + view.safeAreaInsets.bottom }
+        return Self.footerHeight - (controlsCollapsed ? 38 : 0)
+    }
 
     init(model: BrowserModel? = nil) {
         self.model = model ?? BrowserModel()
@@ -57,6 +65,7 @@ final class BrowserController: UIViewController {
         browserViewport.translatesAutoresizingMaskIntoConstraints = false
         browserViewport.clipsToBounds = true
         view.addSubview(browserViewport)
+        view.keyboardLayoutGuide.usesBottomSafeArea = false
         let safe = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
             browserViewport.topAnchor.constraint(equalTo: safe.topAnchor),
@@ -124,12 +133,12 @@ final class BrowserController: UIViewController {
         super.viewDidLayoutSubviews()
         let frame = browserViewport.bounds
         let browsing = mode == "browse" && panel == nil
-        ui.frame = browsing ? CGRect(x: frame.minX, y: max(frame.minY, frame.maxY - Self.footerHeight),
-                                     width: frame.width, height: min(Self.footerHeight, frame.height)) : frame
+        ui.frame = browsing ? CGRect(x: frame.minX, y: max(frame.minY, frame.maxY - currentFooterHeight),
+                                     width: frame.width, height: min(currentFooterHeight, frame.height)) : frame
         for (id, renderer) in renderers {
             renderer.isHidden = !browsing || id != model.activeTabId
             renderer.frame = CGRect(x: frame.minX, y: frame.minY, width: frame.width,
-                                    height: max(0, frame.height - Self.footerHeight))
+                                    height: max(0, frame.height - currentFooterHeight))
         }
         browserViewport.bringSubviewToFront(ui)
         publish()
@@ -170,14 +179,26 @@ final class BrowserController: UIViewController {
         return renderer
     }
 
-    func open(_ input: String) throws {
+    func open(_ input: String, profileID: String? = nil, webApp: Bool? = nil) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
-        try open(URLRequest(url: url))
+        try open(URLRequest(url: url), profileID: profileID, webApp: webApp)
     }
 
-    func open(_ request: URLRequest) throws {
+    func open(_ request: URLRequest, profileID: String? = nil, webApp: Bool? = nil) throws {
         guard let url = request.url else { throw BrowserFailure.invalid("Missing navigation URL.") }
         _ = try AddressResolver.validated(url.absoluteString)
+        if let profileID {
+            guard model.profile(profileID) != nil else { throw BrowserFailure.invalid("Unknown shortcut profile.") }
+            if model.active.profileId != profileID {
+                removeRenderer(for: model.activeTabId)
+                model.tabs[model.activeIndex].profileId = profileID
+            }
+        }
+        if let webApp {
+            let launchingShortcut = webApp && (model.active.webApp != true || profileID != nil)
+            model.tabs[model.activeIndex].webApp = webApp
+            if launchingShortcut { model.tabs[model.activeIndex].appControlsCollapsed = true }
+        }
         model.tabs[model.activeIndex].url = url.absoluteString
         model.tabs[model.activeIndex].error = nil
         mode = "browse"; panel = nil; nativeError = nil
@@ -212,11 +233,7 @@ final class BrowserController: UIViewController {
         guard let index = model.tabs.firstIndex(where: { $0.id == id }) else { throw BrowserFailure.invalid("Unknown tab.") }
         let opener = windowOpeners.removeValue(forKey: id)
         windowOpeners = windowOpeners.filter { $0.value != id }
-        if let renderer = renderers.removeValue(forKey: id) {
-            media.unregister(renderer)
-            renderer.stopLoading()
-            cleanupNavigation(for: renderer); renderer.removeFromSuperview()
-        }
+        removeRenderer(for: id)
         model.tabs.remove(at: index)
         if model.tabs.isEmpty { newTab(profile: BrowserModel.actualProfile) }
         else if model.activeTabId == id {
@@ -230,12 +247,20 @@ final class BrowserController: UIViewController {
     func changeProfile(_ id: String) throws {
         guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown profile.") }
         guard id != model.active.profileId else { return }
-        let old = renderers.removeValue(forKey: model.activeTabId)
-        if let old { media.unregister(old); cleanupNavigation(for: old) }
-        old?.stopLoading(); old?.removeFromSuperview()
+        removeRenderer(for: model.activeTabId)
         model.tabs[model.activeIndex].profileId = id
         if mode == "browse", !model.active.url.isEmpty { try selectTab(model.activeTabId) }
         changed()
+    }
+
+    private func removeRenderer(for id: String) {
+        invalidatePreview(for: id)
+        if let renderer = renderers.removeValue(forKey: id) {
+            media.unregister(renderer)
+            renderer.stopLoading()
+            cleanupNavigation(for: renderer)
+            renderer.removeFromSuperview()
+        }
     }
 
     func changed() {
@@ -251,7 +276,8 @@ final class BrowserController: UIViewController {
         return ["id": "ios", "deviceName": UIDevice.current.model, "profileId": tab.profileId,
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
                 "siteName": tab.siteName, "iconUrl": tab.iconUrl,
-                "width": frame.width, "height": frame.height, "footerHeight": Self.footerHeight,
+                "width": frame.width, "height": frame.height, "footerHeight": currentFooterHeight,
+                "webApp": webApp, "controlsCollapsed": controlsCollapsed,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
                 "capabilities": ["cookies": true, "downloads": true, "tabs": true,
                                  "persistentProfiles": true, "contentBlocking": blocker.available, "media": true,

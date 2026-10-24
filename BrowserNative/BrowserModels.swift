@@ -10,6 +10,8 @@ struct BrowserTab: Codable {
     var iconUrl = ""
     var loading = false
     var error: String?
+    var webApp: Bool?
+    var appControlsCollapsed: Bool?
 
     mutating func finishNavigationForDownload() {
         loading = false
@@ -18,7 +20,7 @@ struct BrowserTab: Codable {
 
     var json: [String: Any] {
         ["id": id, "profileId": profileId, "url": url, "title": title,
-         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull()]
+         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull(), "webApp": webApp ?? false]
     }
 }
 

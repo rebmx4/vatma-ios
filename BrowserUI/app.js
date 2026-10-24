@@ -39,6 +39,9 @@ const paths = {
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
 $('media-shortcut').innerHTML=icon('play');$('media-shortcut').onclick=()=>setPanel('media');
+for(const id of ['device-collapse','app-chrome-toggle'])$(id).addEventListener('click',()=>{
+  $('address').blur();action('chrome',{collapsed:!state.controlsCollapsed}).catch(()=>{});
+});
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'previous-device': 'left', 'next-device': 'right', 'device-icon': 'phone', 'device-chevron': 'up', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
 
 const DEFAULT_APPS = [
@@ -63,6 +66,7 @@ for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.
 }
 let state, profiles = [], panel = null, family = 'Все', editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
+let pendingShortcut=null;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
@@ -213,7 +217,7 @@ async function saveCurrentSite() {
     const site=await action('current-site'),url=normalizedSiteUrl(site.url);
     if(!url)throw new Error('Не удалось получить адрес сайта');
     if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
-    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl:site.iconUrl,color:'#337b96',custom:true};
+    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,profileId:site.profileId||state.profileId,iconUrl:site.iconUrl,color:'#337b96',custom:true};
     const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
     try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
     notify('Добавлено на рабочий стол');
@@ -237,6 +241,13 @@ function consume(next) {
   state = next;
   if (next.profiles) profiles = next.profiles;
   document.body.dataset.mode = next.mode;
+  document.body.dataset.webApp=String(Boolean(next.webApp));
+  document.body.dataset.controlsCollapsed=String(Boolean(next.controlsCollapsed));
+  if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
+  $('device-collapse').innerHTML=icon(next.controlsCollapsed?'up':'down');
+  $('device-collapse').setAttribute('aria-label',next.controlsCollapsed?'Показать выбор устройства':'Свернуть выбор устройства');
+  $('app-chrome-toggle').innerHTML=icon(next.controlsCollapsed?'up':'down');
+  $('app-chrome-toggle').setAttribute('aria-label',next.controlsCollapsed?'Развернуть панель приложения':'Свернуть панель приложения');
   updateTabSurface();
   $('go-back').disabled = next.mode !== 'browse';
   $('go-forward').disabled = next.mode !== 'browse';
@@ -333,7 +344,7 @@ function activate(app,scope='public') {
   if (isFolder(app)) openFolder(app.id,scope);
   else if(app.type==='system'){setEditing(false);if(app.action==='home')$('go-home').click();else setPanel(app.action);}
   else if (editing) openAppEditor(app,scope);
-  else launch(app.url,scope);
+  else launchShortcut(app,scope);
 }
 function renderApps() {
   $('lock-private').hidden=!vaultKey;
@@ -551,12 +562,17 @@ function renderFolder() {
   $('folder-name').addEventListener('keydown',event=>{if(event.key==='Enter')event.currentTarget.blur();});
   animatePositions($('sheet-content'),previous);
 }
-async function launch(url,scope='public') {
+async function launch(url,scope='public',options={}) {
   setEditing(false);
   if(scope==='private')lockVault();
-  try { await action('open', { url }); $('address').blur(); } catch {}
+  try { await action('open', { url, webApp:state?.mode==='browse'&&Boolean(state.webApp), ...options }); $('address').blur(); } catch {}
+}
+async function launchShortcut(app,scope='public') {
+  if(!app.profileId){pendingShortcut={app,scope};await setPanel('profiles');return;}
+  await launch(app.url,scope,{webApp:true,profileId:app.profileId});
 }
 async function setPanel(name, options = {}) {
+  if(name!=='profiles')pendingShortcut=null;
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
   if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;}}
   panel = name; renderPanel();
@@ -577,7 +593,7 @@ function renderPanel() {
   const titles = {tabs:'Вкладки', profiles: 'Устройство для сайта', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', about: 'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
-  if (panel === 'profiles') renderProfiles();
+  if (panel === 'profiles') {if(pendingShortcut)$('sheet-title').textContent='Устройство для '+pendingShortcut.app.name;renderProfiles();}
   else if(panel==='pin')renderPIN();
   else if (panel === 'folder') { renderFolder(); if(!wasFolder) requestAnimationFrame(()=>animateFolder(true)); }
   else if (panel === 'settings') renderSettings();
@@ -616,6 +632,13 @@ function renderProfiles() {
 }
 async function changeProfile(profileId) {
   if (busy) return;
+  if(pendingShortcut){
+    const target=pendingShortcut;busy=true;target.app.profileId=profileId;
+    try{await saveApps(target.scope);pendingShortcut=null;await launchShortcut(target.app,target.scope);}
+    catch(error){delete target.app.profileId;notify(error.message);}
+    finally{busy=false;}
+    return;
+  }
   busy = true; if (panel === 'profiles') renderProfiles();
   try { await action('profile', { profileId }); } catch {}
   finally { busy = false; if (state) consume(state); if (panel === 'profiles') renderProfiles(); }
@@ -766,7 +789,7 @@ function renderAppForm(app) {
     event.preventDefault(); const form = new FormData(event.currentTarget); let url;
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
     catch { return notify('Введите корректный адрес http или https'); }
-    const entry = { id: app?.id || `custom-${Date.now()}`, name: String(form.get('name')).trim(), url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
+    const entry = { ...app, profileId:app?app.profileId:state.profileId, id: app?.id || `custom-${Date.now()}`, name: String(form.get('name')).trim(), url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
     if (!entry.name) return;
     const pool=poolFor(editorScope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
@@ -844,7 +867,7 @@ window.addEventListener('storage',event=>{
 $('address-form').addEventListener('submit', event => {
   event.preventDefault(); const value = $('address').value.trim(); if (!value) return;
   const scope=currentScope(),matching=document.body.dataset.surface==='home'?flattenApps(poolFor(scope)).find(app=>[app.name,appLabel(app)].some(name=>name.toLocaleLowerCase()===value.toLocaleLowerCase())):null;
-  if(matching?.type==='system')activate(matching,scope);else launch(matching?.url || value,scope);
+  if(matching)activate(matching,scope);else launch(value,scope);
 });
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
 $('device-picker').addEventListener('click', () => setPanel('profiles'));

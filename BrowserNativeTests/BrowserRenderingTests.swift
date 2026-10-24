@@ -95,6 +95,55 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(preserved, true, "Native state reports must preserve the displayed tab card")
     }
 
+    func testShortcutKeepsItsProfileAndExpandsWithoutReloadingTheWebsite() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
+        try await waitForUI()
+        let pinned = try XCTUnwrap(controller.model.profiles.compactMap { $0["id"] as? String }.first { $0 != BrowserModel.actualProfile })
+        _ = try await rpc("open", body: ["url": url, "profileId": pinned, "webApp": true])
+        let page = try XCTUnwrap(controller.currentRenderer)
+        try await waitForPaint(in: page, color: "rgb(220, 38, 40)")
+        XCTAssertEqual(controller.model.active.profileId, pinned)
+        XCTAssertTrue(page.configuration.websiteDataStore === controller.model.store(for: pinned))
+        try await waitFor("document.body.dataset.webApp==='true' && document.body.dataset.controlsCollapsed==='true'", in: controller.ui)
+        controller.view.layoutIfNeeded()
+        let compactHeight = controller.ui.frame.height
+        XCTAssertLessThan(compactHeight, 90)
+        _ = try await script("window.__retainedPage='same document'; return true;", in: page)
+        _ = try await rpc("chrome", body: ["collapsed": false])
+        try await waitFor("document.body.dataset.controlsCollapsed==='false' && document.getElementById('address').getBoundingClientRect().height>0 && getComputedStyle(document.querySelector('.device-row')).display==='none'", in: controller.ui)
+        controller.view.layoutIfNeeded()
+        XCTAssertGreaterThan(controller.ui.frame.height, compactHeight)
+        XCTAssertTrue(controller.currentRenderer === page)
+        let marker = try await script("return window.__retainedPage;", in: page) as? String
+        XCTAssertEqual(marker, "same document", "Expanding the toolbar must not reload or replace the website")
+        let homeAtRight = try await script("return document.getElementById('go-home').getBoundingClientRect().left > document.getElementById('address-form').getBoundingClientRect().right;", in: controller.ui) as? Bool
+        XCTAssertEqual(homeAtRight, true)
+        _ = try await rpc("home")
+        _ = try await rpc("profile", body: ["profileId": BrowserModel.actualProfile])
+        _ = try await rpc("open", body: ["url": url, "profileId": pinned, "webApp": true])
+        XCTAssertEqual(controller.model.active.profileId, pinned, "A later global profile choice must not override a pinned shortcut")
+        XCTAssertTrue(controller.currentRenderer?.configuration.websiteDataStore === controller.model.store(for: pinned))
+    }
+
+    func testNormalBrowserCanHideOnlyTheDeviceRowAtThePhysicalBottom() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("blue").absoluteString
+        try await waitForUI()
+        _ = try await rpc("open", body: ["url": url, "webApp": false])
+        let page = try XCTUnwrap(controller.currentRenderer)
+        try await waitForPaint(in: page, color: "rgb(30, 70, 220)")
+        controller.view.layoutIfNeeded()
+        let fullHeight = page.frame.height
+        let bottom = controller.ui.convert(controller.ui.bounds, to: controller.view).maxY
+        XCTAssertEqual(bottom, controller.view.bounds.maxY, accuracy: 1, "Closed-keyboard chrome must use the physical bottom edge")
+        _ = try await rpc("chrome", body: ["collapsed": true])
+        try await waitFor("document.body.dataset.webApp==='false' && document.body.dataset.controlsCollapsed==='true' && document.getElementById('address').getBoundingClientRect().height>0 && document.getElementById('go-home').getBoundingClientRect().height>0 && document.getElementById('device-picker').getBoundingClientRect().height===0", in: controller.ui)
+        controller.view.layoutIfNeeded()
+        XCTAssertGreaterThan(page.frame.height, fullHeight + 25)
+        XCTAssertTrue(controller.currentRenderer === page)
+        _ = try await rpc("chrome", body: ["collapsed": false])
+        try await waitFor("document.getElementById('device-picker').getBoundingClientRect().height>0", in: controller.ui)
+    }
+
     private func openVideo() async throws -> WKWebView {
         let url = try await startFixture(video: true)
         try controller.open(url.appendingPathComponent("video").absoluteString)

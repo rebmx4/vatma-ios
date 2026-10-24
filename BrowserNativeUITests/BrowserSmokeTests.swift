@@ -98,6 +98,11 @@ final class BrowserSmokeTests: XCTestCase {
         let heading = site.staticTexts[headingText]
         XCTAssertTrue(heading.waitForExistence(timeout: 60), "The independent site renderer must load HTTPS content")
         screenshot("website")
+        button(["Свернуть выбор устройства"]).tap()
+        XCTAssertTrue(address.isHittable, "Hiding the device row must preserve address entry")
+        screenshot("website-device-row-hidden")
+        button(["Показать выбор устройства"]).tap()
+        XCTAssertTrue(button(["Выбрать устройство"]).isHittable)
 
         address.tap()
         assertAddressControlsAboveKeyboard()
@@ -105,6 +110,34 @@ final class BrowserSmokeTests: XCTestCase {
         go.tap()
         assertKeyboardDismissed()
         XCTAssertTrue(heading.waitForExistence(timeout: 60))
+
+        let pin = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Добавить httpbingo.org")).firstMatch
+        XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        pin.tap()
+        XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 5))
+        home.tap()
+        let shortcut = button(["Открыть httpbingo.org"])
+        XCTAssertTrue(shortcut.waitForExistence(timeout: 5))
+        shortcut.tap()
+        let expand = button(["Развернуть панель приложения"])
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields.firstMatch.isHittable)
+        XCTAssertTrue(heading.waitForExistence(timeout: 60))
+        screenshot("web-app-minimal")
+        expand.tap()
+        address = app.textFields.firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        XCTAssertTrue(home.isHittable)
+        XCTAssertFalse(button(["Выбрать устройство"]).isHittable)
+        screenshot("web-app-expanded")
+        address.tap()
+        assertAddressControlsAboveKeyboard()
+        button(["Перейти", "Go"]).tap()
+        assertKeyboardDismissed()
+        button(["Свернуть панель приложения"]).tap()
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        home.tap()
 
         app.terminate()
         app.launchArguments.removeAll { $0 == "--atma-ui-diagnostics" }

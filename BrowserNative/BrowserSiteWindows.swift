@@ -11,7 +11,9 @@ extension BrowserController {
         if let url, url.absoluteString != "about:blank" {
             address = try AddressResolver.validated(url.absoluteString).absoluteString
         } else { address = "about:blank" }
-        let tab = BrowserTab(profileId: opener.profileId, url: address)
+        var tab = BrowserTab(profileId: opener.profileId, url: address)
+        tab.webApp = opener.webApp
+        tab.appControlsCollapsed = opener.appControlsCollapsed
         model.tabs.append(tab)
         model.activeTabId = tab.id
         windowOpeners[tab.id] = opener.id
