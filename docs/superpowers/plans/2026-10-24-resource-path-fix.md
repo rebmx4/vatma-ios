@@ -55,3 +55,8 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 
 - Run 40050119695: host regression, 24 native tests and iPhone UI (140.475 s) passed. iPad landscape failed with per-query address/Go frames (0,0,0,0), although its full hierarchy immediately afterward reports address (440,398,488,51), Go (937,409,29,29), UI (0,32,1376,502), keyboard y=589. Failure screenshot confirms visible controls above the keyboard.
 - Ruling: use the public XCUIElement.snapshot() API to read geometry and input values from a coherent full accessibility snapshot; retain all bounds, hittability, exact URL and real navigation requirements. No speculative production layout change. Snapshot errors and wrong geometry still fail the required run.
+
+- Coherent snapshot run: https://github.com/rebmx4/vatma-ios/actions/runs/40052265511 (job 120747300921), source f0c199a529e3ba0e6644c3a641e17795b7ad501d. Signing remains blocked until all native Release checks pass.
+
+- Run 40052265511: iPhone UI passed (95.082 s); iPad full snapshots have correct control frames, but a redundant post-rotation tap opens the system Paste/Autofill edit menu (visible in screenshot and separate accessibility window), making both controls non-hittable. A zero-size toolbar snapshot also incorrectly reduced keyboardTop to 0.
+- Ruling: after rotation, re-focus only if the address field lacks focus or the keyboard is not visible; do not reopen a blocking edit menu on an already focused field. Keyboard/accessory geometry must use nonempty frames intersecting the application bounds. All existing control bounds, exact input, hit testing and HTTPS navigation checks remain mandatory. Production app source is unchanged.

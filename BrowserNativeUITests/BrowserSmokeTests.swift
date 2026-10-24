@@ -51,14 +51,13 @@ final class BrowserSmokeTests: XCTestCase {
         var go = button(["Перейти", "Go"])
         assertAddressControlsAboveKeyboard()
         rotate(.landscapeLeft, landscape: true)
-        address = app.textFields.firstMatch
-        address.tap()
+        try focusAddressIfNeeded()
         assertAddressControlsAboveKeyboard()
         screenshot("blank-tab-landscape-keyboard")
         rotate(.portrait, landscape: false)
         address = app.textFields.firstMatch
         go = button(["Перейти", "Go"])
-        address.tap()
+        try focusAddressIfNeeded()
         assertAddressControlsAboveKeyboard()
         address.typeText(websiteURL)
         var observedAddress: String?
@@ -109,8 +108,9 @@ final class BrowserSmokeTests: XCTestCase {
                 // Read all frames from one full accessibility snapshot. Separate
                 // firstMatch attribute requests returned zero frames after iPad
                 // rotation while the full hierarchy and recording were correct.
-                let elements = self.snapshots(in: try self.app.snapshot())
-                guard let keyboard = elements.first(where: { $0.elementType == .keyboard }),
+                let snapshot = try self.app.snapshot()
+                let elements = self.snapshots(in: snapshot)
+                guard let keyboard = elements.first(where: { $0.elementType == .keyboard && self.hasVisibleFrame($0, in: snapshot.frame) }),
                       let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else {
                     lastObservation = "Keyboard or bundled UI absent from snapshot"
                     return false
@@ -121,13 +121,15 @@ final class BrowserSmokeTests: XCTestCase {
                     lastObservation = "Address or Go absent from bundled UI snapshot"
                     return false
                 }
-                let accessory = elements.first { $0.elementType == .toolbar && $0.identifier == "Toolbar" }
+                let accessory = elements.first {
+                    $0.elementType == .toolbar && $0.identifier == "Toolbar" && self.hasVisibleFrame($0, in: snapshot.frame)
+                }
                 let bounds = ui.frame
                 let keyboardTop = min(keyboard.frame.minY, accessory?.frame.minY ?? keyboard.frame.minY)
                 let bottom = min(bounds.maxY, keyboardTop)
                 let frames = [address.frame, go.frame]
                 let hittable = [self.app.textFields.firstMatch.isHittable, self.button(["Перейти", "Go"]).isHittable]
-                lastObservation = "UI=\(bounds), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
+                lastObservation = "UI=\(bounds), keyboard=\(keyboard.frame), accessory=\(String(describing: accessory?.frame)), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
                 return frames.allSatisfy { frame in
                     frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
                         && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX
@@ -149,6 +151,20 @@ final class BrowserSmokeTests: XCTestCase {
         }
         XCTAssertEqual(result, .completed,
                        "The address field and Go button must stay above the keyboard and its accessory bar: \(lastObservation)")
+    }
+
+    private func focusAddressIfNeeded() throws {
+        let snapshot = try app.snapshot()
+        let elements = snapshots(in: snapshot)
+        let focused = elements.first { $0.elementType == .textField }?.hasFocus == true
+        let keyboardVisible = elements.contains { $0.elementType == .keyboard && hasVisibleFrame($0, in: snapshot.frame) }
+        // Tapping an already focused WebKit input opens the system edit menu,
+        // which blocks hit testing. Rotation needs a tap only if focus was lost.
+        if !focused || !keyboardVisible { app.textFields.firstMatch.tap() }
+    }
+
+    private func hasVisibleFrame(_ element: any XCUIElementSnapshot, in bounds: CGRect) -> Bool {
+        element.frame.width > 0 && element.frame.height > 0 && element.frame.intersects(bounds)
     }
 
     private func snapshots(in root: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {

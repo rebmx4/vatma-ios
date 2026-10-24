@@ -30,7 +30,7 @@ Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bund
 - The internal group `Test` contains validated build 9. The browser showed build 9 under version 1.0.0.
 - TestFlight Russian description and beta review notes now describe the browser. An ATMA demo account is not required; existing review contacts were preserved.
 - Build 9 Russian What to Test text was saved and read back successfully.
-- No new tester invitations were sent. The existing internal group has one tester whose invitation state is `INVITED`; accepting that invitation on an iPhone/iPad remains a user step.
+- No new tester invitations were sent. The owner subsequently installed build 9 through TestFlight and reported the startup failure recorded above; the earlier invitation status is historical.
 
 ## Local artifacts on D:
 
@@ -42,6 +42,6 @@ Build 9 reached TestFlight but the owner reported `ATMA UI could not start. Bund
 
 ## Limits and remaining user steps
 
-The build is available for internal TestFlight testing. A public App Store release and external beta review were not submitted. Accept the existing TestFlight invitation and install build 9 on a physical device. Website account sign-in, media playback and background audio still need physical-device testing; simulator success is not evidence for every website or real-device behavior.
+Build 9 is superseded by its confirmed physical-device startup failure and must not be recommended for installation. A corrected replacement is being checked under the linked repair plan. A public App Store release and external beta review were not submitted. Physical startup, website account sign-in, media playback and background audio must be checked on the replacement; simulator success is not evidence for every website or real-device behavior.
 
 No Codemagic cloud build was started during this delivery. GitHub used standard hosted macOS runners in the existing public repository; no paid runner or subscription upgrade was enabled.
