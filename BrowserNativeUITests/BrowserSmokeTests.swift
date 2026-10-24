@@ -170,7 +170,7 @@ final class BrowserSmokeTests: XCTestCase {
         let elements = snapshots(in: snapshot)
         let windowBounds = try XCTUnwrap(mainWindowBounds(in: elements), "Application must have a visible main window")
         let focused = elements.first { $0.elementType == .textField }?.hasFocus == true
-        let keyboardVisible = elements.contains { $0.elementType == .keyboard && hasVisibleFrame($0, in: windowBounds) }
+        let keyboardVisible = elements.contains { $0.elementType == .keyboard && hasVisibleFrame($0.frame, in: windowBounds) }
         // Tapping an already focused WebKit input opens the system edit menu,
         // which blocks hit testing. Rotation needs a tap only if focus was lost.
         if !focused || !keyboardVisible { app.textFields.firstMatch.tap() }
