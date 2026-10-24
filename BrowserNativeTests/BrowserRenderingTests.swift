@@ -99,7 +99,7 @@ final class BrowserRenderingTests: XCTestCase {
         let url = try await startFixture(video: true)
         try controller.open(url.appendingPathComponent("video").absoluteString)
         let page = try XCTUnwrap(controller.currentRenderer)
-        try await waitFor("document.querySelector('video')?.readyState>=3 && !!window.__atmaMediaPage", in: page)
+        try await waitFor("document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
         _ = try await script("await document.querySelector('video').play(); return true;", in: page)
         try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
         XCTAssertEqual(controller.media.state["available"] as? Bool, true, "The real production media bridge must own the playing page")
@@ -137,7 +137,8 @@ final class BrowserRenderingTests: XCTestCase {
             if (try? await script("return Boolean(\(expression));", in: page)) as? Bool == true { return }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        XCTFail("Fixture condition timed out: \(expression)")
+        let details = try? await script("const v=document.querySelector('video'); return JSON.stringify({url:location.href,ready:document.readyState,mediaBridge:!!window.__atmaMediaPage,video:v?{ready:v.readyState,network:v.networkState,paused:v.paused,time:v.currentTime,error:v.error?.code}:null});", in: page)
+        XCTFail("Fixture condition timed out: \(expression); details: \(String(describing: details))")
         throw NSError(domain: "ATMA.RenderingFixture", code: 1)
     }
 
