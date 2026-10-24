@@ -164,6 +164,7 @@ def validate(root=ROOT):
                 if path.suffix == ".json":
                     json.loads(text)
                 if path.suffix == ".swift":
+                    require("WKContentRuleList" not in text, "This release excludes native content filtering")
                     require(len(text.splitlines()) < 400, "Swift source exceeds line limit")
                     imports = set(re.findall(r"\bimport\s+(\w+)", text))
                     require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit", "Security", "UniformTypeIdentifiers", "AVFoundation", "MediaPlayer"}, "Native code may import only approved Apple frameworks")
@@ -171,7 +172,8 @@ def validate(root=ROOT):
             scanned += 1
     profiles = load_json(root / "BrowserUI/profiles.json")
     require(len({row["id"] for row in profiles}) == len(profiles), "Duplicate profile ID")
-    require(bool(load_json(root / "BrowserUI/content-blocker.json")), "Independent blocker rules are required")
+    for excluded in ("BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
+        require(not (root / excluded).exists(), "This release must not bundle ad-blocking payloads: " + excluded)
     for folder in ("release", "tests"):
         for path in (root / folder).glob("*.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

@@ -17,12 +17,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class BrowserController: UIViewController {
     let model: BrowserModel
     let server = LocalUIServer()
-    let blocker = SiteBlocker()
     let downloads = DownloadService()
     lazy var media: BrowserMediaController = {
         let controller = BrowserMediaController()
         controller.isActive = { [weak self] in self?.currentRenderer === $0 }
-        controller.blockingEnabled = { [weak self] in self?.blocker.enabled(host: $0.url?.host) ?? true }
         controller.didChange = { [weak self] in self?.publish() }
         return controller
     }()
@@ -113,7 +111,6 @@ final class BrowserController: UIViewController {
             }
             self.publish()
         }
-        blocker.didChange = { [weak self] in self?.publish() }
         server.start { [weak self] result in
             guard let self else { return }
             switch result {
@@ -209,7 +206,7 @@ final class BrowserController: UIViewController {
         if tab.profileId != BrowserModel.actualProfile {
             renderer.customUserAgent = profile?["userAgent"] as? String
         }
-        blocker.apply(to: renderer, host: URL(string: tab.url)?.host)
+        BrowserPageScripts.configure(renderer)
         renderers[tab.id] = renderer
         browserViewport.insertSubview(renderer, belowSubview: ui)
         return renderer
@@ -240,7 +237,7 @@ final class BrowserController: UIViewController {
         model.tabs[model.activeIndex].error = nil
         mode = "browse"; panel = nil; nativeError = nil
         let renderer = renderer(for: model.active)
-        blocker.apply(to: renderer, host: url.host)
+        BrowserPageScripts.configure(renderer)
         renderer.load(request)
         changed()
     }
@@ -308,7 +305,6 @@ final class BrowserController: UIViewController {
 
     func state() -> [String: Any] {
         let tab = model.active
-        let host = URL(string: tab.url)?.host
         let frame = browserViewport.bounds
         return ["id": "ios", "deviceName": UIDevice.current.model, "profileId": tab.profileId,
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
@@ -317,15 +313,13 @@ final class BrowserController: UIViewController {
                 "webApp": webApp, "controlsCollapsed": controlsCollapsed,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
                 "capabilities": ["cookies": true, "downloads": true, "tabs": true,
-                                 "persistentProfiles": true, "contentBlocking": blocker.available, "media": true,
+                                 "persistentProfiles": true, "contentBlocking": false, "media": true,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,
                                  "translation": false, "googleAccount": false, "probe": false],
                 "searchEngine": model.preferences.searchEngine, "locale": model.preferences.locale,
                 "timezone": model.preferences.timezone, "profiles": model.profiles,
-                "tabs": model.tabs.map(\.json), "activeTabId": model.activeTabId, "media": media.state,
-                "blocker": ["available": blocker.available, "enabled": blocker.enabled(host: host),
-                            "host": host as Any? ?? NSNull(), "error": blocker.error as Any? ?? NSNull()]]
+                "tabs": model.tabs.map(\.json), "activeTabId": model.activeTabId, "media": media.state]
     }
 
     func publish() {

@@ -19,7 +19,6 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
     private var generation = 0
     var didChange: (() -> Void)?
     var isActive: ((WKWebView) -> Bool)?
-    var blockingEnabled: ((WKWebView) -> Bool)?
     private var observers: [NSObjectProtocol] = []
     var state: [String: Any] {
         var value = snapshot
@@ -103,7 +102,7 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
     func setBackground(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: BrowserPageScripts.backgroundKey)
         for entry in bindings.values {
-            if let view = entry.view { BrowserPageScripts.configure(view, blocking: blockingEnabled?(view) ?? true) }
+            if let view = entry.view { BrowserPageScripts.configure(view) }
         }
         didChange?()
     }

@@ -124,8 +124,15 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 20))
         home.tap()
         let shortcut = button(["Открыть httpbingo.org"])
-        XCTAssertTrue(shortcut.waitForExistence(timeout: 5))
+        let shortcutReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in shortcut.isHittable }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shortcutReady], timeout: 10), .completed)
         shortcut.tap()
+        let compactReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.app.textFields.firstMatch.isHittable && home.isHittable
+                && !self.button(["Выбрать устройство"]).isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [compactReady], timeout: 10), .completed,
+                       "Tapping a saved app must enter its compact website view")
         address = app.textFields.firstMatch
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         XCTAssertTrue(address.isHittable, "Saved apps always retain their compact address bar")

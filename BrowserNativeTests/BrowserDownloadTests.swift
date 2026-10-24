@@ -53,12 +53,4 @@ final class BrowserDownloadTests: XCTestCase {
         XCTAssertEqual(DownloadFilename.make("/folder/report.txt"), "report.txt")
         XCTAssertFalse(DownloadFilename.make("a\\b.txt").contains("\\"))
     }
-
-    func testBlockerExclusionIsExactHostAndDoesNotFollowRedirect() {
-        let disabled: Set<String> = ["a.example"]
-        XCTAssertFalse(HostBlockerPolicy.enabled(host: "A.EXAMPLE", disabledHosts: disabled))
-        XCTAssertTrue(HostBlockerPolicy.enabled(host: "b.example", disabledHosts: disabled))
-        XCTAssertTrue(HostBlockerPolicy.enabled(host: "sub.a.example", disabledHosts: disabled))
-        XCTAssertTrue(HostBlockerPolicy.enabled(host: nil, disabledHosts: disabled))
-    }
 }

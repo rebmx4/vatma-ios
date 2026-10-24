@@ -27,10 +27,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
                 nativeError = "This navigation requires an unsupported URL scheme."
                 publish(); decisionHandler(.cancel); return
             }
-            // A new window's destination must not change its opener's navigation/blocking state.
+            // A new window's destination must not change its opener's navigation state.
             if navigationAction.targetFrame?.isMainFrame == true {
                 downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
-                blocker.apply(to: webView, host: url.host)
             }
         }
         decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
@@ -47,7 +46,6 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let shouldDownload = !navigationResponse.canShowMIMEType || disposition.lowercased().hasPrefix("attachment")
         if navigationResponse.isForMainFrame {
-            blocker.apply(to: webView, host: navigationResponse.response.url?.host)
             if shouldDownload, let url = navigationResponse.response.url { expectDownload(webView, url: url, knownNavigation: true) }
         }
         decisionHandler(shouldDownload ? .download : .allow)
@@ -86,13 +84,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
         guard webView !== ui else { return }
-        blocker.apply(to: webView, host: webView.url?.host)
         update(webView)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView !== ui else { return }
-        blocker.apply(to: webView, host: webView.url?.host)
         media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
         update(webView)
     }
@@ -101,7 +97,6 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         if webView === ui { reportPageDiagnostics("Navigation finished"); publish() }
         else {
             reportPageDiagnostics("Site navigation finished", webView: webView)
-            blocker.apply(to: webView, host: webView.url?.host)
             media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             update(webView, loading: false)

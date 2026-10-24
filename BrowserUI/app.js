@@ -215,7 +215,7 @@ function paintShortcutIcon(target,app,scope){
     if(!iconUrl)return;paint(iconUrl);
     if(scope==='private'&&(!vaultKey||key!==vaultKey))return;
     const current=findEntry(poolFor(scope),id)?.entry;
-    if(current?.url===url&&current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope).catch(()=>{});}
+    if(current?.url===url&&current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false}).catch(()=>{});}
   });
 }
 let pinSiteBusy=false,pinSiteArtKey='';
@@ -308,7 +308,7 @@ async function selectBrowserTab(tabId){
 function renderTabs(){
  renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
 }
-function saveApps(scope='public') {
+function saveApps(scope='public',{render=true}={}) {
   if(scope==='private') {
     if(!vaultKey)return Promise.reject(new Error('Закрытая страница заблокирована'));
     const items=structuredClone(vaultApps),key=vaultKey,record=vaultRecord;
@@ -317,8 +317,8 @@ function saveApps(scope='public') {
     });
     vaultWrite.catch(()=>notify('Не удалось сохранить закрытую страницу'));
   } else localStorage.setItem('atma-preview-apps', JSON.stringify(apps));
-  renderApps();updateQuickAdd();
-  if (panel === 'folder') renderFolder();
+  if(render){renderApps();if(panel==='folder')renderFolder();}
+  updateQuickAdd();
   return scope==='private'?vaultWrite:Promise.resolve();
 }
 function updatePool(scope,items) { if(scope==='private')vaultApps=items;else apps=items;return saveApps(scope); }
@@ -785,12 +785,6 @@ function renderSettings() {
   $('site-language').addEventListener('change', async event => { try { await action('preferences', { locale: event.target.value }); } catch {} });
   $('site-timezone').addEventListener('change', async event => { try { await action('preferences', { timezone: event.target.value }); } catch {} });
   settingsPickers(preferences);
-  if(state?.blocker?.host){
-    const block=document.createElement('label');block.className='setting-row';block.innerHTML=`${icon('lock')}<span>Блокировка на этом сайте</span><input type="checkbox" id="site-blocker" aria-label="Блокировка на этом сайте">`;
-    const toggle=block.querySelector('input');toggle.checked=state.blocker.enabled;toggle.disabled=!state.blocker.available;
-    toggle.addEventListener('change',async()=>{toggle.disabled=true;try{await action('blocker/set',{enabled:toggle.checked});}catch{toggle.checked=state.blocker.enabled;}finally{toggle.disabled=!state.blocker.available;}});
-    const group=document.createElement('div');group.className='setting-card';group.append(block);$('sheet-content').append(group);
-  }
   $('sheet-content').append(settingButton(window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре', 'info', () => setPanel('about')));
 }
 function useWallpaper(name) {

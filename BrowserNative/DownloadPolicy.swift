@@ -50,10 +50,3 @@ enum DownloadFilename {
         return result
     }
 }
-
-enum HostBlockerPolicy {
-    static func enabled(host: String?, disabledHosts: Set<String>) -> Bool {
-        guard let host else { return true }
-        return !disabledHosts.contains(host.lowercased())
-    }
-}

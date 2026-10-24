@@ -11,4 +11,4 @@ Review steps (no demo account required):
 
 The privacy policy and support text are bundled in the app and also available at the supplied public URLs. The six-digit PIN protects only a separate page of saved links; it is not anonymous browsing or protection of the entire browser.
 
-The browser has a built-in content blocker with a per-site switch. Compatible media use the website player and public iOS media/Picture in Picture controls. Availability depends on the website and iOS. The app does not extract media download links or offer an offline media library. Websites retain their own terms and sign-in requirements.
+Ad blocking is not included in this release. Compatible media use the website player and public iOS media/Picture in Picture controls. Availability depends on the website and iOS. The app does not extract media download links or offer an offline media library. Websites retain their own terms and sign-in requirements.

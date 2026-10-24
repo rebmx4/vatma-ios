@@ -109,12 +109,6 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             return
         case "files": reply(try downloads.list(), nil); return
         case "file": reply(try downloads.preview(id: string("fileId", body)), nil); return
-        case "blocker/set":
-            guard let host = URL(string: model.active.url)?.host, let enabled = body["enabled"] as? Bool else {
-                throw BrowserFailure.invalid("Open a website and supply enabled:true or false.")
-            }
-            blocker.setEnabled(enabled, host: host)
-            currentRenderer?.reload(); changed()
         case "probe": throw BrowserFailure.invalid("A trustworthy fingerprint probe is not implemented on iOS.")
         case "snapshot": throw BrowserFailure.invalid("Use tab-previews for bounded native tab snapshots.")
         default: throw BrowserFailure.invalid("Unsupported native action: " + action)

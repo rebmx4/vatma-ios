@@ -31,7 +31,7 @@ export default {
         {
           "title": "Открываемые сайты и поиск",
           "paragraphs": [
-            "При открытии сайта, отправке поискового запроса или загрузке иконки браузер связывается с выбранным сайтом или поисковой системой. Эти сервисы получают обычные данные соединения, включая IP-адрес и User-Agent, а также введённые вами сведения. На них действуют собственные условия и политики. Блокировка рекламы не гарантирует анонимности или удаления всей рекламы.",
+            "При открытии сайта, отправке поискового запроса или загрузке иконки браузер связывается с выбранным сайтом или поисковой системой. Эти сервисы получают обычные данные соединения, включая IP-адрес и User-Agent, а также введённые вами сведения. На них действуют собственные условия и политики.",
             "Профили разделяют локальные сессии и меняют User-Agent и режим сайта. Они не меняют IP-адрес и не имитируют другое физическое устройство."
           ]
         },
@@ -82,9 +82,9 @@ export default {
           ]
         },
         {
-          "title": "Видео и блокировка",
+          "title": "Видео",
           "paragraphs": [
-            "Запускайте видео кнопкой на сайте. Управление совместимыми медиа доступно через настройки → «Медиаплеер». Возможность фонового воспроизведения, PiP и работа блокировки зависят от сайта. Если страница работает неправильно, можно отключить блокировку в её настройках и обновить страницу."
+            "Запускайте видео кнопкой на сайте. Управление совместимыми медиа доступно через настройки → «Медиаплеер». Возможность фонового воспроизведения и PiP зависит от сайта, видео и iOS."
           ]
         },
         {
@@ -166,7 +166,7 @@ export default {
         {
           "title": "Websites and search",
           "paragraphs": [
-            "Opening a website, submitting a search or fetching a website icon connects to the chosen website or search engine. These services receive normal connection data, including your IP address and User-Agent, and any information you enter. Their own terms and privacy policies apply. Ad blocking does not guarantee anonymity or remove every advertisement.",
+            "Opening a website, submitting a search or fetching a website icon connects to the chosen website or search engine. These services receive normal connection data, including your IP address and User-Agent, and any information you enter. Their own terms and privacy policies apply.",
             "Profiles separate local sessions and change the User-Agent and website mode. They do not change your IP address or emulate another physical device."
           ]
         },
@@ -217,9 +217,9 @@ export default {
           ]
         },
         {
-          "title": "Video and blocking",
+          "title": "Video",
           "paragraphs": [
-            "Start video using the website controls. Compatible media controls are available in Settings → Media player. Background playback, PiP and ad blocking depend on the website. If a page does not work correctly, try disabling blocking for that site and reloading."
+            "Start video using the website controls. Compatible media controls are available in Settings → Media player. Background playback and PiP depend on the website, media and iOS."
           ]
         },
         {

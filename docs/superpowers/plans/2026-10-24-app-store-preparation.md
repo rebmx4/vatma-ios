@@ -12,7 +12,7 @@
 - All work and outputs only on D:. Preserve owner file docs/superpowers/plans/task-1-review.patch.
 - Price zero; no ATMA IAP, subscriptions or new advertising/analytics SDKs.
 - Existing app 6774934498 / ru.atma.app. Preserve the existing app record; do not bypass its rejection using a duplicate.
-- Do not delete media/ad-blocking features solely on the earlier unsupported claim that special scripts imply an Apple ban. Brave's public iOS rules contain comparable site-specific filters; YouTube ToS risk remains disclosed. No such source change is authorized by silence.
+- Owner explicitly chose a first public build without ad blocking. Remove actual native filtering, website filtering scripts, UI/RPC and payloads; retain media controls. Previous source is preserved by pushed tag atma-with-ad-blocking-20261024 at 30a936e912fa874dc56e73c9d77a47a72970d650.
 - Actual public support/privacy URLs must work and describe this browser. Existing vatma.ru privacy describes the former astrology/dating product and must not be reused for the browser.
 - New product-source changes require exact-revision iPhone/iPad gate and IPA validation before uploading a replacement build.
 - No claim of guaranteed App Store acceptance or physical-device verification.
@@ -25,7 +25,7 @@
 - [ ] Prepare specific review notes covering the changed product and real browser capabilities; inspect previous rejection messages when browser authentication permits.
 - [ ] Report remaining factual blockers, including legal declarations or account UI that cannot be completed through the API.
 
-## Findings
+## Findings at initial inspection
 - Existing release source:7b019ea298b01d4ad1a25dddfde6fa9495983d9b, build1.0.0 (12), beta APPROVED in Test1.
 - The current subtitle is still astrology-related. Age declaration incorrectly says unrestrictedWebAccess=false and ageAssurance=true.
 - All175 regional price points are zero. No IAP products or subscription groups exist.
@@ -41,5 +41,11 @@ Recommended implementation model: GPT-6.1-sol, high; reason: native/browser beha
 - Native run 40111433136: iPad browser smoke passed; screenshot test reached real home/profile/appearance/compact captures, then failed because the compact app intentionally has no New Tab button. Corrected the test to return Home before opening another tab. iPhone was not run after that mandatory failure.
 - Add explicit confirmation for visible-page links to external applications; executable/local URL schemes remain blocked from external launch. Native tests and mail-link cancel UI check added; final CI pending.
 - Owner instructed all public information to describe the browser only. Removed the previous product reference from public and bundled policy. Old screenshot representations backed up before replacement.
-- Required owner decision pending: first public version without ad blocking, or current feature with accurate disclosure. Never conceal a working feature from App Review. No blocker behavior changed while this choice is pending.
+- Owner decision received: first release genuinely excludes ad blocking. Both filtering mechanisms, payloads, UI/RPC and claims removed. New JavaScript regression leaves website advertising JSON intact. A native simulated YouTube-origin check covers injected scripts and visible ad elements.
 - Required account access pending: Apple web login for App Privacy, regional declarations and the previous review conversation. API metadata editing works.
+
+## No-blocking release validation
+- Native run 40112969940 failed its iPad browser smoke check when a saved shortcut tap did not open the compact view; StoreScreenshotsTests passed, including external-mail confirmation/cancel. iPhone was not run after this failure. No signing is authorized from this failed gate.
+- Asynchronous icon completion previously called saveApps(), rebuilding desktop and folder buttons during touch. Reproduced in both public/private regressions, then fixed by persisting icon-only changes without replacing the grid. PIN/vault persistence stays in the same save path. Smoke waits for a hittable saved shortcut and its compact-view outcome.
+- Local checks after removal and icon fix: 42 JavaScript tests, 24 Python tests, 269-file static validation, generated support-site check, JavaScript syntax and git diff check passed. Native iPhone/iPad execution remains required.
+- Four real iPad screenshots are COMPLETE in Apple; old seven screenshots and the old selected June binary were removed from the current version. RU/EN metadata, free pricing, browser age declaration and no-demo-account review notes prepared.

@@ -43,7 +43,7 @@ export default {
  'Выбрать все':'Select all','Удалить выбранные':'Delete selected','Удалить все':'Delete all','Выбрать cookie':'Select cookie','Cookie не найдены':'No cookies found',
  'Сохранённых cookie нет':'No saved cookies','Сайт':'Website','Имя':'Name','Значение':'Value','Путь':'Path','Срок':'Expires',
  'До закрытия сеанса':'Until the session ends','Не указан':'Not specified','Да':'Yes','Нет':'No','Профиль':'Profile','Cookie удалены':'Cookies deleted',
- 'Блокировка на этом сайте':'Blocking on this website','Включена':'On','Выключена':'Off','Блокировщик недоступен':'Content blocker unavailable',
+ 'Включена':'On','Выключена':'Off',
  'Язык и часовой пояс сайтов определяет iOS.':'iOS determines website language and time zone.',
  'Медиаплеер':'Media player','Медиаплеер не отвечает':'Media player is not responding',
  'Откройте видео на сайте, запустите его и вернитесь в медиаплеер.':'Open a video on a website, start playback, then return to the media player.',

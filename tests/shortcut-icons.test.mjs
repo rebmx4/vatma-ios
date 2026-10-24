@@ -44,3 +44,17 @@ for(const nextKey of [null,{}])test('late private icon lookup does not write aft
  vm.createContext(context);const start=source.indexOf('function paintShortcutIcon('),end=source.indexOf('let pinSiteBusy=',start);vm.runInContext(source.slice(start,end),context);
  context.paintShortcutIcon({replaceChildren(){}},{id:'private',url:'https://private.example/',custom:true},'private');context.vaultKey=nextKey;finish('data:image/png;base64,private');await Promise.resolve();await Promise.resolve();assert.deepEqual(effects,[]);
 });
+
+for(const scope of ['public','private'])test('resolving a '+scope+' shortcut icon preserves the desktop button while saving the icon',async()=>{
+ let finish,desktopButton={id:'held-button'},folderButton=desktopButton;const heldButton=desktopButton,stored=new Map();
+ const entry={id:'site',custom:true,url:'https://icons.example/'},items=[entry];
+ const context={structuredClone,vaultKey:{},vaultApps:items,vaultRecord:{},vaultWrite:Promise.resolve(),apps:items,panel:'folder',resolveShortcutIcon:()=>new Promise(resolve=>{finish=resolve;}),Image:class{addEventListener(){}},poolFor:()=>items,findEntry:()=>({entry}),localStorage:{setItem:(key,value)=>stored.set(key,JSON.parse(value))},sealVault:async(_key,apps)=>({encrypted:apps}),renderApps(){desktopButton={id:'replacement'};},renderFolder(){folderButton={id:'replacement'};},updateQuickAdd(){},notify:assert.fail};
+ vm.createContext(context);
+ for(const [startMarker,endMarker] of [['function paintShortcutIcon(','let pinSiteBusy='],["function saveApps(",'\nfunction ']]){const start=source.indexOf(startMarker),end=source.indexOf(endMarker,start+startMarker.length);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);}
+ context.paintShortcutIcon({replaceChildren(){}},entry,scope);finish('data:image/png;base64,loaded');
+ await new Promise(resolve=>setImmediate(resolve));await context.vaultWrite;
+ assert.equal(desktopButton,heldButton,'An asynchronous icon update must not replace the pressed desktop button');
+ assert.equal(folderButton,heldButton,'An asynchronous icon update must not replace the pressed folder button');
+ const saved=scope==='private'?stored.get('atma-preview-vault').encrypted:stored.get('atma-preview-apps');
+ assert.equal(saved[0].iconUrl,'data:image/png;base64,loaded');
+});
