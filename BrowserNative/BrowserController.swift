@@ -190,7 +190,8 @@ final class BrowserController: UIViewController {
         config.userContentController = WKUserContentController()
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = .all
+        // The page adapter gates intent without preventing WebKit metadata preload.
+        config.mediaTypesRequiringUserActionForPlayback = []
         let profile = model.profile(tab.profileId)
         if tab.profileId != BrowserModel.actualProfile, let mobile = profile?["mobile"] as? Bool {
             config.defaultWebpagePreferences.preferredContentMode = mobile ? .mobile : .desktop

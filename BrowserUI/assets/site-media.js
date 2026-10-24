@@ -3,7 +3,7 @@ function installAtmaMediaPage(options = {}) {
   let background = options.background !== false, lastSent = 0, current, interval;
   let pageVisible = options.visible !== false, screenLocked = options.screenLocked === true;
   let gesture = 0, gestureUntil = 0, playWrapped = false;
-  const approved = new WeakSet(), blockedAt = new WeakMap(), presentations = new WeakMap();
+  const approved = new WeakSet(), requested = new WeakSet(), blockedAt = new WeakMap(), presentations = new WeakMap();
   let visibilityOriginal, hiddenOriginal, visibilityPatched = false;
   const watched = new WeakSet();
   // Keep the actual document visibility before the YouTube background shim.
@@ -49,7 +49,7 @@ function installAtmaMediaPage(options = {}) {
     }
     return true;
   }
-  function approve(video) { approved.add(video); blockedAt.delete(video); }
+  function approve(video) { approved.add(video);requested.add(video);blockedAt.delete(video); }
   function revoke(video) { approved.delete(video);blockedAt.set(video,gesture); }
   function stop(video) { revoke(video);video.pause(); }
   function allowPlay(video) {
@@ -61,7 +61,7 @@ function installAtmaMediaPage(options = {}) {
   function enforcePlay(video,event) {
     // Native controls do not call the page's JavaScript play() method.
     // Scripted calls are checked before WebKit receives them below.
-    if(!allowPlay(video) && playWrapped && event?.isTrusted && (inPiP(video)||inlineVisible(video)))approve(video);
+    if(!allowPlay(video) && playWrapped && event?.isTrusted && (requested.has(video)||window.navigator?.userActivation?.isActive===true) && (inPiP(video)||inlineVisible(video)))approve(video);
     if(!approved.has(video))video.pause();
   }
   const mediaPrototype=window.HTMLMediaElement?.prototype;

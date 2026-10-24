@@ -56,3 +56,5 @@ Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserM
 - No Critical findings and no deferred Minor findings from independent review.
 
 - Native run 40094095255 cancellation requested after read-only fixture audit found the new-document test URL query was unsupported by the fixture HTTP parser. The scenario now reloads the supported /video path and asserts the old document marker is gone; behavior predicate is preserved. No product code changed in this correction.
+
+- Native c7dae2b run 40094459407: iPhone/iPad UI and four profile migration tests passed. Five actual-video tests failed at readyState=0 because the new native .all gesture policy suppressed metadata preload. Reverted that additional native restriction; the page adapter remains the intent gate and now rejects internal autoplay before any explicit playback request, while allowing native transport after one. Regression observed RED→GREEN. Dedicated native /video-autoplay route verifies actual HTML autoplay rejection; ordinary /video route exercises metadata preload and explicit playback.

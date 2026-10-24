@@ -72,7 +72,7 @@ final class BrowserRenderingTests: XCTestCase {
 
     func testUnrequestedVideoDoesNotStartAndExplicitPlayStillWorks() async throws {
         let url = try await startFixture(video: true)
-        try controller.open(url.appendingPathComponent("video").absoluteString)
+        try controller.open(url.appendingPathComponent("video-autoplay").absoluteString)
         let page = try XCTUnwrap(controller.currentRenderer)
         try await waitFor("document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
         _ = try await script("await document.querySelector('video').play().catch(()=>{}); return true;", in: page)
@@ -239,7 +239,9 @@ final class BrowserRenderingTests: XCTestCase {
             let bundle = Bundle(for: BrowserRenderingTests.self)
             let mediaURL = try XCTUnwrap(bundle.url(forResource: "playback", withExtension: "mp4"))
             let media = try Data(contentsOf: mediaURL).base64EncodedString()
-            resources["/video"] = Data("<!doctype html><html><head><title>Playback fixture</title></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>".utf8)
+            let videoPage = "<!doctype html><html><head><title>Playback fixture</title></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>"
+            resources["/video"] = Data(videoPage.utf8)
+            resources["/video-autoplay"] = Data(videoPage.replacingOccurrences(of: "<video playsinline controls ", with: "<video playsinline controls autoplay ").utf8)
         }
         fixture = try BrowserRenderingFixtureServer(resources: resources)
         return try await fixture.start()
