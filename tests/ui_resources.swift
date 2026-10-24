@@ -28,11 +28,16 @@ enum UIResourceTests {
         try manager.createSymbolicLink(at: alias, withDestinationURL: temporary.appendingPathComponent("container", isDirectory: true))
 
         let resources = try LocalUIServer.resourceIndex(at: alias.appendingPathComponent("BrowserUI", isDirectory: true))
-        guard resources.keys.sorted() == ["assets/app.js", "index.html"],
-              let index = resources["index.html"], let script = resources["assets/app.js"],
-              try String(contentsOf: index, encoding: .utf8) == "<html>resource fixture</html>",
-              try String(contentsOf: script, encoding: .utf8) == "fixture-script" else {
-            throw BrowserFailure.invalid("Bundled UI resources must survive a container alias without serving child symlinks.")
+        guard resources.keys.sorted() == ["assets/app.js", "index.html"] else {
+            throw BrowserFailure.invalid("Unexpected UI resource keys: \(resources.keys.sorted())")
+        }
+        guard let index = resources["index.html"], let script = resources["assets/app.js"] else {
+            throw BrowserFailure.invalid("The UI index and nested script must both be present.")
+        }
+        let html = try String(contentsOf: index, encoding: .utf8)
+        let javascript = try String(contentsOf: script, encoding: .utf8)
+        guard html == "<html>resource fixture</html>", javascript == "fixture-script" else {
+            throw BrowserFailure.invalid("Unexpected fixture content: HTML=\(html), JavaScript=\(javascript)")
         }
     }
 }
