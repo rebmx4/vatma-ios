@@ -29,24 +29,28 @@ class SmokeScriptTests(unittest.TestCase):
             binary.mkdir()
             for name in ("ci.sh", "simulators.py"):
                 shutil.copyfile(ROOT / "release" / name, root / "release" / name)
-            payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-4": [
-                {"name": "iPhone test", "udid": "phone", "isAvailable": True},
-                {"name": "iPad test", "udid": "tablet", "isAvailable": True}]}}
+            payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-" + version: [
+                {"name": "iPhone test", "udid": "phone" + suffix, "isAvailable": True},
+                {"name": "iPad test", "udid": "tablet" + suffix, "isAvailable": True}]
+                for version, suffix in (("26-4", ""), ("26-5", "-newer"))}}
             (root / "devices.json").write_text(json.dumps(payload), encoding="utf-8")
             commands = {
                 "python3": 'exec "$ATMA_TEST_PYTHON" "$@"\n',
-                "xcrun": '''if [[ "$1 $2" = "simctl list" ]]; then
+                "xcrun": '''if [[ "$1 $2 $3" = "--sdk iphonesimulator --show-sdk-version" ]]; then
+  printf '26.4\\n'
+elif [[ "$1 $2" = "simctl list" ]]; then
   cat "$CM_BUILD_DIR/devices.json"
 elif [[ "$1 $2" = "xcresulttool export" ]]; then
   printf 'export %s\\n' "$*" >> "$CM_BUILD_DIR/calls.log"
 fi
 ''',
                 "xcodebuild": '''printf 'test %s\\n' "$*" >> "$CM_BUILD_DIR/calls.log"
-if [[ -n "$ATMA_TEST_FAIL" && "$*" = *"id=$ATMA_TEST_FAIL"* ]]; then exit 65; fi
+arguments="$*"
 while [[ $# -gt 0 ]]; do
   if [[ "$1" = "-resultBundlePath" ]]; then mkdir -p "$2"; fi
   shift
 done
+if [[ -n "$ATMA_TEST_FAIL" && "$arguments" = *"id=$ATMA_TEST_FAIL"* ]]; then exit 65; fi
 ''',
             }
             for name, body in commands.items():
@@ -75,24 +79,26 @@ done
             self.assertIn("-configuration Release", command)
             self.assertIn("ENABLE_TESTABILITY=YES", command)
             self.assertIn("ONLY_ACTIVE_ARCH=YES", command)
-        self.assertIn("id=phone", tests[0])
-        self.assertNotIn("-only-testing:", tests[0])
-        self.assertIn("id=tablet", tests[1])
-        self.assertIn("-only-testing:BrowserNativeUITests", tests[1])
+        self.assertIn("id=tablet", tests[0])
+        self.assertIn("-only-testing:BrowserNativeUITests", tests[0])
+        self.assertIn("id=phone", tests[1])
+        self.assertNotIn("-only-testing:", tests[1])
+        self.assertNotIn("-newer", " ".join(tests))
         expected = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
         self.assertEqual(revision, expected)
 
-    def test_phone_failure_stops_ipad_and_does_not_verify_revision(self):
-        result, calls, revision = self.run_smoke("phone")
-        self.assertEqual(result.returncode, 65, result.stdout + result.stderr)
-        self.assertEqual(len([line for line in calls if line.startswith("test ")]), 1)
-        self.assertIsNone(revision)
-
-    def test_ipad_failure_does_not_verify_revision_and_exports_phone_evidence(self):
+    def test_ipad_failure_stops_phone_and_does_not_verify_revision(self):
         result, calls, revision = self.run_smoke("tablet")
         self.assertEqual(result.returncode, 65, result.stdout + result.stderr)
+        self.assertEqual(len([line for line in calls if line.startswith("test ")]), 1)
+        self.assertTrue(any(line.startswith("export ") and "ATMA-ipad.xcresult" in line for line in calls))
+        self.assertIsNone(revision)
+
+    def test_phone_failure_does_not_verify_revision_and_exports_ipad_evidence(self):
+        result, calls, revision = self.run_smoke("phone")
+        self.assertEqual(result.returncode, 65, result.stdout + result.stderr)
         self.assertEqual(len([line for line in calls if line.startswith("test ")]), 2)
-        self.assertTrue(any(line.startswith("export ") and "ATMA-iphone.xcresult" in line for line in calls))
+        self.assertTrue(any(line.startswith("export ") and "ATMA-ipad.xcresult" in line for line in calls))
         self.assertIsNone(revision)
 
 

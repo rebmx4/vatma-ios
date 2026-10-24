@@ -57,8 +57,9 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
   smoke)
     test -d ATMA.xcodeproj
     trap export_screenshots EXIT
-    xcrun simctl list devices available -j | python3 -B release/simulators.py > out/simulators.json
-    for device in iphone ipad; do
+    simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+    xcrun simctl list devices available -j | python3 -B release/simulators.py --ios-version "$simulator_sdk" > out/simulators.json
+    for device in ipad iphone; do
       simulator="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' out/simulators.json "$device")"
       xcrun simctl boot "$simulator" 2>/dev/null || true
       xcrun simctl bootstatus "$simulator" -b

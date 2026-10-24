@@ -105,7 +105,7 @@ final class BrowserSmokeTests: XCTestCase {
         var lastObservation = "Not evaluated"
         let visible = NSPredicate { _, _ in
             do {
-                // Read all frames from one full accessibility snapshot. Separate
+                // Read bundled WebKit frames from one accessibility snapshot. Separate
                 // firstMatch attribute requests returned zero frames after iPad
                 // rotation while the full hierarchy and recording were correct.
                 let snapshot = try self.app.snapshot()
@@ -114,7 +114,8 @@ final class BrowserSmokeTests: XCTestCase {
                     lastObservation = "Main window absent from snapshot"
                     return false
                 }
-                guard let keyboard = elements.first(where: { $0.elementType == .keyboard && self.hasVisibleFrame($0, in: windowBounds) }),
+                let keyboard = self.app.keyboards.firstMatch
+                guard keyboard.exists,
                       let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else {
                     lastObservation = "Keyboard or bundled UI absent from snapshot"
                     return false
@@ -125,15 +126,22 @@ final class BrowserSmokeTests: XCTestCase {
                     lastObservation = "Address or Go absent from bundled UI snapshot"
                     return false
                 }
-                let accessory = elements.first {
-                    $0.elementType == .toolbar && $0.identifier == "Toolbar" && self.hasVisibleFrame($0, in: windowBounds)
+                // System input windows can retain a differently oriented frame
+                // in an application snapshot. Element queries normalize their
+                // coordinates to the current interface orientation.
+                let keyboardFrame = keyboard.frame
+                guard self.hasVisibleFrame(keyboardFrame, in: windowBounds) else {
+                    lastObservation = "Visible keyboard frame unavailable: \(keyboardFrame)"
+                    return false
                 }
+                let accessoryFrame = self.app.toolbars.matching(identifier: "Toolbar").allElementsBoundByIndex
+                    .map(\.frame).first { self.hasVisibleFrame($0, in: windowBounds) }
                 let bounds = ui.frame
-                let keyboardTop = min(keyboard.frame.minY, accessory?.frame.minY ?? keyboard.frame.minY)
+                let keyboardTop = min(keyboardFrame.minY, accessoryFrame?.minY ?? keyboardFrame.minY)
                 let bottom = min(bounds.maxY, keyboardTop)
                 let frames = [address.frame, go.frame]
                 let hittable = [self.app.textFields.firstMatch.isHittable, self.button(["Перейти", "Go"]).isHittable]
-                lastObservation = "UI=\(bounds), keyboard=\(keyboard.frame), accessory=\(String(describing: accessory?.frame)), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
+                lastObservation = "UI=\(bounds), keyboard=\(keyboardFrame), accessory=\(String(describing: accessoryFrame)), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
                 return frames.allSatisfy { frame in
                     frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
                         && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX
@@ -174,8 +182,8 @@ final class BrowserSmokeTests: XCTestCase {
         elements.first { $0.elementType == .window && $0.frame.width > 0 && $0.frame.height > 0 }?.frame
     }
 
-    private func hasVisibleFrame(_ element: any XCUIElementSnapshot, in bounds: CGRect) -> Bool {
-        element.frame.width > 0 && element.frame.height > 0 && element.frame.intersects(bounds)
+    private func hasVisibleFrame(_ frame: CGRect, in bounds: CGRect) -> Bool {
+        frame.width > 0 && frame.height > 0 && frame.intersects(bounds)
     }
 
     private func snapshots(in root: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {

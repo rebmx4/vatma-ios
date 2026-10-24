@@ -136,6 +136,27 @@ class SimulatorSelectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             select(payload)
 
+    def test_sdk_runtime_is_selected_over_a_newer_installed_runtime(self):
+        payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-" + version: [
+            {"name": "iPhone 17", "udid": "phone-" + version, "isAvailable": True},
+            {"name": "iPad Pro", "udid": "tablet-" + version, "isAvailable": True}]
+            for version in ("26-4", "26-5")}}
+        self.assertEqual(select(payload, ios_version="26.4")["ipad"], "tablet-26-4")
+
+    def test_sdk_patch_version_uses_the_same_major_minor_runtime(self):
+        payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-4": [
+            {"name": "iPhone 17", "udid": "phone", "isAvailable": True},
+            {"name": "iPad Pro", "udid": "tablet", "isAvailable": True}]}}
+        self.assertEqual(select(payload, ios_version="26.4.1")["runtime"],
+                         "com.apple.CoreSimulator.SimRuntime.iOS-26-4")
+
+    def test_missing_sdk_runtime_does_not_silently_select_a_newer_one(self):
+        payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
+            {"name": "iPhone 17", "udid": "phone", "isAvailable": True},
+            {"name": "iPad Pro", "udid": "tablet", "isAvailable": True}]}}
+        with self.assertRaisesRegex(ValueError, "26.4"):
+            select(payload, ios_version="26.4")
+
 
 if __name__ == "__main__":
     unittest.main()
