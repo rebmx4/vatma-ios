@@ -24,3 +24,8 @@ Signed release: https://github.com/rebmx4/vatma-ios/actions/runs/40103146068 —
 
 ## Delivery
 Signed artifact 12564150292 downloaded to out/signed-40103146068/ipa/ATMA.ipa (23,832,350 bytes). SHA-256: c1b1f8d743be3a1cca1b8def36fcfef3b145816c0c89cc027bb48c661682f819. Local validation matches all 34 UI/certificate resources byte-for-byte against the exact-source archive above; macOS CI verified signing. Apple upload COMPLETE with no errors/warnings; build 2194a510-c5c1-4dd0-ab33-2972f5e5232f VALID, unexpired, usesNonExemptEncryption=false. Internal state IN_BETA_TESTING; membership in existing Test group read back. Russian release notes saved and read back exactly. Availability confirmed 2026-10-24T14:51:59.400Z.
+
+## Owner phone access — Test1
+Owner follow-up requested adding build 12 through the group add-build step while away from the computer. Existing installed phone testers are in external Test1 (33903aaa-30ca-42f7-9352-6dcbe72319a0); internal Test had only an invited tester, so internal availability alone did not establish access on the phone.
+
+Build 12 was explicitly associated with existing Test1 and read back. Beta review submission was created and Apple approved it. External build state is IN_BETA_TESTING, autoNotifyEnabled=true. VALID/unexpired membership in Test1 confirmed 2026-10-24T15:02:13.265Z. No new build was needed. When checking access for these phone testers, verify Test1 membership and external IN_BETA_TESTING, rather than only internal Test availability.

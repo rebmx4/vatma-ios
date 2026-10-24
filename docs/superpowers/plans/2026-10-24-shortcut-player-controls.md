@@ -11,7 +11,7 @@
 ## Global constraints
 - Work, temporary files, caches and outputs only on D:.
 - Preserve owner file docs/superpowers/plans/task-1-review.patch.
-- No paid Codemagic runs. Existing internal TestFlight group Test only.
+- No paid Codemagic runs. Initial delivery used internal Test; owner follow-up authorized adding this build to existing external Test1 for phone testing.
 - Exact-revision native iPhone/iPad gate before signing and upload.
 - Never discard profile cookies or invent notification counts.
 
@@ -81,3 +81,8 @@ Files: BrowserNative/BrowserShortcutProfiles.swift (new), BrowserNative/BrowserM
 - Final source 7b019ea298b01d4ad1a25dddfde6fa9495983d9b: native gate 40101298503 SUCCESS. All 40 native tests and both iPhone/iPad UI smoke scenarios passed. The slow-navigation rejection and folder-miniature repair cases passed. Exact verified-commit marker and local gate matched.
 - Signed run 40103146068 SUCCESS. Build 1.0.0 (12) uploaded with no errors. Artifact 12564150292; all 34 bundled UI/certificate resources match the exact source locally; codesign checked on macOS. Apple upload COMPLETE, no warnings/errors. Build 2194a510-c5c1-4dd0-ab33-2972f5e5232f VALID and available in internal Test group (IN_BETA_TESTING); Russian notes saved and verified. Physical-device retest remains pending.
 - Physical-device YouTube/RUTUBE/PiP/lock checks and a concrete notification integration remain outside the confirmed simulator result.
+
+## Owner distribution follow-up
+- Owner requested the add-build (+) step for phone testing. Existing installed testers use external Test1, not internal Test.
+- Build 12 assigned to Test1, beta submission APPROVED, external IN_BETA_TESTING; group membership and VALID/unexpired build read back 2026-10-24T15:02:13.265Z.
+- Phone-access checks must include the actual installed tester group Test1 and external testing state.
