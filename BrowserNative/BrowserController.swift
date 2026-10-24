@@ -36,6 +36,8 @@ final class BrowserController: UIViewController {
     var tabPreviews: [String: TabPreview] = [:]
     var previewCaptures: [String: TabPreviewCapture] = [:]
     private var lastLayoutDiagnostic = ""
+    private var stateSequence = 0
+    var lastUIAction = "none"
     var nativeTheme = "auto"
     var currentNavigations: [ObjectIdentifier: WKNavigation] = [:]
     var downloadTransitions: [ObjectIdentifier: DownloadNavigationTransition] = [:]
@@ -279,9 +281,10 @@ final class BrowserController: UIViewController {
     }
 
     func state() -> [String: Any] {
+        stateSequence += 1
         let tab = model.active
         let frame = browserViewport.bounds
-        return ["id": "ios", "deviceName": UIDevice.current.model, "profileId": tab.profileId,
+        return ["sequence": stateSequence, "id": "ios", "deviceName": UIDevice.current.model, "profileId": tab.profileId,
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
                 "siteName": tab.siteName, "iconUrl": tab.iconUrl,
                 "width": frame.width, "height": frame.height, "footerHeight": currentFooterHeight,
@@ -299,8 +302,12 @@ final class BrowserController: UIViewController {
 
     func publish() {
         guard ui != nil, ui.url?.host == "127.0.0.1", ui.url?.port == Int(server.port) else { return }
+        let snapshot = state()
+        if LocalUIServer.diagnosticsEnabled {
+            ui.accessibilityValue = "seq=\(stateSequence); mode=\(mode); panel=\(panel ?? "none"); action=\(lastUIAction)"
+        }
         ui.callAsyncJavaScript("window.dispatchEvent(new CustomEvent('atma-native-state', {detail: state}));",
-                              arguments: ["state": state()], in: nil, in: .page, completionHandler: nil)
+                              arguments: ["state": snapshot], in: nil, in: .page, completionHandler: nil)
     }
 
     func update(_ webView: WKWebView, error: String? = nil, loading: Bool? = nil) {

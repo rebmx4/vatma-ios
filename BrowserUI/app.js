@@ -261,6 +261,8 @@ function chooseDesktopSurface(tabId){
 }
 function consume(next) {
   if (!next?.profileId) return;
+  // Commands, polling and native push events can finish out of order.
+  if(Number.isSafeInteger(state?.sequence)&&(!Number.isSafeInteger(next.sequence)||next.sequence<state.sequence))return;
   const previousMode=state?.mode,changedTab=state?.activeTabId!==next.activeTabId;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;

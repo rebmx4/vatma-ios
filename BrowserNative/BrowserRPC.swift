@@ -12,6 +12,9 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             replyHandler(nil, "ATMA bridge is restricted to its bundled main-frame UI."); return
         }
         let body = request["body"] as? [String: Any] ?? [:]
+        if LocalUIServer.diagnosticsEnabled, ["home", "panel", "tabs/new", "tabs/select", "tabs/close", "open"].contains(action) {
+            lastUIAction = action == "panel" ? "panel:\(body["panel"] as? String ?? "closed")" : action
+        }
         do { try dispatch(action, body: body, reply: replyHandler) }
         catch { replyHandler(nil, error.localizedDescription) }
     }
