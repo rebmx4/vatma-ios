@@ -74,3 +74,7 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 - SDK-matched run: https://github.com/rebmx4/vatma-ios/actions/runs/40056150273, job 120759470143, source 06460b63487782c76596ca4ff2bf8e947851c10c. iPad UI runs first, then all iPhone native/UI tests. Signing remains blocked until full success.
 
 - Run 40056150273 selected iOS 26.4.1 successfully but failed Swift compilation before any UI test: one focus-helper call still passed an XCUIElementSnapshot after hasVisibleFrame changed to take CGRect. Corrected that call to $0.frame and audited all three call sites. No production code changed; all 23 Python checks and shell checks remain valid for unchanged files.
+
+- SDK-matched frame-call retry: https://github.com/rebmx4/vatma-ios/actions/runs/40056752812, job 120761302357, source 32ee46c58763c1e39a3e980f24cf381005afc566. Full success remains mandatory for signing.
+
+- Run 40056752812 compiled on iOS 26.4.1 but failed before Home appeared. Recording frame out/native-40056752812/ipad-home-60s.png shows a genuinely blank white WebKit surface. Accessibility hierarchy includes atma.ui and no missing-index label. Added test-launch-argument-gated server HTTP/read diagnostics, WebKit response/error/DOM diagnostics and simulator unified log capture. Default app behavior is unchanged; no further speculative behavioral fix is applied.

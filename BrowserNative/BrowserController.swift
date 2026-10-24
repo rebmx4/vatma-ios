@@ -66,6 +66,17 @@ final class BrowserController: UIViewController {
         ])
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        if LocalUIServer.diagnosticsEnabled {
+            let source = """
+            window.__atmaStartupErrors = [];
+            const recordStartupError = value => {
+                if (window.__atmaStartupErrors.length < 20) window.__atmaStartupErrors.push(String(value).slice(0, 300));
+            };
+            addEventListener('error', event => recordStartupError(event.message || ('resource: ' + (event.target.src || event.target.href || event.target.tagName))), true);
+            addEventListener('unhandledrejection', event => recordStartupError(event.reason));
+            """
+            configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "atma")
         ui = WKWebView(frame: .zero, configuration: configuration)
         ui.accessibilityIdentifier = "atma.ui"
@@ -92,6 +103,20 @@ final class BrowserController: UIViewController {
             case .success(let url): self.ui.load(URLRequest(url: url))
             case .failure(let error): self.showStartupFailure(error)
             }
+        }
+        if LocalUIServer.diagnosticsEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportUIDiagnostics("15 seconds") }
+        }
+    }
+
+    func reportUIDiagnostics(_ stage: String) {
+        guard LocalUIServer.diagnosticsEnabled, ui != nil else { return }
+        LocalUIServer.diagnostic("\(stage): loading=\(ui.isLoading), path=\(ui.url?.path ?? "nil"), port=\(ui.url?.port ?? 0)")
+        ui.evaluateJavaScript("JSON.stringify({ready:document.readyState,title:document.title,bodyChildren:document.body?.children.length||0,home:!!document.getElementById('go-home'),mode:document.body?.dataset.mode,errors:window.__atmaStartupErrors||[]})") { result, error in
+            if let error {
+                let failure = error as NSError
+                LocalUIServer.diagnostic("DOM evaluation: \(failure.domain) \(failure.code)")
+            } else { LocalUIServer.diagnostic("DOM: \(result as? String ?? "nil")") }
         }
     }
 

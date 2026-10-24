@@ -9,6 +9,12 @@ final class LocalUIServer {
     private var connections: [UUID: NWConnection] = [:]
     private(set) var port: UInt16 = 0
 
+    static var diagnosticsEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--atma-ui-diagnostics") }
+
+    static func diagnostic(_ message: String) {
+        if diagnosticsEnabled { NSLog("[ATMA UI] %@", message) }
+    }
+
     static func resourceIndex(at directory: URL) throws -> [String: URL] {
         // iOS container paths may use aliases such as /var and /private/var.
         // Use the same canonical root for containment checks and relative keys.
@@ -39,6 +45,7 @@ final class LocalUIServer {
                 throw BrowserFailure.invalid("Bundled BrowserUI is missing.")
             }
             resources = try Self.resourceIndex(at: root)
+            Self.diagnostic("Indexed \(resources.count) resources; index readable=\(FileManager.default.isReadableFile(atPath: resources["index.html"]!.path))")
             let saved = UserDefaults.standard.integer(forKey: "atma.ui.loopback.port")
             port = (1024...65535).contains(saved) ? UInt16(saved) : UInt16.random(in: 49152...65535)
             let parameters = NWParameters.tcp
@@ -52,9 +59,11 @@ final class LocalUIServer {
                 switch state {
                 case .ready where !didComplete:
                     didComplete = true
+                    Self.diagnostic("Listener ready on port \(self.port)")
                     UserDefaults.standard.set(Int(self.port), forKey: "atma.ui.loopback.port")
                     DispatchQueue.main.async { completion(.success(URL(string: "http://127.0.0.1:\(self.port)/?context=ios")!)) }
                 case .failed(let error) where !didComplete:
+                    Self.diagnostic("Listener failed: \(error)")
                     didComplete = true; listener.cancel()
                     DispatchQueue.main.async { completion(.failure(error)) }
                 default: break
@@ -96,10 +105,23 @@ final class LocalUIServer {
         let words = (lines.first ?? "").split(separator: " ")
         guard words.count == 3, words[0] == "GET" else { respond(connection, status: "405 Method Not Allowed"); return }
         let hosts = lines.dropFirst().filter { $0.lowercased().hasPrefix("host:") }
-        guard hosts.count == 1, hosts[0].dropFirst(5).trimmingCharacters(in: .whitespaces) == "127.0.0.1:\(port)",
-              let relative = UIResourcePath.relative(String(words[1])), let url = resources[relative],
-              let data = try? Data(contentsOf: url) else { respond(connection, status: "404 Not Found"); return }
+        guard hosts.count == 1, hosts[0].dropFirst(5).trimmingCharacters(in: .whitespaces) == "127.0.0.1:\(port)" else {
+            Self.diagnostic("HTTP 404: Host rejected")
+            respond(connection, status: "404 Not Found"); return
+        }
+        guard let relative = UIResourcePath.relative(String(words[1])), let url = resources[relative] else {
+            Self.diagnostic("HTTP 404: resource not indexed")
+            respond(connection, status: "404 Not Found"); return
+        }
+        let data: Data
+        do { data = try Data(contentsOf: url) }
+        catch {
+            let failure = error as NSError
+            Self.diagnostic("HTTP 404: read \(relative), \(failure.domain) \(failure.code)")
+            respond(connection, status: "404 Not Found"); return
+        }
         let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        Self.diagnostic("HTTP 200: \(relative), \(data.count) bytes, MIME=\(mime)")
         respond(connection, status: "200 OK", data: data, mime: mime)
     }
 

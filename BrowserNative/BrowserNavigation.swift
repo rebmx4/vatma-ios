@@ -33,7 +33,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if webView === ui { decisionHandler(.allow); return }
+        if webView === ui {
+            let status = (navigationResponse.response as? HTTPURLResponse)?.statusCode ?? 0
+            LocalUIServer.diagnostic("Navigation response: \(status), MIME=\(navigationResponse.response.mimeType ?? "nil"), displayable=\(navigationResponse.canShowMIMEType)")
+            decisionHandler(.allow); return
+        }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let shouldDownload = !navigationResponse.canShowMIMEType || disposition.lowercased().hasPrefix("attachment")
         if navigationResponse.isForMainFrame {
@@ -86,7 +90,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === ui { publish() }
+        if webView === ui { reportUIDiagnostics("Navigation finished"); publish() }
         else {
             blocker.apply(to: webView, host: webView.url?.host)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
@@ -105,6 +109,8 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     private func navigationFailed(_ webView: WKWebView, navigation: WKNavigation?, error: Error) {
         let failure = error as NSError
         if webView === ui {
+            LocalUIServer.diagnostic("Navigation failed: \(failure.domain) \(failure.code)")
+            reportUIDiagnostics("Navigation failed")
             if failure.domain != NSURLErrorDomain || failure.code != NSURLErrorCancelled { nativeError = error.localizedDescription }
             return
         }
