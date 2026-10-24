@@ -24,6 +24,10 @@ enum UIResourceTests {
         let outside = temporary.appendingPathComponent("outside.txt")
         try Data("must not be served".utf8).write(to: outside)
         try manager.createSymbolicLink(at: real.appendingPathComponent("escape.txt"), withDestinationURL: outside)
+        let outsideDirectory = temporary.appendingPathComponent("outside-directory", isDirectory: true)
+        try manager.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        try Data("must not be served either".utf8).write(to: outsideDirectory.appendingPathComponent("secret.js"))
+        try manager.createSymbolicLink(at: real.appendingPathComponent("escape-directory", isDirectory: true), withDestinationURL: outsideDirectory)
         let alias = temporary.appendingPathComponent("container-alias", isDirectory: true)
         try manager.createSymbolicLink(at: alias, withDestinationURL: temporary.appendingPathComponent("container", isDirectory: true))
 

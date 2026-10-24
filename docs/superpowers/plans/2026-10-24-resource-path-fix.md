@@ -25,3 +25,11 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 
 - RED confirmed: GitHub native run 40044862013 compiled the actual production indexer and failed before simulator startup with `FAIL: Bundled UI index.html is missing.` (log: out/resource-alias-red-40044862013.log).
 - Release command regression also failed locally because the real smoke command used Debug. Both causes are now being corrected before the full native run.
+
+- Canonical root fixed index lookup, but CI 40045078408 still failed the nested-resource/security fixture. Diagnostic CI 40045235850 showed only ["index.html"], omitting assets/app.js.
+- Apple FileManager URL enumerator documentation states it does not recurse through symbolic links; skipDescendants targets the last obtained subdirectory. Removed that call from the symlink-file branch while preserving explicit exclusion and canonical containment. Fixture now covers external file and directory symlinks.
+- Fresh independent review: Critical 0, Important 1 (runtime regression still failing at review time), Minor 0. This finding remains gated on the next full green run.
+- Final: Ruling: physical-device behavior requires owner retest of the next TestFlight build — this Windows session cannot drive the owner's iPhone — a remaining device-only defect could still require another build.
+- Final: Ruling: full Release simulator and host regression success remain mandatory before signing — no source-only conclusion substitutes for runtime results — failed checks block upload.
+- Final: Ruling: directory symlinks are explicitly included in the fixture after review — Foundation's documented non-recursion and containment guard are both retained — wrong enumeration assumptions would fail the fixture.
+- Final: Ruling: post-index filesystem mutation is outside this repair because the resource source is the signed immutable app bundle — no dynamic filesystem content is served — a different mutable resource source would need a new design.

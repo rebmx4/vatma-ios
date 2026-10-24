@@ -20,7 +20,9 @@ final class LocalUIServer {
         var resources: [String: URL] = [:]
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            // URL enumerators do not descend through symlinks. Calling
+            // skipDescendants here can instead skip the last real directory.
+            if values.isSymbolicLink == true { continue }
             if values.isRegularFile == true {
                 let file = url.resolvingSymlinksInPath().standardizedFileURL
                 guard file.path.hasPrefix(prefix) else { continue }
