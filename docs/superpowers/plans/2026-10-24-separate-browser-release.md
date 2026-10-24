@@ -20,9 +20,9 @@
 - [x] Remove catalogue, UA overrides, chooser/panel and switching API. Simplify website data and shortcut launch to actual-device session. Add targeted native/JavaScript regression cases for rejected switching, persisted tabs/shortcut login and standard WebKit.
 - [x] Change app/test bundle identifiers and signing/upload identity coherently; validate first-build numbering for a new record. Test IPA/signing validation against new and old identifiers.
 - [x] Update RU/EN metadata, common policy/support and screenshot scenario to remove device-profile claims. Generate matching support pages.
-- [ ] Run local checks, fresh independent code review and exact-source iPhone/iPad native gate. Only a green exact revision can be signed and uploaded.
-- [ ] Verify IPA resources/signature/identity, TestFlight processing and new group delivery. Capture and inspect current iPhone/iPad screenshots.
-- [ ] Populate new card including free price, age, privacy, review notes and actual screenshots; submit public review when all mandatory validation is satisfied. Report Apple state honestly.
+- [x] Run local checks, fresh independent code review and exact-source iPhone/iPad native gate. Only a green exact revision can be signed and uploaded.
+- [x] Verify IPA resources/signature/identity, TestFlight processing and new group delivery. Capture and inspect current iPhone/iPad screenshots.
+- [x] Populate new card including free price, age, privacy, review notes and actual screenshots; submit public review when all mandatory validation is satisfied. Report Apple state honestly.
 
 ## Review focus
 - A legacy or forged profile identifier cannot change the UA or select an alternate data store.
@@ -59,3 +59,9 @@
 - Added a native sequence/immutable-panel-snapshot regression. The existing UI scenario remains unchanged. Diagnostic mode records the last navigation/panel command in the UI accessibility value to distinguish an unreceived tap from stale rendered state if it fails again.
 - Local52JavaScript tests, changed JS syntax,267-file source validation and diff check passed. The connection between the observed native UI failure and the reproduced stale-push race is not yet directly proven; the next native run is still required.
 - Final independent review found no open Critical/Important/Minor finding and reproduced8/8targeted state/home/footer tests. Native SDK compilation and the unchanged iPhone Close scenario remain required for this correction.
+
+## First new-app submission completed
+- The final application revision is a879df5306cd232616e6c1a17fc123565e7197cc; the icon follow-up is documented in2026-10-25-shortcut-icons.md. Native gate40141124891 and signed/upload run40142631653 passed. New app6826668990 contains VALID1.0.0(1), with34resources compared byte-for-byte against the tested source.
+- All59JavaScript,46nativeunit and four device UI scenarios passed. Five iPhone and five iPad captures are COMPLETE in Apple. Owner internal TestFlight is available; external Test1 is waiting for beta review.
+- Version and App Review submission are WAITING_FOR_REVIEW, with automatic release AFTER_APPROVAL. This is submission to Apple, not approval or public availability.
+- Notifications remain a disclosed unsupported capability. The separate bundle does not import old-app website sessions automatically.

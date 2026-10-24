@@ -5,8 +5,8 @@ Owner requests: original site artwork on new shortcuts; a simple optional choice
 - [x] Inspect the icon path and reproduce editor persistence/races. Four JavaScript regressions observed RED then GREEN.
 - [x] Keep the 512 KiB metadata prefix even when the complete HTML response is larger. Existing image/manifest limits and credential isolation remain. Real Avito/RUTUBE/YouTube pages exceed the old whole-document limit.
 - [x] Add original website icon and six local alternatives, persist the selected style, and stop old icon lookups overriding a later choice. Editing a built-in shortcut to a new URL opts into the new site's artwork.
-- [ ] Run source/JavaScript validation, independent review and exact-revision iPhone/iPad tests. Verify a large HTML page and actual editor/desktop icon persistence across UI reload.
-- [ ] Produce the verified TestFlight build with current artwork and publication assets. No notification claim is added.
+- [x] Run source/JavaScript validation, independent review and exact-revision iPhone/iPad tests. Verify a large HTML page and actual editor/desktop icon persistence across UI reload.
+- [x] Produce the verified TestFlight build with current artwork and publication assets. No notification claim is added.
 
 Рекомендуемая модель для реализации: GPT-6.1-Sol, уровень high. Причина: согласуются нативная загрузка ресурсов, сохранение ярлыков и редактор.
 
@@ -18,3 +18,10 @@ Owner requests: original site artwork on new shortcuts; a simple optional choice
 - Native UTF-8 boundary regression and strict image/manifest-limit checks are written but require Xcode execution. A bounded HTML prefix trims only an incomplete1–3byte UTF-8 tail before legacy decoding.
 
 - Final independent review: no open Critical/Important/Minor findings; reviewer ran21targetedJavaScript checks and diff validation. New native execution is still required.
+
+## Delivered
+- Application source a879df5306cd232616e6c1a17fc123565e7197cc passed native run40141124891:46unit,2iPhoneUI,2iPadUI. Both large-page/icon and editor/reload/return-to-original cases passed.
+- Signed run40142631653 uploaded build1.0.0(1) to new app6826668990. Apple processing VALID. Local IPA comparison matched all34exact LF source resources; signature verification ran successfully in macOS CI.
+- Owner added once to the new internal group ATMA — владелец; internal build state IN_BETA_TESTING. External Test1 submission WAITING_FOR_BETA_REVIEW; link https://testflight.apple.com/join/ATXfWhKZ waits for that decision.
+- Five real iPhone and five iPad screenshots accepted COMPLETE. Public App Review submission2d5725ca-49c7-4b00-9c54-207ca5ed9d36 and version state WAITING_FOR_REVIEW; release AFTER_APPROVAL. App is not yet publicly released.
+- Website chat notifications and badges remain unimplemented and are disclosed as unsupported in this build. No push backend was deployed.
