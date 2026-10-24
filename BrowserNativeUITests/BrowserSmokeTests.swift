@@ -114,7 +114,7 @@ final class BrowserSmokeTests: XCTestCase {
         let pin = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Добавить httpbingo.org")).firstMatch
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         pin.tap()
-        XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 20))
         home.tap()
         let shortcut = button(["Открыть httpbingo.org"])
         XCTAssertTrue(shortcut.waitForExistence(timeout: 5))

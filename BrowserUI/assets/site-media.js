@@ -54,14 +54,15 @@ function installAtmaMediaPage(options = {}) {
   function stop(video) { revoke(video);video.pause(); }
   function allowPlay(video) {
     const freshGesture=Date.now()<=gestureUntil && (!blockedAt.has(video)||gesture>blockedAt.get(video));
-    const activeGesture=!blockedAt.has(video) && window.navigator?.userActivation?.isActive===true;
-    if (!approved.has(video) && inlineVisible(video) && (freshGesture||activeGesture)) approve(video);
+    // WKWebView's native JS evaluation forces transient activation even for
+    // state reads. Only actual trusted page input grants first-play intent.
+    if (!approved.has(video) && inlineVisible(video) && freshGesture) approve(video);
     return approved.has(video);
   }
   function enforcePlay(video,event) {
     // Native controls do not call the page's JavaScript play() method.
     // Scripted calls are checked before WebKit receives them below.
-    if(!allowPlay(video) && playWrapped && event?.isTrusted && (requested.has(video)||window.navigator?.userActivation?.isActive===true) && (inPiP(video)||inlineVisible(video)))approve(video);
+    if(!allowPlay(video) && playWrapped && event?.isTrusted && requested.has(video) && inPiP(video))approve(video);
     if(!approved.has(video))video.pause();
   }
   const mediaPrototype=window.HTMLMediaElement?.prototype;
@@ -86,7 +87,7 @@ function installAtmaMediaPage(options = {}) {
     report(true);
   }
   function setScreenLocked(locked) { screenLocked=locked===true; }
-  for(const event of ['pointerup','touchend','click','keydown'])document.addEventListener(event,e=>{
+  for(const event of ['pointerdown','pointerup','mousedown','touchend','click','keydown'])document.addEventListener(event,e=>{
     if(e.isTrusted&&pageVisible){gesture++;gestureUntil=Date.now()+2000;}
   },true);
   function scan() {

@@ -98,9 +98,10 @@ final class BrowserRenderingTests: XCTestCase {
         _ = try await script("window.__mediaPreviousDocument=true; return true;", in: page)
         page.reload()
         try await waitFor("window.__mediaPreviousDocument!==true && document.readyState==='complete' && document.querySelector('video')?.readyState>=1 && !!window.__atmaMediaPage", in: page)
-        // Substitute only the transient browser activation at this boundary;
-        // the real WebKit document, player and native lifecycle remain intact.
-        _ = try await script("Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:true}}); await document.querySelector('video').play(); return true;", in: page)
+        // Read the actual native-to-document visibility update. A native JS
+        // evaluation itself forces activation, so it cannot stand in for input.
+        try await waitFor("window.__fixturePageVisible===true", in: page)
+        _ = try await script("await window.__atmaMediaPage.command({type:'play'}); return true;", in: page)
         try await waitFor("document.querySelector('video').currentTime>0.3 && !document.querySelector('video').paused", in: page)
     }
 
@@ -291,7 +292,7 @@ final class BrowserRenderingTests: XCTestCase {
             let bundle = Bundle(for: BrowserRenderingTests.self)
             let mediaURL = try XCTUnwrap(bundle.url(forResource: "playback", withExtension: "mp4"))
             let media = try Data(contentsOf: mediaURL).base64EncodedString()
-            let videoPage = "<!doctype html><html><head><title>Playback fixture</title></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>"
+            let videoPage = "<!doctype html><html><head><title>Playback fixture</title><script>const setVisible=window.__atmaMediaPage.setPageVisible;window.__atmaMediaPage.setPageVisible=visible=>{window.__fixturePageVisible=visible;return setVisible(visible);};</script></head><body><video playsinline controls preload='auto' width='320' height='180' src='data:video/mp4;base64,\(media)'></video></body></html>"
             resources["/video"] = Data(videoPage.utf8)
             resources["/video-autoplay"] = Data(videoPage.replacingOccurrences(of: "<video playsinline controls ", with: "<video playsinline controls autoplay ").utf8)
         }

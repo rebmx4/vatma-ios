@@ -7,10 +7,10 @@ function setup(){
  const listeners=new Map();
  class Media extends EventTarget {addEventListener(type,callback,...args){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(callback);super.addEventListener(type,callback,...args);}play(){this.paused=false;this.dispatchEvent(new Event('play'));return Promise.resolve();}pause(){this.paused=true;this.dispatchEvent(new Event('pause'));}}
  const video=new Media();Object.assign(video,{tagName:'VIDEO',paused:true,ended:false,currentTime:20,duration:100,readyState:4,videoWidth:640,videoHeight:360,webkitPresentationMode:'inline',getBoundingClientRect:()=>({width:640,height:360}),webkitSupportsPresentationMode:()=>true,webkitSetPresentationMode(mode){this.webkitPresentationMode=mode;}});
- const document=new EventTarget();Object.assign(document,{title:'Fixture video',readyState:'complete',querySelectorAll:()=>[video],pictureInPictureEnabled:false});
+ const inputs=new Map(),document=new EventTarget(),addInput=document.addEventListener.bind(document);document.addEventListener=(type,callback,...args)=>{if(!inputs.has(type))inputs.set(type,[]);inputs.get(type).push(callback);addInput(type,callback,...args);};Object.assign(document,{title:'Fixture video',readyState:'complete',querySelectorAll:()=>[video],pictureInPictureEnabled:false});
  const context={document,HTMLMediaElement:Media,DOMException,navigator:{userActivation:{isActive:false}},location:{hostname:'example.invalid'},MutationObserver:class{observe(){}disconnect(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,Event,URL,console};context.window=context;context.addEventListener=()=>{};context.removeEventListener=()=>{};
  vm.createContext(context);if(fs.existsSync(path))vm.runInContext(`(${fs.readFileSync(path,'utf8')})({background:true})`,context);
- return{context,document,video,api:context.__atmaMediaPage,nativePlay(){video.paused=false;for(const callback of listeners.get('play')||[])callback({isTrusted:true});}};
+ return{context,document,video,api:context.__atmaMediaPage,trustedInput(){for(const callback of inputs.get('pointerup')||[])callback({isTrusted:true});},nativePlay(){video.paused=false;for(const callback of listeners.get('play')||[])callback({isTrusted:true});}};
 }
 test('media commands use the original element, preserve position and honor deliberate pause',async()=>{
  const f=setup();assert.ok(f.api,'Media controller must be installed');
@@ -74,7 +74,7 @@ test('a website cannot undo a pause made in the system PiP controls',async()=>{
 });
 test('a user can play audio from a custom button without a visible audio rectangle',async()=>{
  const f=setup();f.video.tagName='AUDIO';f.video.getBoundingClientRect=()=>({width:0,height:0});
- f.context.navigator.userActivation.isActive=true;await f.video.play().catch(()=>{});
+ f.trustedInput();await f.video.play().catch(()=>{});
  assert.equal(f.video.paused,false);
 });
 
@@ -85,4 +85,12 @@ test('native PiP Play remains available after a deliberate system pause',async()
  const f=setup();await f.api.command({type:'play'});await f.api.command({type:'pip'});
  f.video.dispatchEvent(new Event('webkitpresentationmodechanged'));f.api.setPageVisible(false);
  f.video.pause();assert.equal(f.video.paused,true);f.nativePlay();assert.equal(f.video.paused,false);
+});
+
+test('native JavaScript activation without actual page input cannot authorize playback',async()=>{
+ const f=setup();f.context.navigator.userActivation.isActive=true;await f.video.play().catch(()=>{});assert.equal(f.video.paused,true,'WKWebView script evaluation can force activation without a real user request');
+});
+
+test('an internal inline play event cannot undo a user pause',async()=>{
+ const f=setup();await f.api.command({type:'play'});f.video.pause();f.nativePlay();assert.equal(f.video.paused,true);
 });
