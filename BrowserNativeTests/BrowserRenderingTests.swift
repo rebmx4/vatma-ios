@@ -131,8 +131,8 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitFor("document.querySelectorAll('.tab-shot').length===2 && [...document.querySelectorAll('.tab-shot')].every(image=>image.complete && image.naturalWidth>0)", in: controller.ui)
         let imagesValue = try await script("return Object.fromEntries([...document.querySelectorAll('.tab-card')].map(card=>[card.dataset.tabId,card.querySelector('.tab-shot')?.src]));", in: controller.ui)
         let images = try XCTUnwrap(imagesValue as? [String: String])
-        let red = try averageRGB(try XCTUnwrap(images[redID]))
-        let blue = try averageRGB(try XCTUnwrap(images[blueID]))
+        let red = try renderingAverageRGB(try XCTUnwrap(images[redID]))
+        let blue = try renderingAverageRGB(try XCTUnwrap(images[blueID]))
         XCTAssertGreaterThan(red[0], 150); XCTAssertLessThan(red[1], 110)
         XCTAssertGreaterThan(blue[2], 150); XCTAssertLessThan(blue[0], 110)
         _ = try await script("window.__originalTabCard=document.querySelector('.tab-card'); return true;", in: controller.ui)
@@ -219,7 +219,7 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitFor("document.querySelectorAll('.tab-shot').length===2 && [...document.querySelectorAll('.tab-shot')].every(image=>image.complete && image.naturalWidth>0)", in: controller.ui)
         let imagesValue = try await script("return Object.fromEntries([...document.querySelectorAll('.tab-card')].map(card=>[card.dataset.tabId,card.querySelector('.tab-shot')?.src]));", in: controller.ui)
         let images = try XCTUnwrap(imagesValue as? [String: String])
-        let red = try averageRGB(try XCTUnwrap(images[openerID]))
+        let red = try renderingAverageRGB(try XCTUnwrap(images[openerID]))
         XCTAssertGreaterThan(red[0], 150); XCTAssertLessThan(red[1], 110)
     }
 
@@ -230,10 +230,10 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(220, 38, 40)")
         try await waitFor("!document.getElementById('pin-site').disabled", in: controller.ui)
         _ = try await script("document.getElementById('pin-site').click(); return true;", in: controller.ui)
-        try await waitFor("JSON.parse(localStorage.getItem('atma-preview-apps')).some(app=>app.url===\(jsonString(url)) && app.iconUrl?.startsWith('data:image/png;base64,'))", in: controller.ui)
+        try await waitFor("JSON.parse(localStorage.getItem('atma-preview-apps')).some(app=>app.url===\(renderingJSONString(url)) && app.iconUrl?.startsWith('data:image/png;base64,'))", in: controller.ui)
         _ = try await rpc("home")
         let stored = try await script("return JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.url===url)?.iconUrl;", in: controller.ui, arguments: ["url": url]) as? String
-        let pixel = try averageRGB(XCTUnwrap(stored))
+        let pixel = try renderingAverageRGB(XCTUnwrap(stored))
         XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
         fixture.stop()
         _ = try await script("window.__iconPreviousDocument=true; return true;", in: controller.ui)
@@ -244,8 +244,8 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(reloaded, stored, "Saved artwork must survive a fresh UI document without the website")
     }
 
-    func testManualShortcutUsesManifestFallbackAndRepairsAnOldMissingIcon() async throws {
-        let url = try await startFixture(video: false).appendingPathComponent("manifest-only").absoluteString
+    func testManualShortcutReadsLargePageMetadataAndRepairsAnOldMissingIcon() async throws {
+        let url = try await startFixture(video: false, largeMetadata: true).appendingPathComponent("manifest-only").absoluteString
         try await waitForUI()
         _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
         try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
@@ -255,7 +255,7 @@ final class BrowserRenderingTests: XCTestCase {
         let saved = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Manual icon fixture')"
         try await waitFor("\(saved)?.iconUrl?.startsWith('data:image/png;base64,')", in: controller.ui)
         let icon = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
-        let pixel = try averageRGB(XCTUnwrap(icon))
+        let pixel = try renderingAverageRGB(XCTUnwrap(icon))
         XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
         _ = try await script("const apps=JSON.parse(localStorage.getItem('atma-preview-apps')); const index=apps.findIndex(app=>app.name==='Manual icon fixture'),app=apps[index];delete app.iconUrl;apps.splice(index,1,{id:'icon-fixture-folder',type:'folder',name:'Icons',children:[app]}); localStorage.setItem('atma-preview-apps',JSON.stringify(apps)); return true;", in: controller.ui)
         controller.ui.reload()
@@ -264,6 +264,31 @@ final class BrowserRenderingTests: XCTestCase {
         try await waitFor("\(repairedApp)?.iconUrl?.startsWith('data:image/png;base64,') && document.querySelector('[data-app=icon-fixture-folder] .folder-miniatures img')?.naturalWidth===192", in: controller.ui)
         let repaired = try await script("return \(repairedApp).iconUrl;", in: controller.ui) as? String
         XCTAssertEqual(repaired, icon, "Previously created shortcuts must recover their website artwork")
+    }
+
+    func testShortcutIconChoicePersistsAndCanReturnToOriginalWebsiteArtwork() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
+        try await waitForUI()
+        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
+        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
+        _ = try await script("const form=document.getElementById('app-form');form.elements.name.value='Custom icon fixture';form.elements.url.value=url;form.querySelector('[value=chat]').checked=true;form.requestSubmit();return true;", in: controller.ui, arguments: ["url": url])
+        let saved = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Custom icon fixture')"
+        try await waitFor("\(saved)?.iconStyle==='chat' && document.getElementById('overlay').hidden", in: controller.ui)
+        _ = try await script("window.__iconChoicePreviousDocument=true;return true;", in: controller.ui)
+        controller.ui.reload()
+        try await waitFor("window.__iconChoicePreviousDocument!==true && document.readyState==='complete' && !!document.body.dataset.mode", in: controller.ui)
+        _ = try await script("document.getElementById('edit-apps').click();const app=\(saved);[...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===app.id).querySelector('.app-tile').click();return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
+        let selected = try await script("return document.querySelector('#app-form [name=iconStyle]:checked')?.value;", in: controller.ui) as? String
+        XCTAssertEqual(selected, "chat", "The editor must retain the chosen shortcut icon after relaunch")
+        _ = try await script("const form=document.getElementById('app-form');form.querySelector('[value=site]').checked=true;form.requestSubmit();return true;", in: controller.ui)
+        try await waitFor("\(saved)?.iconStyle==='site' && \(saved)?.iconUrl?.startsWith('data:image/png;base64,') && document.getElementById('overlay').hidden", in: controller.ui)
+        let stored = try await script("return \(saved).iconUrl;", in: controller.ui) as? String
+        let pixel = try renderingAverageRGB(XCTUnwrap(stored))
+        XCTAssertGreaterThan(pixel[1], 160); XCTAssertLessThan(pixel[0], 90)
+        try await waitFor("(()=>{const app=\(saved);return [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===app.id)?.querySelector('.app-tile img')?.naturalWidth===192;})()", in: controller.ui)
     }
 
     func testCurrentSiteRejectsMetadataFromThePreviousDocumentDuringNavigation() async throws {
@@ -277,15 +302,11 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertTrue(rejection?.contains("Дождитесь") == true || rejection?.contains("Страница") == true,
                       "Quick-add must reject the preceding document during navigation: \(String(describing: rejection))")
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(30, 70, 220)")
-        try await waitFor("document.getElementById('address').value===\(jsonString(destination)) && !document.getElementById('pin-site').disabled", in: controller.ui)
+        try await waitFor("document.getElementById('address').value===\(renderingJSONString(destination)) && !document.getElementById('pin-site').disabled", in: controller.ui)
         let value = try await rpc("current-site")
         let site = try XCTUnwrap(value as? [String: Any])
         XCTAssertEqual(site["url"] as? String, destination)
         XCTAssertEqual(site["profileId"] as? String, controller.model.active.profileId)
-    }
-
-    private func jsonString(_ value: String) -> String {
-        String(data: try! JSONSerialization.data(withJSONObject: [value]), encoding: .utf8)!.dropFirst().dropLast().description
     }
 
     private func openVideo() async throws -> WKWebView {
@@ -299,7 +320,7 @@ final class BrowserRenderingTests: XCTestCase {
         return page
     }
 
-    private func startFixture(video: Bool) async throws -> URL {
+    private func startFixture(video: Bool, largeMetadata: Bool = false) async throws -> URL {
         var resources: [String: Data] = [:]
         for (path, color) in [("/red", "rgb(220,38,40)"), ("/blue", "rgb(30,70,220)"), ("/slow", "rgb(30,70,220)")] {
             resources[path] = Data("<!doctype html><html><head><title>\(path) fixture</title><link rel='apple-touch-icon' href='/art/site.png'><style>html,body{margin:0;width:100%;height:100%;background:\(color)}</style></head><body></body></html>".utf8)
@@ -310,7 +331,8 @@ final class BrowserRenderingTests: XCTestCase {
         }
         resources["/art/site.png"] = artwork
         resources["/manifest/icons/logo.png"] = artwork
-        resources["/manifest-only"] = Data("<!doctype html><html><head><title>Manifest fixture</title><link rel='apple-touch-icon' href='/missing.png'><link rel='manifest' href='/manifest/app.json'></head><body>Manifest icon</body></html>".utf8)
+        let pageBody = largeMetadata ? String(repeating: "Large page body ", count: 80_000) : "Manifest icon"
+        resources["/manifest-only"] = Data("<!doctype html><html><head><title>Manifest fixture</title><link rel='apple-touch-icon' href='/missing.png'><link rel='manifest' href='/manifest/app.json'></head><body>\(pageBody)</body></html>".utf8)
         resources["/manifest/app.json"] = Data(#"{"icons":[{"src":"icons/logo.png","sizes":"192x192","type":"image/png"}]}"#.utf8)
         if video {
             let bundle = Bundle(for: BrowserRenderingTests.self)
@@ -368,16 +390,5 @@ final class BrowserRenderingTests: XCTestCase {
         try await script("return await window.webkit.messageHandlers.atma.postMessage({action,body});", in: controller.ui, arguments: ["action": action, "body": body])
     }
 
-    private func averageRGB(_ source: String) throws -> [UInt8] {
-        let encoded = try XCTUnwrap(source.split(separator: ",", maxSplits: 1).last)
-        let bytes = try XCTUnwrap(Data(base64Encoded: String(encoded)))
-        let image = try XCTUnwrap(UIImage(data: bytes)?.cgImage)
-        var pixel: [UInt8] = [0, 0, 0, 0]
-        try pixel.withUnsafeMutableBytes { buffer in
-            let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        }
-        return pixel
-    }
+
 }

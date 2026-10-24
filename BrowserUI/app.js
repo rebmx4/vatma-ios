@@ -10,6 +10,7 @@ import {renderCookieBrowser} from './assets/cookies-ui.js';
 import {createLocalization} from './assets/i18n.js';
 import {renderLegalInfo} from './assets/legal-ui.js';
 import {createWebsiteIconLoader} from './assets/site-icons.js';
+import {SHORTCUT_ICON_CHOICES,normalizeShortcutIconStyle,shortcutIconArtwork} from './assets/shortcut-artwork.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
 const appLabel=app=>app.type==='system'?localization.t(app.name):app.name;
@@ -66,6 +67,7 @@ for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.
 let state, panel = null, editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
+let appEditorVersion=0;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
@@ -150,6 +152,7 @@ function renderAppIconPicker() {
 
 function brand(app) {
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
+  if(app.type!=='system'){const customArtwork=shortcutIconArtwork(app.iconStyle);if(customArtwork)return customArtwork;}
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
     'atma-files':'<path d="M8 20a4 4 0 0 1 4-4h12l5 5h21a4 4 0 0 1 4 4v23a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4Z" fill="#79c3ff"/><rect x="8" y="24" width="46" height="28" rx="4" fill="#0787f8"/><path d="M12 24h38" stroke="#409fff" stroke-width="1.5"/>',
@@ -203,15 +206,16 @@ const shortcutIcons=createWebsiteIconLoader((kind,url)=>api('site-resource',{kin
 window.addEventListener('online',()=>{shortcutIcons.retryFailed();renderApps();});
 function resolveShortcutIcon(site){return shortcutIcons.resolve(site);}
 function paintShortcutIcon(target,app,scope){
-  if(!app.custom)return;
+  if((!app.custom&&!app.iconStyle&&!app.iconUrl)||normalizeShortcutIconStyle(app.iconStyle)!=='site')return;
   const source=app.iconUrl||'',url=app.url,id=app.id,key=vaultKey;
   const paint=source=>{if(!source)return;const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';image.addEventListener('load',()=>target.replaceChildren(image));image.src=source;};
   if(/^data:image\/png;base64,/i.test(source)){paint(source);return;}
   resolveShortcutIcon(app).then(iconUrl=>{
-    if(!iconUrl)return;paint(iconUrl);
-    if(scope==='private'&&(!vaultKey||key!==vaultKey))return;
+    if(!iconUrl||scope==='private'&&(!vaultKey||key!==vaultKey))return;
     const current=findEntry(poolFor(scope),id)?.entry;
-    if(current?.url===url&&current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false}).catch(()=>{});}
+    if(current?.url!==url||normalizeShortcutIconStyle(current.iconStyle)!=='site')return;
+    paint(iconUrl);
+    if(current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false}).catch(()=>{});}
   });
 }
 let pinSiteBusy=false,pinSiteArtKey='';
@@ -760,7 +764,11 @@ $('wallpaper-file').addEventListener('change', async event => {
   } catch { notify('Не удалось сохранить обои'); }
 });
 function renderAppForm(app) {
-  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label><button class="primary-button" type="submit">${app ? 'Сохранить' : 'Добавить на рабочий стол'}</button></form>`;
+  const editorPanel=panel,version=++appEditorVersion;
+  const selectedIcon=normalizeShortcutIconStyle(app?.iconStyle);
+  const siteArtwork=/^data:image\/png;base64,/i.test(app?.iconUrl||'')?'<img src="'+escape(app.iconUrl)+'" alt="">':brand({...app,id:app?.id||'site-preview',name:app?.name||'Сайт',iconStyle:'site'});
+  const iconChoices='<fieldset class="shortcut-icon-picker"><legend>Иконка ярлыка</legend><div class="shortcut-icon-options">'+SHORTCUT_ICON_CHOICES.map(choice=>'<label class="shortcut-icon-option"><input type="radio" name="iconStyle" value="'+choice.id+'" '+(selectedIcon===choice.id?'checked':'')+'><span class="shortcut-icon-art">'+(choice.id==='site'?siteArtwork:shortcutIconArtwork(choice.id))+'</span><span>'+choice.label+'</span></label>').join('')+'</div></fieldset>';
+  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}<button class="primary-button" type="submit">${app ? 'Сохранить' : 'Добавить на рабочий стол'}</button></form>`;
   $('app-form').addEventListener('submit', async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); let url;
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
@@ -769,14 +777,15 @@ function renderAppForm(app) {
     const submit=event.currentTarget.querySelector?.('[type="submit"]');
     if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
     const scope=editorScope,key=vaultKey;
-    const iconUrl=await resolveShortcutIcon({url:url.href,iconUrl:app?.url===url.href?app.iconUrl:''});
-    if(scope==='private'&&(!vaultKey||vaultKey!==key))return;
-    const entry = { ...app, iconUrl, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: app?.custom ?? !app };
+    const iconStyle=normalizeShortcutIconStyle(form.get('iconStyle')),sameURL=app?.url===url.href;
+    const iconUrl=iconStyle==='site'?await resolveShortcutIcon({url:url.href,iconUrl:sameURL?app.iconUrl:''}):sameURL?app.iconUrl||'':'';
+    if(panel!==editorPanel||version!==appEditorVersion||scope==='private'&&(!vaultKey||vaultKey!==key))return;
+    const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL) };
     delete entry.profileId;
     if (!entry.name) return;
     const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(scope);await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
+    try{await saveApps(scope);if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
   });
   if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
     if(editorScope==='private') {
