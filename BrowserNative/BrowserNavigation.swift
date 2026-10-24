@@ -18,6 +18,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         }
         // Web content may navigate its own subframes; the browser address accepts only HTTP(S).
         if navigationAction.targetFrame?.isMainFrame != false {
+            if ExternalLinkPolicy.requiresConfirmation(url) {
+                decisionHandler(.cancel)
+                offerExternalLink(url, from: webView)
+                return
+            }
             guard url.absoluteString == "about:blank" || (try? AddressResolver.validated(url.absoluteString)) != nil else {
                 nativeError = "This navigation requires an unsupported URL scheme."
                 publish(); decisionHandler(.cancel); return

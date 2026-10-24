@@ -1,0 +1,14 @@
+ATMA is a standalone, general-purpose browser for iPhone and iPad built with UIKit and WKWebView. This version contains browser features only and does not require an ATMA account.
+
+All ATMA features are free. There are no ATMA in-app purchases, subscriptions, advertising SDKs or third-party analytics SDKs. Accounts and paid services offered by websites are controlled by those websites.
+
+Review steps (no demo account required):
+1. Launch ATMA to see the start page with website shortcuts. The ATMA home button returns to this page.
+2. Tap plus, enter https://rebmx4.github.io/vatma-ios/guide.html and tap Go. This is a public help page and requires no login.
+3. In an ordinary tab, open the device/profile picker. These are User-Agent and mobile/desktop website profiles, not physical-device or browser-engine emulators. Profiles use separate persistent WebKit website data stores.
+4. Save the open site using the add button beside the address, return to ATMA Home, and open the saved shortcut. It retains its profile and uses a compact bottom toolbar. Shortcuts and folders exist only inside ATMA; they do not install other iOS apps or replace the system Home Screen.
+5. Open another page in a new tab and use the tab counter to inspect tab previews. Settings contains Appearance, Privacy Policy, Support and Media player. Files includes ordinary downloads and the selected profile's cookies.
+
+The privacy policy and support text are bundled in the app and also available at the supplied public URLs. The six-digit PIN protects only a separate page of saved links; it is not anonymous browsing or protection of the entire browser.
+
+The browser has a built-in content blocker with a per-site switch. Compatible media use the website player and public iOS media/Picture in Picture controls. Availability depends on the website and iOS. The app does not extract media download links or offer an offline media library. Websites retain their own terms and sign-in requirements.

@@ -19,7 +19,7 @@
 
 ## Tasks
 - [x] Inspect current app/version, price, IAP/subscriptions, age declaration, old screenshots and bundled data paths.
-- [ ] Add accessible in-app policy/support with one source of legal text and publish matching static pages.
+- [x] Add accessible in-app policy/support with one source of legal text and publish matching static pages.
 - [ ] Capture and inspect real iPhone 6.9-inch and iPad 13-inch screenshots in the required opaque sizes.
 - [ ] Populate RU/EN metadata, correct age declaration and verify support/privacy/category/free pricing. Attach the verified current binary, replacing old astrology screenshots.
 - [ ] Prepare specific review notes covering the changed product and real browser capabilities; inspect previous rejection messages when browser authentication permits.
@@ -34,3 +34,12 @@
 - Browser login expired during inspection; API key remains functional. Chrome is shared with other work, so do not type into unrelated active tabs.
 
 Recommended implementation model: GPT-6.1-sol, high; reason: native/browser behavior, privacy declarations and store metadata must agree.
+
+## Follow-up rulings and evidence
+- Fresh review found two Important issues, corrected: saved-shortcut screenshot selector must use the real document title; descriptions must not promise unsupported history/bookmark interfaces.
+- Initial home state incorrectly selected an empty tab surface. Reproduced with the actual consume() code (RED), fixed, 2/2 regression tests GREEN. Later blank tabs remain blank.
+- Native run 40111433136: iPad browser smoke passed; screenshot test reached real home/profile/appearance/compact captures, then failed because the compact app intentionally has no New Tab button. Corrected the test to return Home before opening another tab. iPhone was not run after that mandatory failure.
+- Add explicit confirmation for visible-page links to external applications; executable/local URL schemes remain blocked from external launch. Native tests and mail-link cancel UI check added; final CI pending.
+- Owner instructed all public information to describe the browser only. Removed the previous product reference from public and bundled policy. Old screenshot representations backed up before replacement.
+- Required owner decision pending: first public version without ad blocking, or current feature with accurate disclosure. Never conceal a working feature from App Review. No blocker behavior changed while this choice is pending.
+- Required account access pending: Apple web login for App Privacy, regional declarations and the previous review conversation. API metadata editing works.

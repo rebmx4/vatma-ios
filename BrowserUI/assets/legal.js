@@ -18,7 +18,7 @@ export default {
         {
           "title": "О приложении",
           "paragraphs": [
-            "Эта политика относится к браузеру ATMA для iPhone и iPad (ru.atma.app), а не к прежнему сервису с расчётами по дате рождения. Для работы браузера не нужен аккаунт ATMA."
+            "Эта политика относится к браузеру ATMA для iPhone и iPad (ru.atma.app). Для работы браузера не нужен аккаунт ATMA."
           ]
         },
         {
@@ -153,7 +153,7 @@ export default {
         {
           "title": "About this app",
           "paragraphs": [
-            "This policy covers ATMA Browser for iPhone and iPad (ru.atma.app), not the previous birth-date calculation service. You do not need an ATMA account to use the browser."
+            "This policy covers ATMA Browser for iPhone and iPad (ru.atma.app). You do not need an ATMA account to use the browser."
           ]
         },
         {

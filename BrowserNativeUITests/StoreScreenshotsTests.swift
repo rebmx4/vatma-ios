@@ -68,6 +68,18 @@ final class StoreScreenshotsTests: XCTestCase {
         waitUntilUsable(currentTab, "Tab cards must be rendered before capture")
         capture("store-ru-03-tabs")
         closePanel()
+        let emailLink = site.links["a1238585@bk.ru"]
+        XCTAssertTrue(emailLink.waitForExistence(timeout: 10))
+        for _ in 0..<8 {
+            if emailLink.isHittable { break }
+            site.swipeUp()
+        }
+        waitUntilUsable(emailLink, "Website contact links must remain usable")
+        emailLink.tap()
+        let confirmation = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5), "External links require explicit confirmation")
+        XCTAssertEqual(app.state, .runningForeground)
+        confirmation.buttons.matching(NSPredicate(format: "label IN %@", ["Отмена", "Cancel"])).firstMatch.tap()
         home.tap()
     }
 
@@ -76,6 +88,9 @@ final class StoreScreenshotsTests: XCTestCase {
     }
 
     private func openWebsite(_ path: String, heading: String) throws {
+        let home = button(["Рабочий стол", "Home"])
+        waitUntilUsable(home, "Return to the full browser controls before opening a tab")
+        home.tap()
         let newTab = button(["Новая вкладка", "New tab"])
         waitUntilUsable(newTab, "New tab must be available")
         newTab.tap()
