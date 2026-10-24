@@ -68,7 +68,7 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
         -destination "platform=iOS Simulator,id=$simulator"
         -derivedDataPath "$task_root/.cache/derived-simulator"
         -resultBundlePath "$task_root/out/ATMA-$device.xcresult"
-        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES)
+        -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES)
       if [[ "$device" = ipad ]]; then test_command+=(-only-testing:BrowserNativeUITests); fi
       "${test_command[@]}" 2>&1 | tee "$task_root/out/test-$device.log"
       xcrun simctl io "$simulator" screenshot "$task_root/out/$device-final.png"

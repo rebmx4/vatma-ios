@@ -74,6 +74,7 @@ done
         for command in tests:
             self.assertIn("-configuration Release", command)
             self.assertIn("ENABLE_TESTABILITY=YES", command)
+            self.assertIn("ONLY_ACTIVE_ARCH=YES", command)
         self.assertIn("id=phone", tests[0])
         self.assertNotIn("-only-testing:", tests[0])
         self.assertIn("id=tablet", tests[1])

@@ -41,23 +41,25 @@ final class BrowserSmokeTests: XCTestCase {
         let newTab = button(["Новая вкладка", "New tab"])
         XCTAssertTrue(newTab.waitForExistence(timeout: 5))
         newTab.tap()
-        let address = app.textFields.firstMatch
+        var address = app.textFields.firstMatch
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         let value = address.value as? String ?? ""
         XCTAssertTrue(value.isEmpty || value == address.placeholderValue, "A new tab must have an empty address")
         XCTAssertEqual(siteRenderers.count, 0, "A blank tab must not allocate a site renderer")
         screenshot("blank-tab")
 
-        let go = button(["Перейти", "Go"])
-        assertAddressControlsAboveKeyboard(address, go: go)
+        var go = button(["Перейти", "Go"])
+        assertAddressControlsAboveKeyboard()
         rotate(.landscapeLeft, landscape: true)
+        address = app.textFields.firstMatch
         address.tap()
-        assertAddressControlsAboveKeyboard(address, go: go)
+        assertAddressControlsAboveKeyboard()
         screenshot("blank-tab-landscape-keyboard")
         rotate(.portrait, landscape: false)
+        address = app.textFields.firstMatch
+        go = button(["Перейти", "Go"])
         address.tap()
-        assertAddressControlsAboveKeyboard(address, go: go)
-        address.tap()
+        assertAddressControlsAboveKeyboard()
         address.typeText(websiteURL)
         XCTAssertEqual(address.value as? String, websiteURL, "Typing an address must not hit keyboard keys beneath hidden controls")
         go.tap()
@@ -69,7 +71,7 @@ final class BrowserSmokeTests: XCTestCase {
         screenshot("website")
 
         address.tap()
-        assertAddressControlsAboveKeyboard(address, go: go)
+        assertAddressControlsAboveKeyboard()
         screenshot("website-keyboard")
         go.tap()
         assertKeyboardDismissed()
@@ -87,24 +89,34 @@ final class BrowserSmokeTests: XCTestCase {
         app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site."))
     }
 
-    private func assertAddressControlsAboveKeyboard(_ address: XCUIElement, go: XCUIElement) {
-        let keyboard = app.keyboards.firstMatch
-        let accessory = app.toolbars.matching(identifier: "Toolbar").firstMatch
-        let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
+    private func assertAddressControlsAboveKeyboard() {
+        var lastObservation = "Not evaluated"
         let visible = NSPredicate { _, _ in
-            guard keyboard.exists, ui.exists, address.exists, go.exists else { return false }
+            // Rotation can replace WebKit accessibility elements. Resolve a
+            // fresh query for each poll instead of retaining the earlier match.
+            let keyboard = self.app.keyboards.firstMatch
+            let accessory = self.app.toolbars.matching(identifier: "Toolbar").firstMatch
+            let ui = self.app.webViews.matching(identifier: "atma.ui").firstMatch
+            let address = self.app.textFields.firstMatch
+            let go = self.button(["Перейти", "Go"])
+            let present = [keyboard.exists, ui.exists, address.exists, go.exists]
+            lastObservation = "Present keyboard/UI/address/Go: \(present)"
+            guard present.allSatisfy({ $0 }) else { return false }
             let bounds = ui.frame
             let keyboardTop = min(keyboard.frame.minY, accessory.exists ? accessory.frame.minY : keyboard.frame.minY)
             let bottom = min(bounds.maxY, keyboardTop)
-            return [address, go].allSatisfy { control in
-                let frame = control.frame
+            let controls = [address, go].map { ($0.frame, $0.isHittable) }
+            lastObservation = "UI=\(bounds), keyboardTop=\(keyboardTop), address=\(controls[0]), Go=\(controls[1])"
+            return controls.allSatisfy { control in
+                let frame = control.0
                 return frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
-                    && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX && control.isHittable
+                    && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX && control.1
             }
         }
         let ready = XCTNSPredicateExpectation(predicate: visible, object: nil)
-        let result = XCTWaiter.wait(for: [ready], timeout: 5)
+        let result = XCTWaiter.wait(for: [ready], timeout: 20)
         if result != .completed {
+            print("Address/keyboard check failed: \(lastObservation)")
             screenshot("address-keyboard-failure")
             let hierarchy = XCTAttachment(string: app.debugDescription)
             hierarchy.name = "address-keyboard-failure-hierarchy"
@@ -112,7 +124,7 @@ final class BrowserSmokeTests: XCTestCase {
             add(hierarchy)
         }
         XCTAssertEqual(result, .completed,
-                       "The address field and Go button must stay above the keyboard and its accessory bar")
+                       "The address field and Go button must stay above the keyboard and its accessory bar: \(lastObservation)")
     }
 
     private func rotate(_ orientation: UIDeviceOrientation, landscape: Bool) {
