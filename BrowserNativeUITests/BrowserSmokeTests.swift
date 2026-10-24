@@ -110,7 +110,11 @@ final class BrowserSmokeTests: XCTestCase {
                 // rotation while the full hierarchy and recording were correct.
                 let snapshot = try self.app.snapshot()
                 let elements = self.snapshots(in: snapshot)
-                guard let keyboard = elements.first(where: { $0.elementType == .keyboard && self.hasVisibleFrame($0, in: snapshot.frame) }),
+                guard let windowBounds = self.mainWindowBounds(in: elements) else {
+                    lastObservation = "Main window absent from snapshot"
+                    return false
+                }
+                guard let keyboard = elements.first(where: { $0.elementType == .keyboard && self.hasVisibleFrame($0, in: windowBounds) }),
                       let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else {
                     lastObservation = "Keyboard or bundled UI absent from snapshot"
                     return false
@@ -122,7 +126,7 @@ final class BrowserSmokeTests: XCTestCase {
                     return false
                 }
                 let accessory = elements.first {
-                    $0.elementType == .toolbar && $0.identifier == "Toolbar" && self.hasVisibleFrame($0, in: snapshot.frame)
+                    $0.elementType == .toolbar && $0.identifier == "Toolbar" && self.hasVisibleFrame($0, in: windowBounds)
                 }
                 let bounds = ui.frame
                 let keyboardTop = min(keyboard.frame.minY, accessory?.frame.minY ?? keyboard.frame.minY)
@@ -156,11 +160,18 @@ final class BrowserSmokeTests: XCTestCase {
     private func focusAddressIfNeeded() throws {
         let snapshot = try app.snapshot()
         let elements = snapshots(in: snapshot)
+        let windowBounds = try XCTUnwrap(mainWindowBounds(in: elements), "Application must have a visible main window")
         let focused = elements.first { $0.elementType == .textField }?.hasFocus == true
-        let keyboardVisible = elements.contains { $0.elementType == .keyboard && hasVisibleFrame($0, in: snapshot.frame) }
+        let keyboardVisible = elements.contains { $0.elementType == .keyboard && hasVisibleFrame($0, in: windowBounds) }
         // Tapping an already focused WebKit input opens the system edit menu,
         // which blocks hit testing. Rotation needs a tap only if focus was lost.
         if !focused || !keyboardVisible { app.textFields.firstMatch.tap() }
+    }
+
+    private func mainWindowBounds(in elements: [any XCUIElementSnapshot]) -> CGRect? {
+        // The application snapshot itself may have no frame. Its main window
+        // supplies screen-space bounds for the keyboard and accessory windows.
+        elements.first { $0.elementType == .window && $0.frame.width > 0 && $0.frame.height > 0 }?.frame
     }
 
     private func hasVisibleFrame(_ element: any XCUIElementSnapshot, in bounds: CGRect) -> Bool {

@@ -60,3 +60,7 @@ The physical iPhone shows `Bundled UI index.html is missing` although the IPA co
 
 - Run 40052265511: iPhone UI passed (95.082 s); iPad full snapshots have correct control frames, but a redundant post-rotation tap opens the system Paste/Autofill edit menu (visible in screenshot and separate accessibility window), making both controls non-hittable. A zero-size toolbar snapshot also incorrectly reduced keyboardTop to 0.
 - Ruling: after rotation, re-focus only if the address field lacks focus or the keyboard is not visible; do not reopen a blocking edit menu on an already focused field. Keyboard/accessory geometry must use nonempty frames intersecting the application bounds. All existing control bounds, exact input, hit testing and HTTPS navigation checks remain mandatory. Production app source is unchanged.
+
+- Focus-precondition run: https://github.com/rebmx4/vatma-ios/actions/runs/40053616669, source 810347e58a41206c96fac6fd3877e6752365bc8d. Required full Release run; no replacement upload has started.
+
+- Run 40053616669 stopped at the iPhone landscape geometry assertion because the new visible-frame filter used the application snapshot frame. The hierarchy has no application-level frame, while Window (Main), atma.ui and Keyboard all have valid frames. Corrected the helper to use the main window frame consistently; keyboard and accessory filtering still requires positive intersecting frames. The focus/edit-menu correction remains in place. No production code changed.
