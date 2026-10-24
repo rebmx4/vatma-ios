@@ -36,6 +36,7 @@ final class BrowserController: UIViewController {
     var tabPreviews: [String: TabPreview] = [:]
     var previewCaptures: [String: TabPreviewCapture] = [:]
     var deviceRowCollapsed = false
+    private var lastLayoutDiagnostic = ""
     var nativeTheme = "auto"
     var currentNavigations: [ObjectIdentifier: WKNavigation] = [:]
     var downloadTransitions: [ObjectIdentifier: DownloadNavigationTransition] = [:]
@@ -141,6 +142,10 @@ final class BrowserController: UIViewController {
                                     height: max(0, frame.height - currentFooterHeight))
         }
         browserViewport.bringSubviewToFront(ui)
+        if LocalUIServer.diagnosticsEnabled {
+            let geometry = "mode=\(mode), root=\(view.bounds), viewport=\(browserViewport.frame), ui=\(ui.frame), keyboard=\(view.keyboardLayoutGuide.layoutFrame), safe=\(view.safeAreaInsets), footer=\(currentFooterHeight)"
+            if geometry != lastLayoutDiagnostic { lastLayoutDiagnostic = geometry; LocalUIServer.diagnostic("Layout: " + geometry) }
+        }
         publish()
     }
 
@@ -199,6 +204,8 @@ final class BrowserController: UIViewController {
             model.tabs[model.activeIndex].webApp = webApp
             if launchingShortcut { model.tabs[model.activeIndex].appControlsCollapsed = true }
         }
+        // End the native WebKit input session before shrinking its view into chrome.
+        view.endEditing(true)
         model.tabs[model.activeIndex].url = url.absoluteString
         model.tabs[model.activeIndex].error = nil
         mode = "browse"; panel = nil; nativeError = nil

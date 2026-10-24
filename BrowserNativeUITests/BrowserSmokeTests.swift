@@ -123,6 +123,7 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(expand.waitForExistence(timeout: 5))
         XCTAssertFalse(app.textFields.firstMatch.isHittable)
         XCTAssertTrue(heading.waitForExistence(timeout: 60))
+        assertChromeAtPhysicalBottom()
         screenshot("web-app-minimal")
         expand.tap()
         address = app.textFields.firstMatch
@@ -249,11 +250,35 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed, "The app must support this device orientation")
     }
 
+    private func assertChromeAtPhysicalBottom() {
+        var observation = "Not evaluated"
+        let atBottom = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let snapshot = try? self.app.snapshot() else { return false }
+            let elements = self.snapshots(in: snapshot)
+            guard let window = self.mainWindowBounds(in: elements),
+                  let ui = elements.first(where: { $0.elementType == .webView && $0.identifier == "atma.ui" }) else { return false }
+            let controls = self.snapshots(in: ui)
+            guard let bottomButton = controls.first(where: { $0.elementType == .button && ["Рабочий стол", "Home", "Развернуть панель приложения"].contains($0.label) && $0.frame.width > 0 && $0.frame.height > 0 }) else { return false }
+            let distance = window.maxY - bottomButton.frame.midY
+            observation = "window=\(window), ui=\(ui.frame), bottomButton=\(bottomButton.frame), distance=\(distance)"
+            return abs(window.maxY - ui.frame.maxY) < 2 && distance > 0 && distance < 80
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [atBottom], timeout: 5)
+        if result != .completed {
+            print("Closed-keyboard chrome is raised: \(observation)")
+            screenshot("closed-keyboard-bottom-failure")
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "closed-keyboard-bottom-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        XCTAssertEqual(result, .completed, "Closed-keyboard chrome must reach the physical window bottom: \(observation)")
+    }
+
     private func assertKeyboardDismissed() {
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                                  object: app.keyboards.firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed,
                        "Submitting an address must dismiss the keyboard")
+        assertChromeAtPhysicalBottom()
     }
 
     private func button(_ labels: [String]) -> XCUIElement {

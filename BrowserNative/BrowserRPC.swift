@@ -45,10 +45,11 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             try open(try string("url", body), profileID: body["profileId"] as? String, webApp: body["webApp"] as? Bool)
         case "chrome":
             guard mode == "browse", let collapsed = body["collapsed"] as? Bool else { throw BrowserFailure.invalid("Open a site and supply collapsed:true or false.") }
+            view.endEditing(true)
             if webApp { model.tabs[model.activeIndex].appControlsCollapsed = collapsed }
             else { deviceRowCollapsed = collapsed }
             changed()
-        case "home": mode = "home"; panel = nil; changed()
+        case "home": view.endEditing(true); mode = "home"; panel = nil; changed()
         case "panel":
             guard body["panel"] == nil || body["panel"] is NSNull || body["panel"] is String else { throw BrowserFailure.invalid("Invalid panel.") }
             panel = body["panel"] as? String; changed()
