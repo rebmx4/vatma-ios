@@ -26,11 +26,14 @@ User iOS version is pending. Apple publishes no Home Screen edit delay in second
 - [x] Desktop gestures
 - [x] Privacy/trust documentation and checks (public draft prepared; publishing follows tested release)
 - [x] Notification feasibility (counter format verified; service access remains unconfirmed; no backend deployed)
-- [ ] Native verification and test distribution
+- [x] Native verification and test distribution
 
 ## Verified progress
 Source 783429a: 55 native tests and eight app UI scenarios passed on iPhone/iPad. The one-time SpringBoard experiment found editing at 0.75s, not at 0.6875s, on iOS26.4.1. Its extra235s made GitHub hit the30min limit in post-job cleanup, so that run is not accepted for signing. The experiment is retained in git history and the measurement report; routine tests keep every app behavior case. Desktop hold is now750ms.
 
-The prior playback guard rejected a locally approved camera preview after a permission prompt lasting over two seconds. The media adapter now observes successful getUserMedia results without requesting access, permits their first visible preview, and retains pause/hidden-stream protection. Targeted tests observed RED→GREEN; full JS78/78 passed and independent review found no new confirmed issues. The final exact-source native gate remains required after this resource change. Actual hardware capture and social-account checks remain separate.
+The prior playback guard rejected a locally approved camera preview after a permission prompt lasting over two seconds. The media adapter now observes successful getUserMedia results without requesting access, permits their first visible preview, and retains pause/hidden-stream protection. Targeted tests observed RED→GREEN; full JS78/78 passed and independent review found no new confirmed issues. The final exact-source native gate subsequently passed for 261de49 (40156389760); signed/upload run 40158483460 delivered build 1.0.0 (2). Actual hardware capture and social-account checks remain separate.
+
+## Delivery verified
+Build 1.0.0 (2) is VALID and IN_BETA_TESTING in the existing owner group. All 35 IPA resources matched exact tested source 261de4976185dfa437a1c455a52e991cacc5eca3. RU/EN TestFlight notes and six public support pages were read back successfully. The current production review remains WAITING_FOR_REVIEW, MANUAL; hardware tests and public approval remain separate. See [release record](../../releases/2026-10-25-build2.md).
 
 Рекомендуемая модель для реализации: gpt-6.1-sol, уровень high. Причина: изоляция WebKit, жизненный цикл вкладок и выпуск iOS требуют проверки связанных состояний.

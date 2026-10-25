@@ -2,7 +2,7 @@
 
 Native UIKit/WKWebView browser. App: **АТМА / ATMA**, bundle **ru.atma.browser**, App Store Connect **6826668990**, minimum iOS 17, iPhone and iPad.
 
-The current branch prepares a privacy/navigation update. Its native verification is recorded in [the implementation plan](docs/superpowers/plans/2026-10-25-privacy-navigation.md); unfinished checks are not a release claim.
+The latest internal TestFlight build **1.0.0 (2)** is VALID and IN_BETA_TESTING. Source **261de4976185dfa437a1c455a52e991cacc5eca3**, tag **atma-browser-1.0.0-build2**, native run **40156389760**, signed/upload run **40158483460**. See the [verified release record and remaining device checks](docs/releases/2026-10-25-build2.md). The App Store submission still uses build 1 with MANUAL release; public approval is separate.
 
 The previously delivered build **1.0.0 (1)** is traceable to tag **atma-browser-1.0.0-build1**, source **a879df5306cd232616e6c1a17fc123565e7197cc**, native run **40141124891** and signed/upload run **40142631653**. Store approval and availability are separate from build/upload success.
 
