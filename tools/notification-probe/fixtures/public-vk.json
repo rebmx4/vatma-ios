@@ -1,0 +1,15 @@
+{
+  "provider": "vk",
+  "origins": ["https://m.vk.com/"],
+  "endpointAccepted": null,
+  "encoding": null,
+  "messageOnly": null,
+  "eventID": null,
+  "unreadUnit": "unknown",
+  "authoritativeCount": null,
+  "revisionOrder": null,
+  "remoteReadSync": null,
+  "logoutSignal": null,
+  "revocation": null,
+  "evidence": ["official-schema", "public-site-script"]
+}

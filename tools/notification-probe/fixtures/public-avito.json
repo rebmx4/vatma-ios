@@ -1,0 +1,15 @@
+{
+  "provider": "avito",
+  "origins": ["https://www.avito.ru/"],
+  "endpointAccepted": null,
+  "encoding": null,
+  "messageOnly": null,
+  "eventID": null,
+  "unreadUnit": "unknown",
+  "authoritativeCount": null,
+  "revisionOrder": null,
+  "remoteReadSync": null,
+  "logoutSignal": null,
+  "revocation": null,
+  "evidence": ["public-site-script"]
+}
