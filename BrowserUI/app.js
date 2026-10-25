@@ -99,6 +99,7 @@ function applyAppearance() {
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
   if($('go-home').dataset.appIcon!==appearance.icon){$('go-home').innerHTML='<span class="home-brand">'+appIconArtwork(appearance.icon,brandLogoSource)+'</span><span class="home-glyph">'+icon('home')+'</span>'; $('go-home').dataset.appIcon=appearance.icon;}
+  renderToolbarMessageBadge();
   if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;notify(error.message);});}
 }
 async function changeAppearance(patch) {
@@ -304,20 +305,24 @@ function consume(next) {
   if(next.capabilities?.messageBadges&&(changedTab||previousMode!==next.mode||previousLoading&&!next.loading))scheduleMessageBadgePoll();
 }
 function scheduleMessageBadgePoll(){clearTimeout(messagePollTimer);messagePollTimer=setTimeout(pollMessageBadges,1200);}
+function renderToolbarMessageBadge(){
+  const button=$('go-home'),total=Object.values(messageCounts).reduce((sum,count)=>sum+count,0);
+  button.querySelector('.toolbar-message-badge')?.remove();
+  button.setAttribute('aria-label',total?`Рабочий стол, ${total} непрочитанных`:'Рабочий стол');
+  if(total>0){const badge=document.createElement('span');badge.className='toolbar-message-badge';badge.textContent=badgeLabel(total);badge.setAttribute('aria-hidden','true');button.append(badge);}
+}
 async function pollMessageBadges(){
   if(messagePollBusy||document.hidden||!state?.capabilities?.messageBadges)return;
   const providers=enabledMessageProviders(apps);
-  if(!providers.length){if(Object.keys(messageCounts).length){messageCounts={};renderApps();if(panel==='folder')renderFolder();}return;}
+  if(!providers.length){if(Object.keys(messageCounts).length){messageCounts={};renderToolbarMessageBadge();renderApps();if(panel==='folder')renderFolder();}return;}
   messagePollBusy=true;
   try{
     const response=await api('message-badges',{providers});
     if(providers.join(',')!==enabledMessageProviders(apps).join(','))return;
     const next={};
     for(const provider of providers){const count=response?.counts?.[provider];if(Number.isSafeInteger(count)&&count>=0&&count<=999)next[provider]=count;}
-    const raised=providers.filter(provider=>Number.isSafeInteger(messageCounts[provider])&&next[provider]>messageCounts[provider]);
     const changed=JSON.stringify(messageCounts)!==JSON.stringify(next);messageCounts=next;
-    if(changed){renderApps();if(panel==='folder')renderFolder();}
-    if(raised.length)notify(`Новые сообщения: ${raised.map(provider=>provider==='vk'?'ВКонтакте':'Авито').join(', ')}`);
+    if(changed){renderToolbarMessageBadge();renderApps();if(panel==='folder')renderFolder();}
   }catch{}finally{messagePollBusy=false;}
 }
 async function newBrowserTab(){

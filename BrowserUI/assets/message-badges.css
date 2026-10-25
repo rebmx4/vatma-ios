@@ -1,4 +1,7 @@
 .message-badge{position:absolute;z-index:3;left:calc(50% + 15px);top:-7px;min-width:22px;height:22px;padding:0 5px;border-radius:12px;background:#e72f3e;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;line-height:1;box-shadow:0 2px 6px #0005;pointer-events:none}
+#go-home{position:relative;overflow:visible}
+#go-home .home-brand{border-radius:11px;overflow:hidden}
+.toolbar-message-badge{position:absolute;right:-10px;top:-8px;min-width:17px;height:17px;padding:0 4px;border-radius:10px;background:#e72f3e;color:#fff;display:grid;place-items:center;font-size:10px;font-weight:700;line-height:1;box-shadow:0 1px 5px #0005;pointer-events:none}
 .message-choice{display:flex;align-items:center;gap:13px;margin:0 0 16px;padding:13px 14px;border-radius:15px;background:#fff;color:var(--ink)}
 .message-choice input{width:20px;height:20px;flex:none;accent-color:#087fff}
 .message-choice span{display:grid;gap:3px}
