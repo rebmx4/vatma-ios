@@ -1,0 +1,5 @@
+{
+  "name": "atma-apple-preview-tools",
+  "private": true,
+  "dependencies": { "serve-sim": "0.1.46" }
+}

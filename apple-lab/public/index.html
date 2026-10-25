@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="lab-csrf" content="__CSRF__">
+  <title>ATMA · Apple Lab</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="ATMA Apple Lab"><span class="brandmark">A</span><span>ATMA <b>Apple Lab</b></span></a>
+    <span class="platform">Среда разработки · iOS</span>
+    <span id="connection" class="connection"><i></i><span>Нет подключения</span></span>
+  </header>
+  <main>
+    <aside class="settings">
+      <div class="eyebrow">УСТРОЙСТВО</div>
+      <h1>Ваш тестовый<br>iPhone и iPad.</h1>
+      <p class="intro">Настоящий Apple Simulator.<br>Экран и управление — на вашем ПК.</p>
+      <div class="device-picker" role="group" aria-label="Выбор устройства">
+        <button class="device-choice selected" data-device="iphone" aria-pressed="true"><span class="phone-icon"></span><span>iPhone<small>Телефон</small></span><span class="choice-dot"></span></button>
+        <button class="device-choice" data-device="ipad" aria-pressed="false"><span class="tablet-icon"></span><span>iPad<small>Планшет</small></span><span class="choice-dot"></span></button>
+      </div>
+      <button id="connect" class="connect-button" disabled><span class="power">⏻</span><span>Подключить</span></button>
+      <p class="limit">До 60 минут за сеанс.<br>После отключения Mac останавливается.</p>
+      <div class="app-info"><div class="app-icon">A</div><div><b>ATMA — браузер</b><small>Тестовая версия из исходников</small></div></div>
+      <details class="details"><summary>О сеансе</summary><dl><dt>Источник</dt><dd>atma-browser-testflight</dd><dt>Ревизия</dt><dd id="revision">—</dd><dt>Размер экрана</dt><dd id="resolution">—</dd></dl><a id="run-link" hidden target="_blank" rel="noopener noreferrer">Открыть задачу на GitHub ↗</a></details>
+    </aside>
+    <section class="workspace" aria-label="Экран устройства">
+      <div class="workspace-top"><div><b id="device-title">iPhone</b><span id="screen-note">Apple Simulator</span></div><span id="timer">Сеанс не запущен</span></div>
+      <div class="stage">
+        <div id="device-frame" class="device-frame phone">
+          <canvas id="screen" width="440" height="956" tabindex="0" aria-label="Экран Simulator. Нажимайте и проводите мышью; ввод с клавиатуры."></canvas>
+          <div id="placeholder" class="placeholder"><span class="placeholder-symbol">A</span><b id="placeholder-title">Готов к подключению</b><p id="placeholder-copy">Выберите устройство и нажмите<br>«Подключить».</p><span id="spinner" class="spinner" hidden></span></div>
+        </div>
+      </div>
+      <div class="device-toolbar" role="group" aria-label="Управление устройством">
+        <button data-control="home" disabled title="Домой"><span>⌂</span>Домой</button>
+        <button data-control="rotate" disabled title="Повернуть устройство"><span>↻</span>Повернуть</button>
+        <button data-control="text" disabled title="Вставить текст в выбранное поле"><span>Ｔ</span>Вставить текст</button>
+        <button data-control="relaunch" disabled title="Открыть ATMA заново"><span>▷</span>Открыть ATMA</button>
+        <button data-control="capture" disabled title="Сохранить снимок экрана на D:"><span>⊡</span>Снимок</button>
+      </div>
+      <footer class="workspace-footer"><span id="status" role="status" aria-live="polite">Нет подключения</span><span>Нажатия · свайпы · клавиатура · Alt для масштаба</span></footer>
+    </section>
+  </main>
+  <dialog id="text-dialog"><form method="dialog"><button class="dialog-close" aria-label="Закрыть">×</button><h2>Вставить текст</h2><p>Сначала выберите поле на экране устройства.</p><textarea id="text-value" rows="5" placeholder="Текст или адрес сайта" autofocus></textarea><button id="paste-text" class="dialog-submit" type="button">Вставить в устройство</button></form></dialog>
+  <div id="toast" role="status" hidden></div>
+  <script type="module" src="/app.mjs"></script>
+</body>
+</html>

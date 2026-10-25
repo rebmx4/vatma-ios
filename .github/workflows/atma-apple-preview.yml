@@ -1,0 +1,37 @@
+{
+  "name": "ATMA Apple Lab",
+  "run-name": "Apple Lab · ${{ inputs.session }} · ${{ inputs.device }}",
+  "on": { "workflow_dispatch": { "inputs": {
+    "session": { "description": "Unique local session ID", "required": true, "type": "string" },
+    "public_key": { "description": "Ephemeral Ed25519 public key (never a private key)", "required": true, "type": "string" },
+    "device": { "description": "Simulator family", "required": true, "type": "choice", "options": ["iphone", "ipad"] },
+    "revision": { "description": "Exact native app source SHA", "required": true, "type": "string" }
+  } } },
+  "permissions": { "contents": "read", "statuses": "write" },
+  "concurrency": { "group": "atma-apple-preview-${{ github.actor }}", "cancel-in-progress": false },
+  "defaults": { "run": { "shell": "bash" } },
+  "jobs": { "preview": {
+    "runs-on": "macos-26",
+    "timeout-minutes": 60,
+    "env": {
+      "DEVELOPER_DIR": "/Applications/Xcode_26.4.app/Contents/Developer",
+      "CM_BUILD_DIR": "${{ github.workspace }}/app",
+      "APPLE_LAB_APP_DIR": "${{ github.workspace }}/app",
+      "LAB_SESSION": "${{ inputs.session }}",
+      "LAB_PUBLIC_KEY": "${{ inputs.public_key }}",
+      "LAB_DEVICE": "${{ inputs.device }}",
+      "LAB_REVISION": "${{ inputs.revision }}",
+      "HOMEBREW_NO_AUTO_UPDATE": "1",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "steps": [
+      { "name": "Checkout preview tools", "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "with": { "path": "lab", "persist-credentials": false } },
+      { "name": "Checkout exact app source", "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "with": { "ref": "${{ inputs.revision }}", "path": "app", "persist-credentials": false } },
+      { "name": "Use Node 24", "uses": "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", "with": { "node-version": "24" } },
+      { "name": "Use Python 3.12", "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1", "with": { "python-version": "3.12" } },
+      { "name": "Install pinned preview tools", "run": "export npm_config_cache=\"$GITHUB_WORKSPACE/lab/.cache/npm\"\nnpm ci --prefix lab/apple-lab --ignore-scripts --no-audit --no-fund\nnpm ci --prefix lab/apple-lab/remote-tools --ignore-scripts --no-audit --no-fund\nnode --test lab/apple-lab/test/*.test.mjs" },
+      { "name": "Build and stream Apple Simulator", "env": { "GITHUB_TOKEN": "${{ github.token }}" }, "run": "node lab/apple-lab/remote/runner.mjs" },
+      { "name": "Save build diagnostics", "if": "${{ always() }}", "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", "with": { "name": "apple-lab-${{ github.run_id }}", "path": "app/out/source-validation.json\napp/out/apple-preview-session.json\napp/out/xcode-version.log\napp/out/xcodegen-version.log", "retention-days": 1, "if-no-files-found": "ignore" } }
+    ]
+  } }
+}
