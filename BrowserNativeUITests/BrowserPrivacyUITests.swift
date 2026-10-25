@@ -26,8 +26,10 @@ final class BrowserPrivacyUITests: XCTestCase {
     func testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu() throws {
         let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
         ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).press(forDuration: 4)
-        let done = button(["Завершить редактирование", "Finish editing"])
-        XCTAssertTrue(done.waitForExistence(timeout: 5)); done.tap()
+        let ordinaryRemove = button(["Удалить ВКонтакте", "Remove ВКонтакте"])
+        XCTAssertTrue(ordinaryRemove.waitForExistence(timeout: 5))
+        ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
+        XCTAssertTrue(ordinaryRemove.waitForNonExistence(timeout: 5))
         button(["Настройки", "Settings"]).tap()
         let add = button(["Добавить веб-приложение", "Add web app"])
         XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
@@ -41,13 +43,13 @@ final class BrowserPrivacyUITests: XCTestCase {
         let address = app.textFields.matching(NSPredicate(format: "label IN %@", ["Приложения, поисковый запрос или адрес сайта", "Apps, search query or website address"])).firstMatch
         address.tap(); address.typeText("Gesture fixture")
         XCTAssertTrue(shortcut.isHittable); shortcut.press(forDuration: 4)
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        let remove = button(["Удалить Gesture fixture", "Remove Gesture fixture"])
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
         XCTAssertFalse(button(["Сохранить изображение", "Сохранить фото", "Добавить в Фото", "Save Image", "Save to Photos", "Add to Photos"]).exists)
         screenshot("desktop-new-icon-edit")
-        let remove = button(["Удалить Gesture fixture", "Remove Gesture fixture"])
-        XCTAssertTrue(remove.exists); remove.tap()
+        remove.tap()
         XCTAssertFalse(button(["Сохранить", "Save"]).exists, "The remove control must not open the shortcut editor")
-        done.tap()
+        ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
         address.tap(); address.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Gesture fixture".count))
     }
 

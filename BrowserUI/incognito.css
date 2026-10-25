@@ -1,5 +1,5 @@
 .incognito-start{display:none}
-body[data-surface=incognito]{background:#fff;color:#20242a}
+body[data-surface=incognito]{--appearance-chrome:#fff;background:#fff;color:#20242a}
 body[data-surface=incognito] .wallpaper,body[data-surface=incognito] .home{display:none}
 body[data-surface=incognito] .incognito-start{position:fixed;inset:0 0 var(--bar-height);display:flex;align-items:center;justify-content:center;padding:28px 24px;overflow:auto;background:#fff;color:#20242a}
 .incognito-card{width:min(100%,560px);text-align:center}

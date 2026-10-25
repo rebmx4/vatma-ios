@@ -14,7 +14,7 @@ export function renderLegalInfo(container,{kind='privacy',language='ru',onOpen}=
   for(const paragraph of section.paragraphs)add('p',paragraph);
  }
  if(onOpen&&kind==='privacy'){
-  const source=add('button',locale==='en'?'View source code':'Проверить исходный код');source.className='setting-row';source.addEventListener('click',()=>onOpen('https://github.com/rebmx4/vatma-ios'));
+  const source=add('button',locale==='en'?'View source code':'Проверить исходный код');source.className='setting-row';source.addEventListener('click',()=>onOpen('https://github.com/rebmx4/vatma-ios/tree/atma-browser-testflight'));
  }
  if(onOpen){
   const button=add('button',locale==='en'?'Open public page':'Открыть публичную страницу');

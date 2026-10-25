@@ -234,7 +234,7 @@ function updateQuickAdd() {
   const saved=savedSite(url);button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
   button.setAttribute('aria-label',saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`);
   button.title=button.getAttribute('aria-label');$('pin-site-badge').innerHTML=icon(saved?'check':'plus');
-  const source=state.iconUrl||new URL('/favicon.ico',url).href,key=`${url}|${source}|${name}`;
+  const source=state.privateBrowsing===true?'':state.iconUrl||new URL('/favicon.ico',url).href,key=`${state.privateBrowsing===true}|${url}|${source}|${name}`;
   if(key===pinSiteArtKey)return;pinSiteArtKey=key;
   const art=$('pin-site-art');art.innerHTML=brand({id:'current-site',name,color:'#337b96'});
   if(!/^(https?:\/\/|data:image\/)/i.test(source))return;
