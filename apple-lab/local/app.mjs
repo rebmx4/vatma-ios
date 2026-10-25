@@ -8,7 +8,7 @@ import { validControl } from '../remote/gate.mjs';
 
 const publicRoot = new URL('../public/', import.meta.url);
 const assets = new Map([['/', ['index.html', 'text/html']], ['/style.css', ['style.css', 'text/css']],
-  ['/app.mjs', ['app.mjs', 'text/javascript']], ['/input.mjs', ['input.mjs', 'text/javascript']]]);
+  ['/app.mjs', ['app.mjs', 'text/javascript']], ['/input.mjs', ['input.mjs', 'text/javascript']], ['/orientation.mjs', ['orientation.mjs', 'text/javascript']]]);
 
 export function createLocalApp({ controller, outputDir }) {
   const csrf = randomBytes(24).toString('hex');

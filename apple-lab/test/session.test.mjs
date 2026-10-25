@@ -84,3 +84,22 @@ test('temporary cancellation API failure retains ownership and blocks a second M
   retryRelease(); await stopped;
   assert.equal(cancelled, true); assert.equal(controller.current, null);
 });
+
+test('one failed health probe does not tear down a fresh rendered stream with live controls', async () => {
+  let now = 10000, healthCalls = 0, cancelled = false, callbacks;
+  const github = { source: async () => 'd'.repeat(40), dispatch: async () => {}, findRun: async () => ({ id: 123 }),
+    run: async () => ({ status: cancelled ? 'completed' : 'in_progress' }), previewUrl: async () => 'https://test.trycloudflare.com',
+    cancel: async () => { cancelled = true; } };
+  const controller = new Controller(github, { now: () => now, delay: async ms => { now += ms; },
+    remoteFactory: (session, url, cb) => {
+      callbacks = cb;
+      return { open: async () => { cb.health({ deadline: 90000 }); cb.control(true); cb.frame(Buffer.from('frame')); },
+        health: async () => { healthCalls++; if (healthCalls === 1) throw new Error('HTTP 502');
+          cb.health({ deadline: 90000 }); void controller.stop(); },
+        request: async () => ({}), stop: async () => {}, close() {} };
+    } });
+  controller.on('frame', value => controller.paint(value.sequence));
+  controller.start('iphone'); await controller.current.done;
+  assert.ok(healthCalls >= 2, 'must retry while rendered frames and controls are fresh');
+  assert.equal(controller.snapshot().phase, 'idle');
+});

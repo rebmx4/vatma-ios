@@ -32,7 +32,7 @@ export class GitHub {
     });
     if (!response.ok) {
       if (response.status === 401) this.token = null;
-      throw new Error(`GitHub ${response.status}: ${method === 'POST' ? 'операция не выполнена' : 'данные недоступны'}`);
+      throw Object.assign(new Error(`GitHub ${response.status}: ${method === 'POST' ? 'операция не выполнена' : 'данные недоступны'}`), { status: response.status });
     }
     return response.status === 204 ? null : response.json();
   }

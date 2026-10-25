@@ -110,6 +110,10 @@ try {
 } finally {
   gate?.close(); tunnel?.kill('SIGTERM');
   if (simulator) {
+    try {
+      const log = readFileSync(`${cache}/tmp/serve-sim/server-${simulator}.log`, 'utf8');
+      for (const line of log.split('\n').filter(value => /fatal error|heap limit|ENOMEM|ECONNREFUSED|\[hid\].*failed|\[capture\].*failed/i.test(value)).slice(-15)) console.error(line.slice(0, 500));
+    } catch { /* The helper may not have reached initialization. */ }
     try { serve('--kill', simulator); } catch { /* Runner cleanup is best effort after cancellation. */ }
     spawnSync('xcrun', ['simctl', 'shutdown', simulator], { env: childEnv, timeout: 20000 });
   }

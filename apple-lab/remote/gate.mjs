@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createVerifier } from '../shared/signing.mjs';
-import { readBody, json } from '../shared/http.mjs';
+import { readBody, json, safeError } from '../shared/http.mjs';
 
 export function validControl(data) {
   if (data.length < 1 || data.length > 1024) return false;
@@ -68,7 +68,7 @@ export function createGate(options) {
       if (req.method === 'GET' && req.url === '/health') {
         const [health, config] = await Promise.all(['/health', '/config'].map(async path => {
           const response = await fetch(helperOrigin + path, { signal: AbortSignal.timeout(5000) });
-          if (!response.ok) throw new Error('Simulator unavailable');
+          if (!response.ok) throw new Error(`Simulator ${path} returned ${response.status}`);
           return response.json();
         }));
         if (health.status !== 'ok' || !(config.width > 0 && config.height > 0)) throw new Error('Simulator unavailable');
@@ -86,7 +86,10 @@ export function createGate(options) {
         return;
       }
       json(res, 404, { error: 'Not found' });
-    } catch (error) { if (!res.headersSent) json(res, error.status ?? 502, { error: 'Simulator request failed' }); else res.destroy(); }
+    } catch (error) {
+      if (req.url === '/health') console.error('Simulator health failed:', safeError(error), error?.cause?.code ?? '');
+      if (!res.headersSent) json(res, error.status ?? 502, { error: 'Simulator request failed' }); else res.destroy();
+    }
   });
   server.on('upgrade', (req, socket, head) => {
     if (checkLease() || req.url !== '/control' || !verify(req.headers, 'GET', req.url)) {

@@ -32,7 +32,7 @@ export class Remote {
   async health() {
     const value = await this.request('/health');
     if (value.session !== this.session.id || String(value.runId) !== String(this.session.run.id) ||
-        value.revision !== this.session.revision || value.device !== this.session.device) throw new Error('Получен ответ другого сеанса');
+        value.revision !== this.session.revision || value.device !== this.session.device) throw Object.assign(new Error('Получен ответ другого сеанса'), { fatal: true });
     this.callbacks.health(value); return value;
   }
   async open() {

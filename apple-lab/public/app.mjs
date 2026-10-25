@@ -1,17 +1,19 @@
 import { deviceInput } from './input.mjs';
+import { displayGeometry, fitFrame } from './orientation.mjs';
 const $ = selector => document.querySelector(selector);
 const csrf = $('meta[name="lab-csrf"]').content;
 const canvas = $('#screen'), frame = $('#device-frame'), context = canvas.getContext('2d', { alpha: false });
 let socket, device = 'iphone', state = { phase: 'idle', connected: false, active: false }, lastDraw = 0, lastState = 0, latest, drawing = false, toastTimer;
+let displayOrientation = 'portrait';
 async function api(path, value = {}) {
   const response = await fetch('/api/' + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-lab-csrf': csrf }, body: JSON.stringify(value) });
   const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Операция не выполнена'); return data;
 }
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 8000); }
 function fit() {
-  const stage = $('.stage'), ratio = canvas.width / canvas.height;
-  const width = Math.min(stage.clientWidth - 36, (stage.clientHeight - 28) * ratio);
-  frame.style.width = Math.max(100, width) + 'px'; frame.style.height = Math.max(100, width / ratio) + 'px';
+  const stage = $('.stage'), border = parseFloat(getComputedStyle(frame).borderLeftWidth);
+  const size = fitFrame(canvas.width, canvas.height, stage.clientWidth - 36, stage.clientHeight - 28, border);
+  frame.style.width = size.width + 'px'; frame.style.height = size.height + 'px';
 }
 new ResizeObserver(fit).observe($('.stage'));
 function usable() { return state.connected && socket?.readyState === WebSocket.OPEN && Date.now() - lastState < 6000 && Date.now() - lastDraw < 8000; }
@@ -52,8 +54,13 @@ async function draw() {
     try {
       const sequence = new DataView(data).getUint32(0);
       const bitmap = await createImageBitmap(new Blob([data.slice(4)], { type: 'image/jpeg' }));
-      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) { canvas.width = bitmap.width; canvas.height = bitmap.height; fit(); }
-      context.drawImage(bitmap, 0, 0); bitmap.close(); lastDraw = Date.now();
+      displayOrientation = state.config?.orientation ?? 'portrait';
+      const geometry = displayGeometry(bitmap.width, bitmap.height, displayOrientation);
+      if (canvas.width !== geometry.width || canvas.height !== geometry.height) { canvas.width = geometry.width; canvas.height = geometry.height; fit(); }
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.translate(canvas.width / 2, canvas.height / 2); context.rotate(geometry.degrees * Math.PI / 180);
+      context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2); context.setTransform(1, 0, 0, 1, 0, 0);
+      bitmap.close(); lastDraw = Date.now();
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'paint', sequence }));
       render();
     } catch { /* An incomplete frame does not count as a live connection. */ }
@@ -79,7 +86,7 @@ $('#connect').onclick = async () => {
 };
 const dialog = $('#text-dialog');
 function openPaste() { dialog.showModal(); $('#text-value').focus(); }
-const controls = deviceInput(canvas, { connected: usable, send: data => { if (socket.readyState === WebSocket.OPEN) socket.send(data); }, paste: openPaste });
+const controls = deviceInput(canvas, { connected: usable, orientation: () => displayOrientation, send: data => { if (socket.readyState === WebSocket.OPEN) socket.send(data); }, paste: openPaste });
 let landscape = false;
 for (const button of document.querySelectorAll('[data-control]')) button.onclick = async () => {
   try {

@@ -1,6 +1,6 @@
 const encoder = new TextEncoder();
 const clamp = value => Math.max(0, Math.min(1, value));
-export function deviceInput(canvas, { connected, send, paste }) {
+export function deviceInput(canvas, { connected, send, paste, orientation }) {
   function packet(tag, value) {
     const body = value == null ? new Uint8Array() : encoder.encode(JSON.stringify(value));
     const data = new Uint8Array(body.length + 1); data[0] = tag; data.set(body, 1); send(data);
@@ -12,7 +12,8 @@ export function deviceInput(canvas, { connected, send, paste }) {
   let pointer = null, multi = false, lastMove = 0;
   function touch(type, p) {
     if (!connected()) return;
-    packet(multi ? 5 : 3, multi ? { type, x1: p.x, y1: p.y, x2: 1 - p.x, y2: 1 - p.y } : { type, ...p });
+    const first = rawPoint(orientation(), p.x, p.y), second = rawPoint(orientation(), 1 - p.x, 1 - p.y);
+    packet(multi ? 5 : 3, multi ? { type, x1: first.x, y1: first.y, x2: second.x, y2: second.y } : { type, ...first });
   }
   canvas.addEventListener('pointerdown', event => {
     if (!connected() || pointer != null) return;
@@ -61,3 +62,4 @@ export function deviceInput(canvas, { connected, send, paste }) {
   });
   return { home: () => packet(4, { button: 'home' }), rotate: orientation => packet(7, { orientation }) };
 }
+import { rawPoint } from './orientation.mjs';

@@ -27,7 +27,11 @@ export class Controller extends EventEmitter {
       s.revision = await this.github.source(); this.state.revision = s.revision;
       if (s.stop) return;
       s.dispatchSent = true;
-      await this.github.dispatch(s);
+      try { await this.github.dispatch(s); } catch (error) {
+        // A confirmed HTTP rejection cannot have created a run. Network failures remain ambiguous.
+        if (error.status >= 400 && error.status < 500) s.dispatchSent = false;
+        throw error;
+      }
       while (!s.stop && !s.remote) {
         if (!this.hasUi()) throw new Error('Окно подключения закрыто');
         if (this.now() - s.started > 15 * 60 * 1000) throw new Error('Mac не запустился за 15 минут');
@@ -49,9 +53,15 @@ export class Controller extends EventEmitter {
         if (s.connected && !this.snapshot().connected) throw new Error('Связь потеряна. Сеанс останавливается');
         if (!s.connected && now - s.attached > 45000) throw new Error('Экран или управление не подключились');
         if (now >= nextHealth) {
-          await s.remote.health();
-          if (s.stop) break;
-          await s.remote.request('/lease', 'POST'); nextHealth = this.now() + 4000;
+          try {
+            await s.remote.health();
+            if (s.stop) break;
+            await s.remote.request('/lease', 'POST'); nextHealth = this.now() + 4000;
+          } catch (error) {
+            if (error.fatal || !this.snapshot().connected) throw error;
+            // A fresh rendered stream and live controls are stronger evidence than one failed probe.
+            nextHealth = this.now() + 1000;
+          }
         }
         if (now >= nextRun) {
           const run = await this.github.run(s.run.id);
