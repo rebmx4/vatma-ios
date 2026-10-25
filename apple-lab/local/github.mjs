@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { parseProgress } from '../shared/progress.mjs';
 
 export async function gitCredential(cwd, repo) {
   return new Promise((resolve, reject) => {
@@ -54,14 +55,15 @@ export class GitHub {
       run.head_branch === this.workflowRef && run.path === `.github/workflows/${this.workflow}`);
   }
   run(id) { return this.request(`/actions/runs/${id}`); }
-  async previewUrl(session) {
+  async previewStatus(session) {
     const states = await this.request(`/commits/${session.run.head_sha}/statuses?per_page=100`);
     const state = states.find(value => value.context === `apple-lab/${session.id}`);
-    if (!state?.target_url || state.state !== 'success') return null;
+    const stage = parseProgress(state?.description);
+    if (!state?.target_url || state.state !== 'success') return { url: null, stage };
     const url = new URL(state.target_url);
     if (url.protocol !== 'https:' || !/^[a-z0-9-]+\.trycloudflare\.com$/.test(url.hostname) ||
         url.port || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Некорректный адрес удалённого Simulator');
-    return url.origin;
+    return { url: url.origin, stage: 'connect' };
   }
   async cancel(session) {
     if (!session.run || session.run.display_title !== `Apple Lab · ${session.id} · ${session.device}`) throw new Error('Отмена чужого сеанса запрещена');

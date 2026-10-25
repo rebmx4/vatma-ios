@@ -1,15 +1,17 @@
+import { progressInfo } from '../shared/progress.mjs';
 export class ConnectionState {
   constructor(now = Date.now) { this.now = now; this.frames = new Map(); this.phase = 'idle'; this.message = 'Нет подключения'; }
   start(device) {
     this.startedAt = this.now();
-    this.active = true; this.device = device; this.phase = 'starting'; this.message = 'Запускаем Mac и собираем ATMA…';
+    this.active = true; this.device = device; this.phase = 'starting'; this.progress('source');
     this.lastFrame = this.lastPaint = this.lastHealth = 0; this.controlOpen = false;
     this.deadline = null; this.config = null; this.revision = null; this.runUrl = null; this.frames.clear();
   }
+  progress(stage) { if (this.active && progressInfo(stage)) Object.assign(this, progressInfo(stage)); }
   health(value) {
     this.lastHealth = this.now(); this.deadline = Math.min(value.deadline, this.startedAt + 3600000);
     if (value.config) this.config = value.config;
-    if (this.phase === 'starting') { this.phase = 'connecting'; this.message = 'Подключаем экран и управление…'; }
+    if (this.phase === 'starting') { this.phase = 'connecting'; this.progress('connect'); }
   }
   control(open) { this.controlOpen = open; }
   frame(sequence) {
@@ -29,6 +31,7 @@ export class ConnectionState {
     return { phase: connected ? 'connected' : this.phase, connected, active: !!this.active,
       message: connected ? 'Связь установлена' : this.message, device: this.device ?? 'iphone',
       revision: this.revision, runUrl: this.runUrl, config: this.config, deadline: this.deadline,
+      startedAt: this.startedAt, stage: this.stage, progressHint: this.progressHint,
       lastFrame: this.lastFrame, lastPaint: this.lastPaint };
   }
 }

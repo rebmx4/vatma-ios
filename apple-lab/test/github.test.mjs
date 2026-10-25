@@ -34,3 +34,18 @@ test('GitHub cancellation accepts an empty 202 response', async t => {
   const github = new GitHub({ repo: 'owner/repo', credential: async () => 'test-credential', api: `http://127.0.0.1:${server.address().port}` });
   await github.cancel({ id: 'abc', device: 'iphone', run: { id: 123, display_title: 'Apple Lab · abc · iphone' } });
 });
+
+test('progress comes only from the owned session and a ready tunnel still requires a valid URL', async t => {
+  let state = { context: 'apple-lab/abc', state: 'pending', description: 'apple-lab:boot' };
+  const server = http.createServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify([
+    { context: 'apple-lab/foreign', state: 'success', target_url: 'http://127.0.0.1' }, state,
+  ])); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => server.close());
+  const github = new GitHub({ repo: 'owner/repo', credential: async () => 'test-credential', api: `http://127.0.0.1:${server.address().port}` });
+  const session = { id: 'abc', run: { head_sha: 'a'.repeat(40) } };
+  assert.deepEqual(await github.previewStatus(session), { url: null, stage: 'boot' });
+  state = { ...state, state: 'success', target_url: 'https://test.trycloudflare.com' };
+  assert.deepEqual(await github.previewStatus(session), { url: 'https://test.trycloudflare.com', stage: 'connect' });
+  state.target_url = 'http://127.0.0.1';
+  await assert.rejects(github.previewStatus(session), /адрес/);
+});

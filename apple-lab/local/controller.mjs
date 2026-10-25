@@ -40,7 +40,8 @@ export class Controller extends EventEmitter {
           this.state.runUrl = s.run.html_url; this.change();
           const run = await this.github.run(s.run.id);
           if (run.status === 'completed') throw new Error(`Сеанс Mac завершён: ${run.conclusion}`);
-          const url = await this.github.previewUrl(s);
+          const { url, stage } = await this.github.previewStatus(s);
+          this.state.progress(stage ?? (run.status === 'in_progress' ? 'prepare' : 'queue')); this.change();
           if (url && !s.stop) await this.attach(s, url);
         }
         if (!s.stop && !s.remote) await this.delay(this.pollMs);

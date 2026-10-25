@@ -1,61 +1,30 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { createGate } from './gate.mjs';
 import { helperOrigin as discoverHelper } from './discovery.mjs';
+import { runtime } from './runtime.mjs';
+import { cachedBundle } from './build-cache.mjs';
 
-const root = resolve(process.env.APPLE_LAB_APP_DIR);
-const lab = fileURLToPath(new URL('..', import.meta.url));
-const session = process.env.LAB_SESSION;
-const revision = process.env.LAB_REVISION;
-const device = process.env.LAB_DEVICE;
-const runId = process.env.GITHUB_RUN_ID;
-if (!/^[a-f0-9]{32}$/.test(session ?? '') || !/^[a-f0-9]{40}$/.test(revision ?? '') || !['iphone', 'ipad'].includes(device)) throw new Error('Invalid preview inputs');
-process.chdir(root);
-const cache = resolve(root, '.cache/apple-lab');
-mkdirSync(cache, { recursive: true });
-const childEnv = { ...process.env, TMPDIR: cache + '/tmp', npm_config_cache: cache + '/npm',
-  HOMEBREW_CACHE: cache + '/homebrew', HOMEBREW_LOGS: cache + '/brew-logs', HOMEBREW_TEMP: cache + '/tmp',
-  PYTHONDONTWRITEBYTECODE: '1', HOMEBREW_NO_AUTO_UPDATE: '1' };
-// Untrusted helpers never inherit a GitHub credential, signing key or workflow command file.
-for (const key of Object.keys(childEnv)) if (/TOKEN|SECRET|PASSWORD|PRIVATE|GITHUB_ENV|GITHUB_OUTPUT|GITHUB_PATH|ACTIONS_RUNTIME/.test(key)) delete childEnv[key];
-mkdirSync(childEnv.TMPDIR, { recursive: true });
-function command(binary, args, options = {}) {
-  const result = spawnSync(binary, args, { cwd: root, env: childEnv, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    stdio: options.capture ? 'pipe' : 'inherit', timeout: options.timeout ?? 600000, input: options.input });
-  if (result.status !== 0) throw new Error(`${binary} failed (${result.status ?? result.error?.code})`);
-  return result.stdout?.trim();
-}
-async function publish(state, description, url) {
-  const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/statuses/${process.env.GITHUB_SHA}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ATMA-Apple-Lab' },
-    body: JSON.stringify({ state, context: `apple-lab/${session}`, description, ...(url ? { target_url: url } : {}) }),
-    signal: AbortSignal.timeout(15000) });
-  if (!response.ok) throw new Error(`Cannot publish session state (${response.status})`);
-}
+const r = runtime();
+const { root, lab, cache, session, revision, device, runId, childEnv, command, publish, progress } = r;
 const cli = resolve(lab, 'remote-tools/node_modules/serve-sim/dist/serve-sim.js');
 const serve = (...args) => command(process.execPath, [cli, ...args], { capture: true, timeout: 90000 });
 let simulator, gate, tunnel, reason = 'failed';
 try {
-  if (command('git', ['rev-parse', 'HEAD'], { capture: true }) !== revision) throw new Error('Source SHA mismatch');
-  console.log(`Building ${device}, revision ${revision}, run ${runId}`);
-  await publish('pending', 'Building Apple Simulator');
-  command('bash', ['release/ci.sh', 'prepare']);
-  const sdk = command('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-version'], { capture: true });
-  const devices = command('xcrun', ['simctl', 'list', 'devices', 'available', '-j'], { capture: true });
-  simulator = JSON.parse(command('python3', ['-B', 'release/simulators.py', '--ios-version', sdk], { capture: true, input: devices }))[device];
-  command('xcrun', ['simctl', 'boot', simulator]);
+  const plan = r.readPlan(); simulator = plan.simulator;
+  const app = cachedBundle({ directory: cache + '/bundle', identity: plan.identity, inspect: r.inspect });
+  if (!app) throw new Error('Verified Simulator app bundle is missing');
+  console.log(`Starting ${device}, revision ${revision}, run ${runId}`);
+  await progress('boot');
   command('xcrun', ['simctl', 'bootstatus', simulator, '-b']);
   command('xcrun', ['simctl', 'status_bar', simulator, 'override', '--time', '9:41', '--batteryState', 'charged', '--batteryLevel', '100']);
-  command('xcodebuild', ['build', '-project', 'ATMA.xcodeproj', '-scheme', 'ATMA', '-configuration', 'Debug',
-    '-destination', `platform=iOS Simulator,id=${simulator}`, '-derivedDataPath', cache + '/derived',
-    'CODE_SIGNING_ALLOWED=NO', 'ONLY_ACTIVE_ARCH=YES']);
-  const app = cache + '/derived/Build/Products/Debug-iphonesimulator/ATMA.app';
+  await progress('install');
   command('xcrun', ['simctl', 'install', simulator, app]);
   command('xcrun', ['simctl', 'launch', simulator, 'ru.atma.browser']);
+  await progress('stream');
   console.log(serve('--detach', '--no-preview', '--codec', 'mjpeg', simulator, '-q'));
   const helperOrigin = discoverHelper(JSON.parse(serve('--list', '-q')), simulator);
   const startedAt = Date.now();
@@ -80,6 +49,7 @@ try {
       return { ok: true };
     } });
   gate.server.listen(3210, '127.0.0.1'); await once(gate.server, 'listening');
+  await progress('tunnel');
   const download = await fetch('https://github.com/cloudflare/cloudflared/releases/download/2026.10.3/cloudflared-darwin-arm64.tgz', { signal: AbortSignal.timeout(60000) });
   if (!download.ok) throw new Error('Tunnel download failed');
   const archive = Buffer.from(await download.arrayBuffer());

@@ -1,5 +1,6 @@
 import { deviceInput } from './input.mjs';
 import { displayGeometry, fitFrame } from './orientation.mjs';
+import { sessionView } from './session-view.mjs';
 const $ = selector => document.querySelector(selector);
 const csrf = $('meta[name="lab-csrf"]').content;
 const canvas = $('#screen'), frame = $('#device-frame'), context = canvas.getContext('2d', { alpha: false });
@@ -19,11 +20,12 @@ new ResizeObserver(fit).observe($('.stage'));
 function usable() { return state.connected && socket?.readyState === WebSocket.OPEN && Date.now() - lastState < 6000 && Date.now() - lastDraw < 8000; }
 function render() {
   const live = usable(), pending = state.active && !live, stopping = state.phase === 'stopping';
+  const view = sessionView(state, { live });
   $('#connection').classList.toggle('live', live);
   $('#connection span').textContent = live ? 'Связь установлена' : stopping ? 'Отключение…' : pending ? 'Подключение…' : 'Нет подключения';
   const button = $('#connect'); button.classList.toggle('live', live); button.classList.toggle('pending', pending || stopping);
   button.disabled = socket?.readyState !== WebSocket.OPEN || stopping;
-  button.lastElementChild.textContent = live ? 'Отключить' : stopping ? 'Отключаем…' : pending ? 'Отменить подключение' : 'Подключить';
+  button.lastElementChild.textContent = view.button;
   for (const choice of document.querySelectorAll('.device-choice')) choice.disabled = state.active || stopping;
   for (const control of document.querySelectorAll('[data-control]')) control.disabled = !live;
   $('#status').textContent = state.message || 'Нет подключения';
@@ -32,11 +34,10 @@ function render() {
   $('#run-link').hidden = !state.runUrl;
   if (state.runUrl) $('#run-link').href = state.runUrl;
   $('#placeholder').hidden = !!(lastDraw && state.active && Date.now() - lastDraw < 8000);
-  $('#spinner').hidden = !pending;
-  $('#placeholder-title').textContent = stopping ? 'Отключаем устройство' : pending ? 'Готовим устройство' : state.phase === 'error' ? 'Сеанс остановлен' : 'Готов к подключению';
-  $('#placeholder-copy').textContent = pending ? 'Подготовка нового сеанса занимает несколько минут.\nMac собирает приложение.' : state.phase === 'error' ? state.message : 'Выберите устройство и нажмите «Подключить».';
-  const remaining = Math.max(0, (state.deadline ?? 0) - Date.now());
-  $('#timer').textContent = state.active && state.deadline ? `Осталось ${Math.floor(remaining / 60000)}:${String(Math.floor(remaining / 1000) % 60).padStart(2, '0')}` : pending ? 'Подготовка сеанса' : 'Сеанс не запущен';
+  $('#spinner').hidden = !pending && !stopping;
+  $('#placeholder-title').textContent = view.title;
+  $('#placeholder-copy').textContent = view.copy;
+  $('#timer').textContent = view.timer;
 }
 function select(value) {
   device = value; frame.classList.toggle('tablet', value === 'ipad'); frame.classList.toggle('phone', value === 'iphone');

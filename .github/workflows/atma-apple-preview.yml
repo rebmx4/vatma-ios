@@ -29,9 +29,13 @@
       { "name": "Checkout exact app source", "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "with": { "ref": "${{ inputs.revision }}", "path": "app", "persist-credentials": false } },
       { "name": "Use Node 24", "uses": "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", "with": { "node-version": "24" } },
       { "name": "Use Python 3.12", "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1", "with": { "python-version": "3.12" } },
+      { "name": "Prepare build cache and boot iOS", "id": "plan", "env": { "GITHUB_TOKEN": "${{ github.token }}" }, "run": "node lab/apple-lab/remote/prepare.mjs plan" },
+      { "name": "Restore ready Simulator app", "id": "bundle", "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830", "with": { "path": "app/.cache/apple-lab/bundle", "key": "${{ steps.plan.outputs.cache-key }}" } },
+      { "name": "Reuse or build Simulator app", "env": { "GITHUB_TOKEN": "${{ github.token }}" }, "run": "node lab/apple-lab/remote/prepare.mjs build" },
+      { "name": "Save ready app before interactive session", "if": "${{ steps.bundle.outputs.cache-hit != 'true' }}", "uses": "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830", "with": { "path": "app/.cache/apple-lab/bundle", "key": "${{ steps.plan.outputs.cache-key }}" } },
       { "name": "Install pinned preview tools", "run": "export npm_config_cache=\"$GITHUB_WORKSPACE/lab/.cache/npm\"\nnpm ci --prefix lab/apple-lab --ignore-scripts --no-audit --no-fund\nnpm ci --prefix lab/apple-lab/remote-tools --ignore-scripts --no-audit --no-fund\nnode --test lab/apple-lab/test/*.test.mjs" },
-      { "name": "Build and stream Apple Simulator", "env": { "GITHUB_TOKEN": "${{ github.token }}" }, "run": "node lab/apple-lab/remote/runner.mjs" },
-      { "name": "Save build diagnostics", "if": "${{ always() }}", "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", "with": { "name": "apple-lab-${{ github.run_id }}", "path": "app/out/source-validation.json\napp/out/apple-preview-session.json\napp/out/xcode-version.log\napp/out/xcodegen-version.log", "retention-days": 1, "if-no-files-found": "ignore" } }
+      { "name": "Stream Apple Simulator", "env": { "GITHUB_TOKEN": "${{ github.token }}" }, "run": "node lab/apple-lab/remote/runner.mjs" },
+      { "name": "Save build diagnostics", "if": "${{ always() }}", "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", "with": { "name": "apple-lab-${{ github.run_id }}", "path": "app/out/source-validation.json\napp/out/apple-preview-session.json\napp/out/apple-lab-build.json\napp/out/xcode-version.log\napp/out/xcodegen-version.log", "retention-days": 1, "if-no-files-found": "ignore" } }
     ]
   } }
 }
