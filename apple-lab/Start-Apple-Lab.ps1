@@ -16,7 +16,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'node_modules\ws\packa
 $taskHealthy = $false
 try { $taskState = Invoke-RestMethod 'http://127.0.0.1:4186/api/state' -TimeoutSec 2; $taskHealthy = $taskState.app -eq 'ATMA Apple Lab' } catch { }
 if (-not $taskHealthy) {
-    Start-Process -FilePath $taskNode -ArgumentList @('"' + (Join-Path $PSScriptRoot 'local\server.mjs') + '"') -WorkingDirectory $taskRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskOutput 'controller.log') -RedirectStandardError (Join-Path $taskOutput 'controller-error.log') | Out-Null
+    Start-Process -FilePath $taskNode -ArgumentList @(('"' + (Join-Path $PSScriptRoot 'local\server.mjs') + '"')) -WorkingDirectory $taskRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskOutput 'controller.log') -RedirectStandardError (Join-Path $taskOutput 'controller-error.log') | Out-Null
     for ($taskAttempt = 0; $taskAttempt -lt 30; $taskAttempt++) {
         try { $taskState = Invoke-RestMethod 'http://127.0.0.1:4186/api/state' -TimeoutSec 1; if ($taskState.app -eq 'ATMA Apple Lab') { $taskHealthy = $true; break } } catch { }
         Start-Sleep -Milliseconds 200
@@ -27,5 +27,5 @@ $taskBrowser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
 if (-not $taskBrowser) { throw 'Microsoft Edge was not found. No browser was installed or launched with a default profile.' }
 $taskProfile = Join-Path $taskOutput 'browser-profile'
 New-Item -ItemType Directory -Force -Path $taskProfile | Out-Null
-$taskArguments = @('--app=http://127.0.0.1:4186/', '--user-data-dir="' + $taskProfile + '"', '--disk-cache-dir=D:\caches\apple-lab\browser', '--no-first-run', '--no-default-browser-check', '--disable-breakpad', '--disable-crash-reporter', '--disable-features=Crashpad', '--window-size=1280,920')
+$taskArguments = @('--app=http://127.0.0.1:4186/', ('--user-data-dir="' + $taskProfile + '"'), '--disk-cache-dir=D:\caches\apple-lab\browser', '--no-first-run', '--no-default-browser-check', '--disable-breakpad', '--disable-crash-reporter', '--disable-features=Crashpad', '--window-size=1280,920')
 Start-Process -FilePath $taskBrowser -ArgumentList $taskArguments -WorkingDirectory $taskRoot -WindowStyle Normal | Out-Null

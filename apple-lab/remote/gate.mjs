@@ -34,7 +34,7 @@ export function createGate(options) {
   const { session, publicKey, helperOrigin, runId, revision, device, deadline,
     now = Date.now, onExpire = () => {}, action = async () => { throw new Error('Action unavailable'); } } = options;
   const verify = createVerifier({ session, publicKey, now });
-  let lastLease = now(), expired = null;
+  let lastLease = now(), expired = null, leaseArmed = options.leaseArmed !== false;
   const streams = new Set();
   const controls = new Set();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
@@ -47,7 +47,7 @@ export function createGate(options) {
   }
   function checkLease() {
     if (now() >= deadline) expire('time-limit');
-    else if (now() - lastLease > 60000) expire('connection-lost');
+    else if (leaseArmed && now() - lastLease > 60000) expire('connection-lost');
     return expired;
   }
   const timer = setInterval(checkLease, 1000); timer.unref();
@@ -109,6 +109,6 @@ export function createGate(options) {
       client.on('error', () => upstream.terminate());
     });
   });
-  return { server, checkLease, close() { clearInterval(timer); for (const ws of controls) ws.terminate();
+  return { server, checkLease, armLease() { lastLease = now(); leaseArmed = true; }, close() { clearInterval(timer); for (const ws of controls) ws.terminate();
     for (const stream of streams) stream.destroy(); wss.close(); server.closeAllConnections(); server.close(); } };
 }

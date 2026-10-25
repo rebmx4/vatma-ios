@@ -105,10 +105,10 @@ export class Controller extends EventEmitter {
     return s.done;
   }
   async cleanup(s) {
-    let cleanupError;
     if (s.remote) void s.remote.stop().catch(() => {});
-    if (s.dispatchSent) {
+    while (this.current === s) {
       try {
+        if (s.dispatchSent) {
         // A dispatch response can be lost; discover the exact owned run before cancelling.
         for (let attempt = 0; !s.run && attempt < 40; attempt++) {
           s.run = await this.github.findRun(s);
@@ -123,13 +123,17 @@ export class Controller extends EventEmitter {
           if ((await this.github.run(s.run.id)).status === 'completed') { finished = true; break; }
           await this.delay(1500);
         }
-        if (!finished) throw new Error('Остановка отправлена, GitHub ещё завершает задачу; автоматический предел — 60 минут');
-      } catch (error) { cleanupError = safeError(error); }
-    }
-    s.remote?.close();
-    if (this.current === s) {
-      this.current = null; this.state.finish(cleanupError || s.error); this.change();
-      this.emit('ended', { session: s.id, device: s.device, revision: s.revision, runId: s.run?.id, error: cleanupError || s.error || null });
+          if (!finished) throw new Error('GitHub ещё завершает задачу');
+        }
+        s.remote?.close();
+        this.current = null; this.state.finish(s.error); this.change();
+        this.emit('ended', { session: s.id, device: s.device, revision: s.revision, runId: s.run?.id, error: s.error || null });
+      } catch (error) {
+        s.remote?.close();
+        this.state.stop('Повторяем остановку Mac: ' + safeError(error)); this.change();
+        // Keep the run handle during an API outage. A second run must never hide the first.
+        await this.delay(5000);
+      }
     }
   }
 }

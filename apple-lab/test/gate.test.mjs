@@ -42,3 +42,13 @@ test('lease cannot extend the hard session deadline', async t => {
   assert.equal(response.status, 200);
   time = 102001; gate.checkLease(); assert.equal(expired, 'time-limit');
 });
+
+test('setup time is excluded from the lease, which starts only when the tunnel is published', t => {
+  const key = createSessionKey(); let time = 100000, expired;
+  const gate = createGate({ publicKey: key.publicKey, session: 'c'.repeat(32), now: () => time,
+    deadline: 500000, leaseArmed: false, onExpire: value => { expired = value; } });
+  t.after(() => gate.close());
+  time += 100000; gate.checkLease(); assert.equal(expired, undefined);
+  gate.armLease(); time += 59000; gate.checkLease(); assert.equal(expired, undefined);
+  time += 2000; gate.checkLease(); assert.equal(expired, 'connection-lost');
+});

@@ -49,3 +49,26 @@ test('disconnect during dispatch still discovers and cancels only the owned queu
   assert.equal(cancelled, true); assert.equal(controller.snapshot().phase, 'idle');
   controller.start('iphone'); resolveDispatch(); await controller.stop();
 });
+
+test('temporary cancellation API failure retains ownership and blocks a second Mac until cleanup succeeds', async () => {
+  let dispatchRelease, retryRelease, failed = false, cancelled = false;
+  const run = { id: 321, status: 'queued' };
+  const github = {
+    source: async () => 'd'.repeat(40),
+    dispatch: async () => { await new Promise(resolve => { dispatchRelease = resolve; }); },
+    findRun: async () => { if (!failed) { failed = true; throw new Error('Temporary API outage'); } return run; },
+    run: async () => ({ ...run, status: cancelled ? 'completed' : 'queued' }),
+    cancel: async () => { cancelled = true; },
+  };
+  const controller = new Controller(github, { delay: () => new Promise(resolve => { retryRelease = resolve; }) });
+  controller.start('iphone');
+  while (!dispatchRelease) await new Promise(resolve => setImmediate(resolve));
+  const stopped = controller.stop(); dispatchRelease();
+  while (!failed) await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(controller.current, 'must retain the exact owned session until stopped');
+  assert.equal(controller.snapshot().phase, 'stopping');
+  assert.throws(() => controller.start('ipad'), /остановки/);
+  retryRelease(); await stopped;
+  assert.equal(cancelled, true); assert.equal(controller.current, null);
+});

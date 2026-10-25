@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { createGate } from './gate.mjs';
+import { helperOrigin as discoverHelper } from './discovery.mjs';
 
 const root = resolve(process.env.APPLE_LAB_APP_DIR);
 const lab = fileURLToPath(new URL('..', import.meta.url));
@@ -56,15 +57,12 @@ try {
   command('xcrun', ['simctl', 'install', simulator, app]);
   command('xcrun', ['simctl', 'launch', simulator, 'ru.atma.browser']);
   console.log(serve('--detach', '--no-preview', '--codec', 'mjpeg', simulator, '-q'));
-  const states = JSON.parse(serve('--list', '-q'));
-  const state = states.find(value => value.device?.udid === simulator || value.device?.id === simulator || value.udid === simulator) ?? (states.length === 1 ? states[0] : null);
-  if (!state?.port) throw new Error('No Simulator stream port');
-  const helperOrigin = `http://127.0.0.1:${state.port}`;
+  const helperOrigin = discoverHelper(JSON.parse(serve('--list', '-q')), simulator);
   const startedAt = Date.now();
   let finish;
   const stopped = new Promise(resolveStop => { finish = resolveStop; });
   gate = createGate({ session, publicKey: process.env.LAB_PUBLIC_KEY, runId, revision, device, helperOrigin,
-    deadline: startedAt + 60 * 60 * 1000, onExpire: finish,
+    deadline: startedAt + 60 * 60 * 1000, leaseArmed: false, onExpire: finish,
     action: async value => {
       if (value?.type === 'relaunch') {
         spawnSync('xcrun', ['simctl', 'terminate', simulator, 'ru.atma.browser'], { env: childEnv });
@@ -101,6 +99,7 @@ try {
   });
   tunnel.once('exit', () => finish('tunnel-stopped'));
   await publish('success', `Simulator ready; run ${runId}`, tunnelUrl);
+  gate.armLease();
   writeFileSync(resolve(root, 'out/apple-preview-session.json'), JSON.stringify({ session, device, revision, runId, startedAt, tunnelUrl }, null, 2));
   console.log('Authenticated Simulator session is ready.');
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => finish('disconnected'));
