@@ -9,7 +9,7 @@ function setup(){
  const nodes=new Map(),documentEvents=new Map(),effects=[],timers=new Map();let timerId=0;
  class Element{constructor(){this.events=new Map();this.value='typed address';}addEventListener(name,fn){this.events.set(name,fn);}closest(selector){return selector==='.home'?get('home'):null;}}
  const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
- const context={Element,Math,Date,DESKTOP_HOLD_MS:550,setTimeout:fn=>{const id=++timerId;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),$:get,state:{activeTabId:'active',tabs:[{id:'active'}]},editing:false,panel:null,gesture:null,desktopPage:2,
+ const context={Element,Math,Date,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),setTimeout:fn=>{const id=++timerId;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),$:get,state:{activeTabId:'active',tabs:[{id:'active'}]},editing:false,panel:null,gesture:null,desktopPage:2,
  document:{body:{dataset:{surface:'home'}},querySelector:()=>get('home'),addEventListener:(name,fn)=>documentEvents.set(name,fn)},
  action:async name=>effects.push(['action',name]),setPanel:name=>effects.push(['panel',name]),saveCurrentSite:()=>effects.push(['pin']),
  newBrowserTab:()=>effects.push(['new-tab']),setEditing:value=>{context.editing=value;effects.push(['editing',value]);},

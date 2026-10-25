@@ -21,9 +21,16 @@ Baseline reused: exact released source a879df5 passed native 46 unit + 4 UI; cur
 User iOS version is pending. Apple publishes no Home Screen edit delay in seconds. No notification backend or service integration exists. No additional paid service is authorized or purchased.
 
 ## Progress
-- [ ] Navigation
-- [ ] Incognito and ordinary/private separation
-- [ ] Desktop gestures
-- [ ] Privacy/trust documentation and checks
-- [ ] Notification feasibility
+- [x] Navigation
+- [x] Incognito and ordinary/private separation
+- [x] Desktop gestures
+- [x] Privacy/trust documentation and checks (public draft prepared; publishing follows tested release)
+- [x] Notification feasibility (counter format verified; service access remains unconfirmed; no backend deployed)
 - [ ] Native verification and test distribution
+
+## Verified progress
+Source 783429a: 55 native tests and eight app UI scenarios passed on iPhone/iPad. The one-time SpringBoard experiment found editing at 0.75s, not at 0.6875s, on iOS26.4.1. Its extra235s made GitHub hit the30min limit in post-job cleanup, so that run is not accepted for signing. The experiment is retained in git history and the measurement report; routine tests keep every app behavior case. Desktop hold is now750ms.
+
+The prior playback guard rejected a locally approved camera preview after a permission prompt lasting over two seconds. The media adapter now observes successful getUserMedia results without requesting access, permits their first visible preview, and retains pause/hidden-stream protection. Targeted tests observed RED→GREEN; full JS78/78 passed and independent review found no new confirmed issues. The final exact-source native gate remains required after this resource change. Actual hardware capture and social-account checks remain separate.
+
+Рекомендуемая модель для реализации: gpt-6.1-sol, уровень high. Причина: изоляция WebKit, жизненный цикл вкладок и выпуск iOS требуют проверки связанных состояний.

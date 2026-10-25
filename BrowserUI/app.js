@@ -70,7 +70,7 @@ let state, panel = null, editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
-const DESKTOP_HOLD_MS = 550;
+const DESKTOP_HOLD_MS = 750; // iPhone SpringBoard 26.4.1: 0.6875s failed, 0.75s entered editing.
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';

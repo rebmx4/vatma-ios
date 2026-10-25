@@ -53,42 +53,6 @@ final class BrowserPrivacyUITests: XCTestCase {
         address.tap(); address.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Gesture fixture".count))
     }
 
-    func testSystemHomeEditDurationObservation() throws {
-        if UIDevice.current.userInterfaceIdiom == .pad { throw XCTSkip("Measure the iPhone Home Screen baseline") }
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        XCUIDevice.shared.press(.home)
-        defer { app.activate() }
-        let icon = springboard.icons.matching(NSPredicate(format: "label IN %@", ["ATMA", "АТМА"])).firstMatch
-        guard icon.waitForExistence(timeout: 8) else { throw XCTSkip("ATMA icon is not accessible on SpringBoard") }
-        var observations: [[String: Any]] = []
-        func probe(_ seconds: Double) -> Bool {
-            icon.press(forDuration: seconds)
-            let done = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Done", "Готово"])).firstMatch
-            let editing = done.waitForExistence(timeout: 0.7)
-            observations.append(["seconds": seconds, "editing": editing])
-            if editing { done.tap() } else { XCUIDevice.shared.press(.home) }
-            return editing
-        }
-        var lower = 0.0, upper: Double?
-        for seconds in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0] {
-            if probe(seconds) { upper = seconds; break }
-            lower = seconds
-        }
-        if var bound = upper {
-            for _ in 0..<3 {
-                let middle = (lower + bound) / 2
-                if probe(middle) { bound = middle } else { lower = middle }
-            }
-            upper = bound
-        }
-        let result: [String: Any] = ["ios": UIDevice.current.systemVersion, "observations": observations,
-                                    "lowerSeconds": lower, "upperSeconds": upper as Any? ?? NSNull()]
-        let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
-        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-        attachment.name = "system-home-edit-duration.json"; attachment.lifetime = .keepAlways; add(attachment)
-        print("ATMA_SYSTEM_HOME_EDIT_TIMING " + String(decoding: data, as: UTF8.self))
-    }
-
     private func button(_ labels: [String]) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
     }

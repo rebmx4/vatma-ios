@@ -6,6 +6,17 @@ function installAtmaMediaPage(options = {}) {
   const approved = new WeakSet(), requested = new WeakSet(), blockedAt = new WeakMap(), presentations = new WeakMap();
   let visibilityOriginal, hiddenOriginal, visibilityPatched = false;
   const watched = new WeakSet(), playIntents = new WeakMap(), guardPauses = new WeakMap();
+  const capturedStreams = new WeakSet(), seenCaptures = new WeakMap();
+  // Observe a stream only after the browser grants capture; never request access here.
+  const devices = navigator.mediaDevices, getUserMediaOriginal = devices?.getUserMedia;
+  if (typeof getUserMediaOriginal === 'function') try {
+    Object.defineProperty(devices, 'getUserMedia', {configurable:true,writable:true,value:function getUserMedia(constraints) {
+      return getUserMediaOriginal.apply(this,arguments).then(stream=>{
+        if(stream && typeof stream.getTracks==='function')capturedStreams.add(stream);
+        return stream;
+      });
+    }});
+  } catch {}
   // Keep the actual document visibility before the YouTube background shim.
   const realHidden=(()=>{
     for(let target=document;target;target=Object.getPrototypeOf(target)){
@@ -69,7 +80,12 @@ function installAtmaMediaPage(options = {}) {
     const freshGesture=Date.now()<=gestureUntil && (!blockedAt.has(video)||gesture>blockedAt.get(video));
     // WKWebView's native JS evaluation forces transient activation even for
     // state reads. Only actual trusted page input grants first-play intent.
-    if (!approved.has(video) && inlineVisible(video) && freshGesture) approve(video);
+    const stream=video.srcObject,localCapture=stream && capturedStreams.has(stream) && stream.getTracks().some(track=>track.readyState==='live');
+    const firstCapture=localCapture && seenCaptures.get(video)!==stream;
+    // A permission dialog can outlast the short playback gesture. A granted local
+    // capture may start once while visible; later user pauses still require Play.
+    if (!approved.has(video) && inlineVisible(video) && (freshGesture || firstCapture)) approve(video);
+    if (approved.has(video) && localCapture) seenCaptures.set(video,stream);
     return approved.has(video);
   }
   function enforcePlay(video,event) {

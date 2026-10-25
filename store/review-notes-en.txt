@@ -5,9 +5,11 @@ All ATMA features are free. There are no ATMA in-app purchases, subscriptions, a
 Review steps (no demo account required):
 1. Launch ATMA to see the start page with website shortcuts. The ATMA home button returns to this page.
 2. Tap plus, enter https://rebmx4.github.io/vatma-ios/guide.html and tap Go. This is a public help page and requires no login.
-3. Websites use standard WebKit on the actual iPhone or iPad. This version has no device selector or custom User-Agent. Tabs and saved shortcuts share one persistent website data store.
+3. Websites use standard WebKit on the actual iPhone or iPad. This version has no device selector or custom User-Agent. Ordinary tabs and saved shortcuts share one persistent website data store. Incognito tabs use a separate nonpersistent store.
 4. Save the open site using the add button beside the address, return to ATMA Home, and open the saved shortcut. It uses a compact bottom toolbar. Shortcuts and folders exist only inside ATMA; they do not install other iOS apps or replace the system Home Screen.
 5. Open another page in a new tab and use the tab counter to inspect tab previews. Settings contains Appearance, Privacy Policy, Support and Media player. Files includes ordinary downloads and website cookies.
+
+6. Tap the Incognito icon on the start page to open its white search screen. Private tabs are excluded from session restoration and use a temporary website store; ending the private session closes all private tabs. Home returns to the ordinary desktop, where saved shortcuts retain ordinary sign-ins. Deliberately saved files and shortcuts remain.
 
 The privacy policy and support text are bundled in the app and also available at the supplied public URLs. The six-digit PIN protects only a separate page of saved links; it is not anonymous browsing or protection of the entire browser.
 

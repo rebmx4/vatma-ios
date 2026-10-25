@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const path=new URL('../BrowserUI/assets/site-media.js',import.meta.url);
-function setup({queuedMediaEvents=false}={}){
+function setup({queuedMediaEvents=false,mediaDevices}={}){
  const listeners=new Map(),pendingMediaEvents=[];
  const emit=(target,type)=>{const fire=()=>target.dispatchEvent(new Event(type));if(queuedMediaEvents)pendingMediaEvents.push(fire);else fire();};
  class Media extends EventTarget {addEventListener(type,callback,...args){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(callback);super.addEventListener(type,callback,...args);}play(){const changed=this.paused;this.paused=false;if(changed)emit(this,'play');return Promise.resolve();}pause(){if(this.paused)return;this.paused=true;emit(this,'pause');}}
  const video=new Media();Object.assign(video,{tagName:'VIDEO',paused:true,ended:false,currentTime:20,duration:100,readyState:4,videoWidth:640,videoHeight:360,webkitPresentationMode:'inline',getBoundingClientRect:()=>({width:640,height:360}),webkitSupportsPresentationMode:()=>true,webkitSetPresentationMode(mode){this.webkitPresentationMode=mode;}});
  const inputs=new Map(),document=new EventTarget(),addInput=document.addEventListener.bind(document);document.addEventListener=(type,callback,...args)=>{if(!inputs.has(type))inputs.set(type,[]);inputs.get(type).push(callback);addInput(type,callback,...args);};Object.assign(document,{title:'Fixture video',readyState:'complete',querySelectorAll:()=>[video],pictureInPictureEnabled:false});
- const context={document,HTMLMediaElement:Media,DOMException,navigator:{userActivation:{isActive:false}},location:{hostname:'example.invalid'},MutationObserver:class{observe(){}disconnect(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,Event,URL,console};context.window=context;context.addEventListener=()=>{};context.removeEventListener=()=>{};
+ const context={document,HTMLMediaElement:Media,DOMException,navigator:{userActivation:{isActive:false},mediaDevices},location:{hostname:'example.invalid'},MutationObserver:class{observe(){}disconnect(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,Event,URL,console};context.window=context;context.addEventListener=()=>{};context.removeEventListener=()=>{};
  vm.createContext(context);if(fs.existsSync(path))vm.runInContext(`(${fs.readFileSync(path,'utf8')})({background:true})`,context);
  return{context,document,video,api:context.__atmaMediaPage,trustedInput(){for(const callback of inputs.get('pointerup')||[])callback({isTrusted:true});},nativePlay(){video.paused=false;const fire=()=>{for(const callback of listeners.get('play')||[])callback({isTrusted:true});};if(queuedMediaEvents)pendingMediaEvents.push(fire);else fire();},nativePause(){video.paused=true;emit(video,'pause');},flushNextMediaEvent(){pendingMediaEvents.shift()?.();},flushMediaEvents(){let count=0;while(pendingMediaEvents.length){if(++count>30)throw Error('Media event loop did not settle');pendingMediaEvents.shift()();}} };
 }
@@ -103,4 +103,32 @@ test('a queued autoplay-denial pause cannot cancel a newer explicit Play',async(
 test('a genuine system pause still defeats an automatic restart before its pause event arrives',async()=>{
  const f=setup({queuedMediaEvents:true});await f.api.command({type:'play'});f.flushMediaEvents();
  f.nativePause();f.nativePlay();f.flushMediaEvents();assert.equal(f.video.paused,true,'A real pause must revoke the existing playback even when website events are queued');
+});
+
+function captureFixture(){
+ let finish,clock=1000,requests=[];const stream={getTracks:()=>[{readyState:'live',kind:'video'}]};
+ const devices={getUserMedia(constraints){requests.push({receiver:this,constraints});return new Promise(resolve=>{finish=()=>resolve(stream);});}};
+ const f=setup({mediaDevices:devices});f.context.Date={now:()=>clock};
+ return {...f,stream,devices,requests,finish:()=>finish(),advance:ms=>clock+=ms};
+}
+test('an approved camera preview can start after the permission prompt outlasts the playback gesture',async()=>{
+ const f=captureFixture();f.trustedInput();const constraints={video:true,audio:false},permission=f.context.navigator.mediaDevices.getUserMedia(constraints);f.advance(5000);f.finish();f.video.srcObject=await permission;
+ await f.video.play();assert.equal(f.video.paused,false);assert.equal(f.requests.length,1);assert.equal(f.requests[0].constraints,constraints);assert.equal(f.requests[0].receiver,f.devices);
+});
+test('camera approval never authorizes an unrelated or hidden media stream',async()=>{
+ const f=captureFixture();f.trustedInput();const permission=f.context.navigator.mediaDevices.getUserMedia({video:true});f.advance(5000);f.finish();await permission;
+ f.video.srcObject={getTracks:()=>[{readyState:'live',kind:'audio'}]};await assert.rejects(()=>f.video.play(),{name:'NotAllowedError'});
+ f.video.srcObject=f.stream;f.trustedInput();await f.video.play();f.api.setPageVisible(false);assert.equal(f.video.paused,true);await assert.rejects(()=>f.video.play(),{name:'NotAllowedError'});
+ f.api.setPageVisible(true);await assert.rejects(()=>f.video.play(),{name:'NotAllowedError'});f.trustedInput();await f.video.play();assert.equal(f.video.paused,false);
+});
+test('camera permission denials remain unchanged and never start capture automatically',async()=>{
+ const denial=new DOMException('Permission denied','NotAllowedError');let calls=0;const devices={getUserMedia(){calls++;return Promise.reject(denial);}},f=setup({mediaDevices:devices});
+ assert.equal(calls,0);await assert.rejects(()=>f.context.navigator.mediaDevices.getUserMedia({audio:true}),error=>error===denial);assert.equal(calls,1);await assert.rejects(()=>f.video.play(),{name:'NotAllowedError'});
+});
+
+test('a newly permitted camera can reuse an element that was deliberately paused for ordinary media',async()=>{
+ const f=captureFixture();await f.api.command({type:'play'});await f.api.command({type:'pause'});f.trustedInput();const permission=f.context.navigator.mediaDevices.getUserMedia({video:true});f.advance(5000);f.finish();f.video.srcObject=await permission;await f.video.play();assert.equal(f.video.paused,false);
+});
+test('a user pause of a granted camera preview cannot be undone automatically',async()=>{
+ const f=captureFixture();const permission=f.context.navigator.mediaDevices.getUserMedia({video:true});f.advance(5000);f.finish();f.video.srcObject=await permission;await f.video.play();f.nativePause();await assert.rejects(()=>f.video.play(),{name:'NotAllowedError'});f.trustedInput();await f.video.play();assert.equal(f.video.paused,false);
 });

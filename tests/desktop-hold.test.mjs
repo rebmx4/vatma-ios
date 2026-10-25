@@ -5,7 +5,7 @@ import vm from 'node:vm';
 function tileFixture(){
  const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
  class Element{constructor(){this.dataset={};this.events=new Map();this.children=[];this.style={setProperty(){}};this.classList={toggle(){}};}setAttribute(){}addEventListener(name,handler){this.events.set(name,handler);}append(...children){this.children.push(...children);}}
- const page={Element,document:{createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing:true,DESKTOP_HOLD_MS:550,
+ const page={Element,document:{createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing:true,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),
   $:()=>({scrollLeft:0}),isFolder:()=>false,appLabel:app=>app.name,brand:()=>'',paintShortcutIcon(){},icon:()=>'',setTimeout:()=>1,navigator:{},
   poolFor:()=>[],removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4})};
  vm.createContext(page);
