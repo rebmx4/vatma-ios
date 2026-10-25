@@ -14,7 +14,7 @@ export function renderTabsOverview(root, options) {
  view.options = options;
  // Native dictionaries do not guarantee property order. Compare the visible
  // fields in a fixed order, leaving unrelated playback/loading updates alone.
- const signature = JSON.stringify([activeTabId, tabs.map(tab => [tab.id, tab.url, tab.title, tab.siteName, tab.iconUrl, tab.error])]);
+ const signature = JSON.stringify([activeTabId, tabs.map(tab => [tab.id, tab.url, tab.title, tab.siteName, tab.iconUrl, tab.error, tab.privateBrowsing === true])]);
  if (signature === view.signature) return;
  view.signature = signature;
  const scroll = root.scrollTop, ids = new Set(tabs.map(tab => tab.id));
@@ -34,24 +34,27 @@ export function renderTabsOverview(root, options) {
    close.addEventListener('click', () => view.options.onClose(tab.id));
    entry = {card, open, preview, title, subtitle, close};view.cards.set(tab.id, entry);
   }
-  if (entry.url !== tab.url) {
-   entry.url = tab.url;entry.src = null;entry.pending = null;entry.fallback = null;entry.preview.replaceChildren();
+  const isPrivate = tab.privateBrowsing === true;
+  if (entry.url !== tab.url || entry.privateBrowsing !== isPrivate) {
+   entry.url = tab.url;entry.privateBrowsing = isPrivate;entry.src = null;entry.pending = null;entry.fallback = null;entry.preview.replaceChildren();
   }
   entry.preview.classList.toggle('tab-blank-preview', !tab.url);
+  if (isPrivate && entry.fallback !== 'private') {entry.preview.innerHTML=icon('incognito');entry.fallback='private';}
   const fallback = tab.iconUrl || '/assets/atma.png';
-  if (tab.url && !entry.src && entry.fallback !== fallback) {
+  if (!isPrivate && tab.url && !entry.src && entry.fallback !== fallback) {
    const container = document.createElement('div');container.className = 'tab-fallback';
    const logo = document.createElement('img');logo.src = fallback;logo.alt = '';logo.referrerPolicy = 'no-referrer';
    logo.addEventListener('error', () => {if (logo.getAttribute('src') !== '/assets/atma.png') logo.src = '/assets/atma.png';});
    container.append(logo);entry.preview.replaceChildren(container);entry.fallback = fallback;
   }
-  const name = tab.title || tab.siteName || (tab.url ? new URL(tab.url).hostname : 'Новая вкладка');
-  entry.title.textContent = name;if (tab.url) entry.title.dataset.noTranslate = '';else delete entry.title.dataset.noTranslate;
-  entry.subtitle.textContent = tab.error ? 'Не удалось открыть' : tab.url ? new URL(tab.url).hostname : 'Пустая вкладка';
+  const name = isPrivate ? 'Инкогнито' : tab.title || tab.siteName || (tab.url ? new URL(tab.url).hostname : 'Новая вкладка');
+  entry.title.textContent = name;if (tab.url && !isPrivate) entry.title.dataset.noTranslate = '';else delete entry.title.dataset.noTranslate;
+  entry.subtitle.textContent = isPrivate ? 'Приватная вкладка' : tab.error ? 'Не удалось открыть' : tab.url ? new URL(tab.url).hostname : 'Пустая вкладка';
   entry.open.setAttribute('aria-label', 'Открыть вкладку: ' + name);
   entry.open.setAttribute('aria-current', String(tab.id === activeTabId));
   entry.close.setAttribute('aria-label', 'Закрыть вкладку: ' + name);
   entry.card.classList.toggle('selected', tab.id === activeTabId);
+  entry.card.classList.toggle('private-tab', isPrivate);
   if (view.grid.children[index] !== entry.card) view.grid.insertBefore(entry.card, view.grid.children[index] || null);
  });
  if (!tabs.length) {
@@ -62,6 +65,7 @@ export function renderTabsOverview(root, options) {
  loadPreviews().then(({previews}) => {
   if (!view.grid.isConnected || view.request !== request) return;
   for (const [id, entry] of view.cards) {
+   if(entry.privateBrowsing)continue;
    const src = previews[id];
    if (!src || entry.url !== urls.get(id) || src === entry.src || src === entry.pending) continue;
    const image = new Image();image.className = 'tab-shot';image.alt = '';entry.pending = src;

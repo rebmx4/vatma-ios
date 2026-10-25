@@ -13,6 +13,9 @@ export function renderLegalInfo(container,{kind='privacy',language='ru',onOpen}=
   const heading=add('h3',section.title);heading.style.marginTop='24px';
   for(const paragraph of section.paragraphs)add('p',paragraph);
  }
+ if(onOpen&&kind==='privacy'){
+  const source=add('button',locale==='en'?'View source code':'Проверить исходный код');source.className='setting-row';source.addEventListener('click',()=>onOpen('https://github.com/rebmx4/vatma-ios'));
+ }
  if(onOpen){
   const button=add('button',locale==='en'?'Open public page':'Открыть публичную страницу');
   button.className='setting-row';

@@ -50,3 +50,11 @@ body[data-web-app=true] #go-home{grid-column:4;justify-self:end}
 body[data-runtime=ios][data-mode=browse] .toast{bottom:8px}
 
 .shortcut-icon-picker{border:0;padding:0;margin:4px 0 22px;min-width:0}.shortcut-icon-picker legend{font-size:14px;font-weight:600;margin-bottom:12px}.shortcut-icon-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.shortcut-icon-option{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:10px 3px;border:2px solid transparent;border-radius:14px;cursor:pointer;font-size:11px;line-height:1.2;text-align:center}.shortcut-icon-option:has(input:checked){border-color:var(--appearance-accent,#bdab70);background:#88888814}.shortcut-icon-option:focus-within{outline:2px solid var(--appearance-accent,#bdab70);outline-offset:2px}.shortcut-icon-option input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}.shortcut-icon-art{display:block;flex:none;width:44px;height:44px;border-radius:11px;overflow:hidden;pointer-events:none}.shortcut-icon-art svg,.shortcut-icon-art img{display:block;width:100%;height:100%;object-fit:contain}
+
+/* A recognisable Home control in the compact saved-site toolbar. */
+.home-brand{display:block;width:36px;height:36px}.home-brand>svg{display:block;width:36px;height:36px}.home-glyph{display:none}
+body[data-web-app=true] #go-home{background:transparent;box-shadow:none;color:var(--ink,#f5f8fa)}
+body[data-web-app=true] .home-brand{display:none}body[data-web-app=true] .home-glyph{display:grid;place-items:center;width:36px;height:36px}body[data-web-app=true] .home-glyph svg{width:25px;height:25px}
+
+/* Desktop artwork behaves like a launcher button, never a selectable photo. */
+.home,.app-item,.app-item *{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}.app-item img{-webkit-user-drag:none;pointer-events:none}

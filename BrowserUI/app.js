@@ -23,6 +23,7 @@ const paths = {
   search: '<circle cx="10.7" cy="10.7" r="6.7"/><path d="m16 16 4.8 4.8"/>',
   left: '<path d="m14.5 5-7 7 7 7"/>', right: '<path d="m9.5 5 7 7-7 7"/>',
   up: '<path d="m7 14 5-5 5 5"/>', down: '<path d="m7 10 5 5 5-5"/>',
+  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<circle cx="12" cy="12" r="12" fill="#e3e7e9" stroke="none"/><path d="M6 12h12"/>',
@@ -38,6 +39,7 @@ const paths = {
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18m0-18c5 5 5 13 0 18"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.4"/>',
   play: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="m10 9 5 3-5 3Z" fill="currentColor"/>',
+  incognito: '<path d="M3 10h18M6 10l2-7h8l2 7M5 20c1-5 13-5 14 0"/><circle cx="8" cy="14" r="2.5"/><circle cx="16" cy="14" r="2.5"/><path d="M10.5 14h3"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
@@ -58,7 +60,7 @@ const DEFAULT_APPS = [
   { id: 'wb', name: 'Wildberries', url: 'https://www.wildberries.ru/', color: '#b414a0' },
   { id: 'wiki', name: 'Википедия', url: 'https://ru.wikipedia.org/', color: '#fff' },
 ];
-const SYSTEM_APPS=[{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-files',type:'system',action:'files',name:'Файлы',color:'#fff'},{id:'atma-home',type:'system',action:'home',name:'ATMA',color:'#fff'}];
+const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#f2f3f5'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-files',type:'system',action:'files',name:'Файлы',color:'#fff'},{id:'atma-home',type:'system',action:'home',name:'ATMA',color:'#fff'}];
 let apps;
 try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')) || DEFAULT_APPS; } catch { apps = DEFAULT_APPS; }
 for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.id)){
@@ -68,6 +70,7 @@ let state, panel = null, editing = false, busy = false, toastTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
+const DESKTOP_HOLD_MS = 550;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
@@ -92,7 +95,7 @@ function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
-  if($('go-home').dataset.appIcon!==appearance.icon){$('go-home').innerHTML=appIconArtwork(appearance.icon,brandLogoSource);$('go-home').dataset.appIcon=appearance.icon;}
+  if($('go-home').dataset.appIcon!==appearance.icon){$('go-home').innerHTML='<span class="home-brand">'+appIconArtwork(appearance.icon,brandLogoSource)+'</span><span class="home-glyph">'+icon('home')+'</span>'; $('go-home').dataset.appIcon=appearance.icon;}
   if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;notify(error.message);});}
 }
 async function changeAppearance(patch) {
@@ -155,6 +158,7 @@ function brand(app) {
   if(app.type!=='system'){const customArtwork=shortcutIconArtwork(app.iconStyle);if(customArtwork)return customArtwork;}
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
+    'atma-incognito':'<g fill="none" stroke="#242831" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 25h42M17 25l5-15h18l5 15M14 54c2-13 32-13 34 0"/><circle cx="23" cy="35" r="6"/><circle cx="39" cy="35" r="6"/><path d="M29 35h4"/></g>',
     'atma-files':'<path d="M8 20a4 4 0 0 1 4-4h12l5 5h21a4 4 0 0 1 4 4v23a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4Z" fill="#79c3ff"/><rect x="8" y="24" width="46" height="28" rx="4" fill="#0787f8"/><path d="M12 24h38" stroke="#409fff" stroke-width="1.5"/>',
     vk: '<path fill="white" d="M10 20h7c1 10 5 14 7 14V20h7v8c3 0 8-4 9-8h7c-2 7-8 10-9 11 4 1 9 5 11 11h-8c-2-5-6-8-10-8v8h-4C16 42 10 35 10 20Z"/>',
     dzen: '<path fill="white" d="M31 10c1 16 6 21 21 22-15 1-20 6-21 22-1-16-6-21-21-22 15-1 20-6 21-22Z"/>',
@@ -255,7 +259,8 @@ async function saveCurrentSite() {
 function updateTabSurface(){
   const tab=state?.tabs?.find(item=>item.id===state.activeTabId);
   const blank=state?.mode==='home'&&tab&&!tab.url&&desktopTabId!==tab.id;
-  document.body.dataset.surface=blank?'blank':state?.mode==='browse'?'site':'home';
+  const privateStart=state?.mode==='home'&&state.privateBrowsing===true&&tab&&!tab.url;
+  document.body.dataset.surface=privateStart?'incognito':blank?'blank':state?.mode==='browse'?'site':'home';
   $('address').placeholder=blank?'Поиск или адрес сайта':'Приложения, Google или адрес сайта';
 }
 function chooseDesktopSurface(tabId){
@@ -273,11 +278,13 @@ function consume(next) {
   if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
   document.body.dataset.mode = next.mode;
   document.body.dataset.webApp=String(Boolean(next.webApp));
+  document.body.dataset.privateBrowsing=String(next.privateBrowsing===true);
+  $('search-symbol').innerHTML=icon(next.privateBrowsing===true?'incognito':'search');
   document.body.dataset.controlsCollapsed=String(Boolean(next.controlsCollapsed));
   if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
   updateTabSurface();
-  $('go-back').disabled = next.mode !== 'browse';
-  $('go-forward').disabled = next.mode !== 'browse';
+  $('go-back').disabled = next.mode !== 'browse' || next.canGoBack !== true;
+  $('go-forward').disabled = next.mode !== 'browse' || next.canGoForward !== true;
   $('refresh').disabled = next.mode !== 'browse';
   if(changedTab)$('address').value=next.mode==='browse'?(next.url||''):'';
   else if (document.activeElement !== $('address') && next.mode === 'browse') $('address').value = next.url === `${location.origin}/probe` ? '' : (next.url || '');
@@ -294,6 +301,14 @@ function consume(next) {
 async function newBrowserTab(){
  setEditing(false);lockVault();desktopPage=0;
  try{await action('tabs/new');chooseDesktopSurface(null);$('address').value='';$('address').focus({preventScroll:true});}catch{}
+}
+async function newIncognitoTab(){
+ setEditing(false);lockVault();
+ try{
+  await action('tabs/new',{privateBrowsing:true});
+  if(!state?.privateBrowsing)throw new Error('Инкогнито недоступно в этом режиме предпросмотра');
+  chooseDesktopSurface(null);$('incognito-address').value='';$('incognito-address').focus();
+ }catch(error){notify(error.message);}
 }
 async function selectBrowserTab(tabId){
  try{await action('tabs/select',{tabId});chooseDesktopSurface(null);if(!state.url)$('address').value='';}catch{}
@@ -347,8 +362,8 @@ function createItem(app, parentId = null, index = 0, scope='public') {
     paintShortcutIcon(tile,app,scope);
   }
   tile.addEventListener('click', () => { if (Date.now() >= suppressClickUntil) activate(app,scope); });
-  tile.addEventListener('pointerdown', event => beginGesture(event, app, parentId,scope));
-  tile.addEventListener('contextmenu', event => event.preventDefault());
+  item.addEventListener('pointerdown', event => {if(event.target.closest?.('.app-remove'))return;beginGesture(event, app, parentId,scope);});
+  item.addEventListener('contextmenu', event => event.preventDefault());
   tile.addEventListener('dragstart', event => event.preventDefault());
   const label = document.createElement('span'); label.className = 'app-name'; label.textContent = app.name;if(app.type!=='system')label.dataset.noTranslate='';
   item.append(tile, label);
@@ -361,7 +376,7 @@ function createItem(app, parentId = null, index = 0, scope='public') {
 }
 function activate(app,scope='public') {
   if (isFolder(app)) openFolder(app.id,scope);
-  else if(app.type==='system'){setEditing(false);if(app.action==='home')$('go-home').click();else setPanel(app.action);}
+  else if(app.type==='system'){setEditing(false);if(app.action==='home')$('go-home').click();else if(app.action==='incognito')newIncognitoTab();else setPanel(app.action);}
   else if (editing) openAppEditor(app,scope);
   else launchShortcut(app,scope);
 }
@@ -436,7 +451,7 @@ function beginGesture(event, app, parentId,scope='public') {
     if (gesture !== current) return;
     current.held = true; capturePointer(current); setEditing(true);
     navigator.vibrate?.(12);
-  }, 550);
+  }, DESKTOP_HOLD_MS);
 }
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
 function clearHover() {
@@ -591,7 +606,7 @@ async function launch(url,scope='public',options={}) {
 }
 async function launchShortcut(app,scope='public') {
   if(scope==='private'&&!vaultKey)return;
-  try{await launch(app.url,scope,{webApp:true});}catch(error){notify(error.message);}
+  try{if(state?.privateBrowsing)await action('tabs/new');await launch(app.url,scope,{webApp:true});}catch(error){notify(error.message);}
 }
 async function setPanel(name, options = {}) {
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
@@ -861,25 +876,34 @@ $('address-form').addEventListener('submit', event => {
   const scope=currentScope(),matching=document.body.dataset.surface==='home'?flattenApps(poolFor(scope)).find(app=>[app.name,appLabel(app)].some(name=>name.toLocaleLowerCase()===value.toLocaleLowerCase())):null;
   if(matching)activate(matching,scope);else launch(value,scope);
 });
+$('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
+$('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
 $('settings').addEventListener('click', () => setPanel('settings'));
 $('pin-site').addEventListener('click',saveCurrentSite);
 $('tabs-button').addEventListener('click',()=>{setEditing(false);lockVault();if(state?.tabs?.length)setPanel('tabs');else newBrowserTab();});
 $('new-tab-button').addEventListener('click',newBrowserTab);
 $('edit-apps').addEventListener('click', () => setEditing(!editing));
-let emptyHomeTap=null;
+let emptyHomeTap=null,emptyHomeHold=null;
 const emptyHomeTarget=target=>target instanceof Element&&target.closest('.home')&&!target.closest('.app-item,button,input,select,a,label');
+const cancelEmptyHomeHold=()=>{clearTimeout(emptyHomeHold);emptyHomeHold=null;emptyHomeTap=null;};
 document.querySelector('.home').addEventListener('pointerdown',event=>{
-  emptyHomeTap=event.isPrimary&&event.button===0&&editing&&!panel&&!gesture&&emptyHomeTarget(event.target)?{id:event.pointerId,x:event.clientX,y:event.clientY}:null;
+  cancelEmptyHomeHold();
+  if(!event.isPrimary||event.button!==0||panel||gesture||!emptyHomeTarget(event.target))return;
+  const press=emptyHomeTap={id:event.pointerId,x:event.clientX,y:event.clientY,wasEditing:editing,held:false};
+  if(!editing)emptyHomeHold=setTimeout(()=>{
+    if(emptyHomeTap!==press||panel||gesture)return;
+    press.held=true;setEditing(true);suppressClickUntil=Date.now()+500;
+  },DESKTOP_HOLD_MS);
 });
 document.addEventListener('pointermove',event=>{
-  if(emptyHomeTap&&event.pointerId===emptyHomeTap.id&&Math.hypot(event.clientX-emptyHomeTap.x,event.clientY-emptyHomeTap.y)>7)emptyHomeTap=null;
+  if(emptyHomeTap&&event.pointerId===emptyHomeTap.id&&Math.hypot(event.clientX-emptyHomeTap.x,event.clientY-emptyHomeTap.y)>7)cancelEmptyHomeHold();
 });
 document.addEventListener('pointerup',event=>{
-  const tap=emptyHomeTap;emptyHomeTap=null;
-  if(tap&&event.pointerId===tap.id&&editing&&!panel&&!gesture&&emptyHomeTarget(event.target)&&Math.hypot(event.clientX-tap.x,event.clientY-tap.y)<=7)setEditing(false);
+  const tap=emptyHomeTap;cancelEmptyHomeHold();
+  if(tap&&event.pointerId===tap.id&&tap.wasEditing&&!tap.held&&editing&&!panel&&!gesture&&emptyHomeTarget(event.target)&&Math.hypot(event.clientX-tap.x,event.clientY-tap.y)<=7)setEditing(false);
 });
-document.addEventListener('pointercancel',()=>{emptyHomeTap=null;});
+document.addEventListener('pointercancel',cancelEmptyHomeHold);
 $('go-home').addEventListener('click', async () => { try {lockVault();desktopPage=0;await action('home');chooseDesktopSurface(state.activeTabId);$('address').value='';renderApps();showDesktopPage(0);} catch {} });
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));

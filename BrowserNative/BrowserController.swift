@@ -29,6 +29,7 @@ final class BrowserController: UIViewController {
     private var windowBottomConstraint: NSLayoutConstraint!
     var ui: WKWebView!
     var renderers: [String: WKWebView] = [:]
+    var historyObservations: [String: [NSKeyValueObservation]] = [:]
     var windowOpeners: [String: String] = [:]
     var mode = "home"
     var panel: String?
@@ -45,6 +46,7 @@ final class BrowserController: UIViewController {
     var webApp: Bool { mode == "browse" && model.active.webApp == true }
     var controlsCollapsed: Bool { false }
     var currentFooterHeight: CGFloat {
+        if isPrivateStart { return 64 + view.safeAreaInsets.bottom }
         if webApp { return 52 + view.safeAreaInsets.bottom }
         return Self.footerHeight
     }
@@ -148,6 +150,7 @@ final class BrowserController: UIViewController {
 
     func reportPageDiagnostics(_ stage: String, webView: WKWebView? = nil) {
         guard LocalUIServer.diagnosticsEnabled, let page = webView ?? ui else { return }
+        if isPrivateRenderer(page) { return }
         LocalUIServer.diagnostic("\(stage): loading=\(page.isLoading), host=\(page.url?.host ?? "nil"), port=\(page.url?.port ?? 0)")
         page.evaluateJavaScript("JSON.stringify({ready:document.readyState,title:document.title,bodyChildren:document.body?.children.length||0,home:!!document.getElementById('go-home'),mode:document.body?.dataset.mode,heading:document.querySelector('h1')?.textContent?.slice(0,100),errors:window.__atmaStartupErrors||[]})") { result, error in
             if let error {
@@ -183,7 +186,7 @@ final class BrowserController: UIViewController {
         if let renderer = renderers[tab.id] { return renderer }
         // Keep WebKit's supplied window configuration, including its opener relationship.
         let config = configuration ?? WKWebViewConfiguration()
-        config.websiteDataStore = model.store(for: tab.profileId)
+        config.websiteDataStore = model.store(for: tab)
         // A popup must not share script handlers or mutable script lists with its opener.
         config.userContentController = WKUserContentController()
         config.allowsInlineMediaPlayback = true
@@ -201,6 +204,7 @@ final class BrowserController: UIViewController {
         media.register(renderer, tabID: tab.id)
         BrowserPageScripts.configure(renderer)
         renderers[tab.id] = renderer
+        observeHistory(renderer, tabID: tab.id)
         browserViewport.insertSubview(renderer, belowSubview: ui)
         return renderer
     }
@@ -243,8 +247,9 @@ final class BrowserController: UIViewController {
         changed()
     }
 
-    func newTab() {
-        let tab = BrowserTab(profileId: BrowserModel.actualProfile)
+    func newTab(privateBrowsing: Bool = false) {
+        var tab = BrowserTab(profileId: BrowserModel.actualProfile)
+        tab.privateBrowsing = privateBrowsing
         model.tabs.append(tab); model.activeTabId = tab.id; mode = "home"; panel = nil
         changed()
     }
@@ -255,6 +260,7 @@ final class BrowserController: UIViewController {
         windowOpeners = windowOpeners.filter { $0.value != id }
         removeRenderer(for: id)
         model.tabs.remove(at: index)
+        model.discardUnusedPrivateSession()
         if model.tabs.isEmpty { newTab() }
         else if model.activeTabId == id {
             let destination = opener.flatMap { candidate in model.tabs.first { $0.id == candidate }?.id }
@@ -264,7 +270,8 @@ final class BrowserController: UIViewController {
         changed()
     }
 
-    private func removeRenderer(for id: String) {
+    func removeRenderer(for id: String) {
+        historyObservations.removeValue(forKey: id)?.forEach { $0.invalidate() }
         invalidatePreview(for: id)
         if let renderer = renderers.removeValue(forKey: id) {
             media.unregister(renderer)
@@ -275,6 +282,7 @@ final class BrowserController: UIViewController {
     }
 
     func changed() {
+        if isViewLoaded { refreshNativeBackdrop() }
         model.save()
         view.setNeedsLayout()
         publish()
@@ -288,9 +296,11 @@ final class BrowserController: UIViewController {
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
                 "siteName": tab.siteName, "iconUrl": tab.iconUrl,
                 "width": frame.width, "height": frame.height, "footerHeight": currentFooterHeight,
-                "webApp": webApp, "controlsCollapsed": controlsCollapsed,
+                "webApp": webApp, "controlsCollapsed": controlsCollapsed, "privateBrowsing": tab.isPrivate,
+                "canGoBack": mode == "browse" && currentRenderer?.canGoBack == true,
+                "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
-                "capabilities": ["cookies": true, "downloads": true, "tabs": true,
+                "capabilities": ["incognito": true, "cookies": true, "downloads": true, "tabs": true,
                                  "persistentProfiles": false, "contentBlocking": false, "media": true,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,

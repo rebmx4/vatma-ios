@@ -12,6 +12,7 @@ extension BrowserController {
             address = try AddressResolver.validated(url.absoluteString).absoluteString
         } else { address = "about:blank" }
         var tab = BrowserTab(profileId: opener.profileId, url: address)
+        tab.privateBrowsing = opener.isPrivate
         tab.webApp = opener.webApp
         tab.appControlsCollapsed = opener.appControlsCollapsed
         model.tabs.append(tab)

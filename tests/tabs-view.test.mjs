@@ -55,3 +55,15 @@ test('late preview responses cannot restore a closed tab or a previous URL',asyn
  assert.equal(f.root.querySelectorAll('[data-tab-id]').length,1);
  assert.equal(f.root.querySelector('.tab-shot').src,'data:image/jpeg;base64,new');
 });
+
+test('private tab overview never fetches website artwork or displays page snapshots',async()=>{
+ const f=fixture();f.render({tabs:[{...f.options.tabs[0],privateBrowsing:true,iconUrl:'https://private.example/identifying.png'}]});await settle();
+ assert.equal(f.root.querySelectorAll('img').length,0);
+ assert.equal(f.root.querySelector('.tab-title').textContent,'Инкогнито');
+ assert.equal(f.root.querySelector('.tab-host').textContent,'Приватная вкладка');
+});
+test('a tab marked private discards a previously decoded ordinary preview',async()=>{
+ const f=fixture();f.render();await settle();assert.ok(f.root.querySelector('.tab-shot'));
+ f.render({tabs:[{...f.options.tabs[0],privateBrowsing:true}]});await settle();
+ assert.equal(f.root.querySelector('.tab-shot'),null);assert.equal(f.root.querySelectorAll('img').length,0);
+});

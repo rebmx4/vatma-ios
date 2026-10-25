@@ -46,11 +46,14 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             guard body["profileId"] == nil,
                   body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Device switching is not supported.") }
             try open(try string("url", body), webApp: body["webApp"] as? Bool)
-        case "home": view.endEditing(true); mode = "home"; panel = nil; changed()
+        case "home": returnHome()
         case "panel":
             guard body["panel"] == nil || body["panel"] is NSNull || body["panel"] is String else { throw BrowserFailure.invalid("Invalid panel.") }
             panel = body["panel"] as? String; changed()
-        case "tabs/new": newTab()
+        case "tabs/new":
+            guard body["privateBrowsing"] == nil || body["privateBrowsing"] is Bool else { throw BrowserFailure.invalid("Invalid private mode.") }
+            newTab(privateBrowsing: body["privateBrowsing"] as? Bool == true)
+        case "tabs/private/close": closePrivateTabs()
         case "tabs/select": try selectTab(try string("tabId", body))
         case "tabs/close": try closeTab(try string("tabId", body))
         case "preferences": try preferences(body)
@@ -87,7 +90,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "cookies", "cookies/delete":
             let profileId = model.active.profileId
             let profile = model.profile(profileId) ?? ["id": profileId, "name": profileId]
-            let store = model.store(for: profileId)
+            let store = model.store(for: model.active)
             if action == "cookies" { CookieService.list(store: store, profile: profile) { reply($0, nil) } }
             else {
                 let all = body["all"] as? Bool == true
@@ -132,7 +135,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         captureCurrentPreview { [weak self] in
             guard let self else { reply(nil, "Browser closed."); return }
             let result = self.model.tabs.reduce(into: [String: String]()) { result, tab in
-                guard let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
+                guard !tab.isPrivate, let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
                       let renderer = self.renderers[tab.id], preview.renderer == ObjectIdentifier(renderer) else { return }
                 result[tab.id] = preview.source
             }

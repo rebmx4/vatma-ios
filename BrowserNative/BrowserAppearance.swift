@@ -15,6 +15,7 @@ enum BrowserAppearancePolicy {
 
 extension BrowserController {
     var nativeStatusBarStyle: UIStatusBarStyle {
+        if isPrivateStart { return .darkContent }
         switch nativeTheme {
         case "dark": return .lightContent
         case "light": return .darkContent
@@ -28,17 +29,25 @@ extension BrowserController {
         }
         nativeTheme = theme
         overrideUserInterfaceStyle = theme == "dark" ? .dark : theme == "light" ? .light : .unspecified
-        let background = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 16.0 / 255.0, green: 16.0 / 255.0, blue: 16.0 / 255.0, alpha: 1)
-                : UIColor(red: 241.0 / 255.0, green: 240.0 / 255.0, blue: 237.0 / 255.0, alpha: 1)
+        refreshNativeBackdrop()
+        return ["theme": theme]
+    }
+
+    func refreshNativeBackdrop() {
+        let background: UIColor
+        if isPrivateStart { background = .white }
+        else {
+            background = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(red: 16.0 / 255.0, green: 16.0 / 255.0, blue: 16.0 / 255.0, alpha: 1)
+                    : UIColor(red: 241.0 / 255.0, green: 240.0 / 255.0, blue: 237.0 / 255.0, alpha: 1)
+            }
         }
         view.backgroundColor = background
-        ui.backgroundColor = background
-        ui.scrollView.backgroundColor = background
+        ui?.backgroundColor = background
+        ui?.scrollView.backgroundColor = background
         view.window?.backgroundColor = background
         setNeedsStatusBarAppearanceUpdate()
-        return ["theme": theme]
     }
 
     func setApplicationIcon(_ body: [String: Any], reply: @escaping (Any?, String?) -> Void) throws {

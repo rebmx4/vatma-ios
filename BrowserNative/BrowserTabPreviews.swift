@@ -27,7 +27,7 @@ extension BrowserController {
 
     func captureCurrentPreview(completion: @escaping () -> Void) {
         let id = model.activeTabId
-        guard mode == "browse", panel == nil, let page = currentRenderer, !page.isHidden,
+        guard !model.active.isPrivate, mode == "browse", panel == nil, let page = currentRenderer, !page.isHidden,
               page.window != nil, page.bounds.width > 0, page.bounds.height > 0, let url = page.url else {
             completion(); return
         }

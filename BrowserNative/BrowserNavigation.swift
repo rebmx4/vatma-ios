@@ -129,7 +129,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             if failure.domain != NSURLErrorDomain || failure.code != NSURLErrorCancelled { nativeError = error.localizedDescription }
             return
         }
-        LocalUIServer.diagnostic("Site navigation failed: \(failure.domain) \(failure.code), host=\(webView.url?.host ?? "nil")")
+        if !isPrivateRenderer(webView) {
+            LocalUIServer.diagnostic("Site navigation failed: \(failure.domain) \(failure.code), host=\(webView.url?.host ?? "nil")")
+        }
         let key = ObjectIdentifier(webView)
         let navigationID = navigation.map { String(describing: ObjectIdentifier($0)) }
         let failingURL = (failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
@@ -160,7 +162,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
         let trusted = SiteTrust.evaluate(trust)
-        LocalUIServer.diagnostic("Site TLS trust: host=\(challenge.protectionSpace.host), trusted=\(trusted)")
+        if !isPrivateRenderer(webView) {
+            LocalUIServer.diagnostic("Site TLS trust: host=\(challenge.protectionSpace.host), trusted=\(trusted)")
+        }
         guard trusted else { completionHandler(.cancelAuthenticationChallenge, nil); return }
         completionHandler(.useCredential, URLCredential(trust: trust))
     }

@@ -29,3 +29,37 @@ test('new blank tabs stay blank after the initial desktop is chosen',()=>{
  page.chooseDesktopSurface('new');page.consume(payload('new'));
  assert.equal(page.document.body.dataset.surface,'home');
 });
+
+test('a loaded first page keeps both history arrows disabled',()=>{
+ const page=browser();page.consume({...payload('first'),mode:'browse',url:'https://example.test/a',canGoBack:false,canGoForward:false});
+ assert.equal(page.$('go-back').disabled,true);assert.equal(page.$('go-forward').disabled,true);
+});
+test('history arrows follow native navigation and a return to an earlier page',()=>{
+ const page=browser();const state={...payload('active'),mode:'browse',url:'https://example.test/b'};
+ page.consume({...state,canGoBack:true,canGoForward:false});
+ assert.equal(page.$('go-back').disabled,false);assert.equal(page.$('go-forward').disabled,true);
+ page.consume({...state,url:'https://example.test/a',canGoBack:false,canGoForward:true});
+ assert.equal(page.$('go-back').disabled,true);assert.equal(page.$('go-forward').disabled,false);
+ page.consume({...state,url:'https://example.test/c',canGoBack:true,canGoForward:false});
+ assert.equal(page.$('go-forward').disabled,true);
+});
+test('switching tabs and returning home cannot reuse another tabs history availability',()=>{
+ const page=browser();page.consume({...payload('older'),mode:'browse',canGoBack:true,canGoForward:true});
+ page.consume({...payload('fresh'),mode:'browse',canGoBack:false,canGoForward:false});
+ assert.equal(page.$('go-back').disabled,true);assert.equal(page.$('go-forward').disabled,true);
+ page.consume({...payload('older'),canGoBack:true,canGoForward:true});
+ assert.equal(page.$('go-back').disabled,true);assert.equal(page.$('go-forward').disabled,true);
+});
+
+test('an incognito blank tab opens its own start surface rather than the saved desktop',()=>{
+ const page=browser();page.consume({...payload('private'),privateBrowsing:true});
+ assert.equal(page.document.body.dataset.surface,'incognito');
+ assert.equal(page.document.body.dataset.privateBrowsing,'true');
+});
+test('private mode remains marked on a website and clears when switching to an ordinary tab',()=>{
+ const page=browser();page.consume({...payload('regular'),privateBrowsing:false});
+ page.consume({...payload('private'),mode:'browse',url:'https://example.test/',privateBrowsing:true});
+ assert.equal(page.document.body.dataset.surface,'site');assert.equal(page.document.body.dataset.privateBrowsing,'true');
+ page.consume({...payload('regular'),privateBrowsing:false});
+ assert.equal(page.document.body.dataset.surface,'home');assert.equal(page.document.body.dataset.privateBrowsing,'false');
+});

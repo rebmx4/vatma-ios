@@ -1,4 +1,7 @@
 export default {
+ 'Инкогнито':'Incognito','Приватная вкладка':'Private tab','Поиск или адрес в инкогнито':'Search or address in Incognito','Перейти в инкогнито':'Go in Incognito','Завершить сеанс инкогнито':'End Incognito session',
+ 'Инкогнито недоступно в этом режиме предпросмотра':'Incognito is unavailable in this preview',
+ 'Вкладки и данные сайтов не сохраняются после завершения приватного сеанса. Сайты всё равно видят ваше соединение.':'Tabs and website data do not remain after the private session ends. Websites still see your connection.',
  'Иконка ярлыка':'Shortcut icon','Иконка сайта':'Website icon','Глобус':'Globe','Чат':'Chat','Покупки':'Shopping','Работа':'Work','Сердце':'Heart','Звезда':'Star',
  'Политика конфиденциальности':'Privacy Policy','Поддержка':'Support','Не удалось открыть страницу':'Could not open the page',
  'Настройки':'Settings','Файлы':'Files','‹ Файлы':'‹ Files','Рабочий стол':'Home','Браузер':'Browser','Основная':'Default','Размер текста интерфейса':'Interface text size',

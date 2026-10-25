@@ -44,17 +44,10 @@ final class BrowserPrivacyTests: XCTestCase {
     }
 
     func testPrivateWebsiteRendererNeverUsesTheOrdinaryPersistentStore() throws {
-        let (defaults, suite) = try preferences()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let model = BrowserModel(defaults: defaults)
-        let controller = BrowserController(model: model)
-        let regular = controller.renderer(for: model.active)
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let controller = fixture.controller
+        let regular = controller.renderer(for: controller.model.active)
         let hidden = controller.renderer(for: try privateTab())
-        defer {
-            for page in controller.renderers.values {
-                controller.media.unregister(page); page.stopLoading(); page.removeFromSuperview()
-            }
-        }
         XCTAssertTrue(regular.configuration.websiteDataStore.isPersistent)
         XCTAssertFalse(hidden.configuration.websiteDataStore.isPersistent)
         XCTAssertFalse(regular.configuration.websiteDataStore === hidden.configuration.websiteDataStore)

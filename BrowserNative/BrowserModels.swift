@@ -12,6 +12,8 @@ struct BrowserTab: Codable {
     var error: String?
     var webApp: Bool?
     var appControlsCollapsed: Bool?
+    var privateBrowsing: Bool?
+    var isPrivate: Bool { privateBrowsing == true }
 
     mutating func finishNavigationForDownload() {
         loading = false
@@ -20,7 +22,7 @@ struct BrowserTab: Codable {
 
     var json: [String: Any] {
         ["id": id, "profileId": profileId, "url": url, "title": title,
-         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull(), "webApp": webApp ?? false]
+         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull(), "webApp": webApp ?? false, "privateBrowsing": isPrivate]
     }
 }
 
@@ -44,6 +46,7 @@ final class BrowserModel {
     var preferences: BrowserPreferences
     let profiles: [[String: Any]]
     private var stores: [String: WKWebsiteDataStore] = [:]
+    private var privateStore: WKWebsiteDataStore?
     private let defaults: UserDefaults
     private let sessionKey = "atma.native.session.v1"
 
@@ -55,14 +58,14 @@ final class BrowserModel {
         if let data = defaults.data(forKey: sessionKey), let saved = try? JSONDecoder().decode(BrowserSession.self, from: data),
            !saved.tabs.isEmpty {
             let ids = Set([Self.actualProfile])
-            let restored = saved.tabs.map { row in
+            let restored = saved.tabs.filter { !$0.isPrivate }.map { row in
                 var tab = row
                 if !ids.contains(tab.profileId) { tab.profileId = Self.actualProfile }
                 tab.loading = false; tab.error = nil
                 return tab
             }
-            tabs = restored
-            activeTabId = restored.contains(where: { $0.id == saved.activeTabId }) ? saved.activeTabId : restored[0].id
+            tabs = restored.isEmpty ? [first] : restored
+            activeTabId = tabs.contains(where: { $0.id == saved.activeTabId }) ? saved.activeTabId : tabs[0].id
             preferences = saved.preferences
             if !AddressResolver.engines.contains(preferences.searchEngine) { preferences.searchEngine = "google" }
             if !["ru-RU", "en-US"].contains(preferences.locale) { preferences.locale = "ru-RU" }
@@ -76,9 +79,24 @@ final class BrowserModel {
     var active: BrowserTab { tabs[activeIndex] }
     func profile(_ id: String) -> [String: Any]? { profiles.first { $0["id"] as? String == id } }
     func save() {
-        if let data = try? JSONEncoder().encode(BrowserSession(tabs: tabs, activeTabId: activeTabId, preferences: preferences)) {
+        let ordinary = tabs.filter { !$0.isPrivate }
+        let retained = ordinary.isEmpty ? [BrowserTab(profileId: Self.actualProfile)] : ordinary
+        let retainedActive = retained.contains(where: { $0.id == activeTabId }) ? activeTabId : retained[0].id
+        if let data = try? JSONEncoder().encode(BrowserSession(tabs: retained, activeTabId: retainedActive, preferences: preferences)) {
             defaults.set(data, forKey: sessionKey)
         }
+    }
+
+    func store(for tab: BrowserTab) -> WKWebsiteDataStore {
+        guard tab.isPrivate else { return store(for: tab.profileId) }
+        if let privateStore { return privateStore }
+        let created = WKWebsiteDataStore.nonPersistent()
+        privateStore = created
+        return created
+    }
+
+    func discardUnusedPrivateSession() {
+        if !tabs.contains(where: { $0.isPrivate }) { privateStore = nil }
     }
 
     func store(for _: String) -> WKWebsiteDataStore {

@@ -1,132 +1,43 @@
-# ATMA для iOS — standalone browser
+# ATMA Browser for iPhone and iPad
 
-Подготовлены собственный UIKit/WKWebView браузер, общий интерфейс `BrowserUI`
-и ручная сборка для iPhone/iPad. Приложение компилировалось на Mac и прошло 24
-unit tests; полный UI-сценарий iPhone/iPad ещё не завершён. Новый standalone build
-не загружен в TestFlight. Локальные проверки Windows не подтверждают поведение iOS.
+Native UIKit/WKWebView browser. App: **АТМА / ATMA**, bundle **ru.atma.browser**, App Store Connect **6826668990**, minimum iOS 17, iPhone and iPad.
 
-Приложение: **ATMA**, bundle ID `ru.atma.app`, Apple team `GR3WB4Z646`,
-App Store Connect ID `6774934498`, минимум iOS 17. Исходники приложения:
-`BrowserNative`, ресурсы: `BrowserUI` и `BrowserResources`. Папка
-`assets/certificates` сохраняется на месте для preview и попадает в bundle
-под именем `certificates`. Подключённых пакетов, стороннего browser SDK,
-расширений VPN/push и старой веб-обёртки нет.
+The current branch prepares a privacy/navigation update. Its native verification is recorded in [the implementation plan](docs/superpowers/plans/2026-10-25-privacy-navigation.md); unfinished checks are not a release claim.
 
-`BrowserUI` — единый источник интерфейса для нативного приложения и Windows
-preview. UIKit размещает отдельный site WKWebView над панелью ATMA. Сайты
-не получают privileged RPC собственного UI. Входы и cookies хранятся в
-постоянных отдельных WebKit data stores профилей; срок входа зависит также
-от сайта, его cookies и правил авторизации. Обход ограничений embedded OAuth
-не реализован. Синхронизация с ПК, произвольные фоновые push, полный перевод
-и полная подмена fingerprint пока отсутствуют. Язык и timezone JavaScript
-остаются системными; выбранный профиль меняет User-Agent и мобильный/настольный
-режим сайта, сохраняя реальный движок и размеры экрана.
+The previously delivered build **1.0.0 (1)** is traceable to tag **atma-browser-1.0.0-build1**, source **a879df5306cd232616e6c1a17fc123565e7197cc**, native run **40141124891** and signed/upload run **40142631653**. Store approval and availability are separate from build/upload success.
 
-Окна сайтов создаются из конфигурации, переданной WebKit: сохраняются связь
-с исходной вкладкой, её профиль и хранилище сессии, а исходный запрос загружает
-сам WebKit. Закрытие окна возвращает к исходной вкладке. Это исправление
-подготовлено для входов через Google/YouTube, но успешная авторизация провайдера
-на iPhone ещё не проверена. [Локальные проверки и ограничения](docs/google-profiles-preflight-2026-10-23.md).
+## Application boundaries
 
-Основная OS-иконка генерируется из `BrowserUI/assets/atma.png`. Десять
-альтернатив берутся из `atma-icons-a1.png` по тем же координатам, что и UI.
-Непрозрачные RGB PNG для iPhone/iPad и 1024px marketing сохранены в
-`BrowserResources/Assets.xcassets`. Карта `a1-01` ... `a1-10` соответствует
-`AppIconA101` ... `AppIconA110`; реальные изменения выполняет UIKit с
-обработкой системной ошибки. UI также синхронизирует светлую/тёмную/системную
-тему с native status bar, сохраняя единственную настройку в UI localStorage.
+- Product sources: BrowserNative, BrowserUI, BrowserResources and assets/certificates. The standalone app does not include the legacy astrology application.
+- The bundled interface is served only on loopback. Website WKWebViews do not receive the privileged UI bridge.
+- Ordinary tabs and saved website shortcuts use the current device and one persistent website session. Ordinary saved sign-ins remain ordinary when leaving Incognito.
+- Incognito has its own desktop icon and white search start screen. Its website data store is nonpersistent; private tabs are excluded from saved-session restoration. Closing all private tabs discards that temporary session. Deliberately saved files and shortcuts remain.
+- Private tab previews do not fetch website artwork or reveal page snapshots. The PIN page separately encrypts selected shortcut records and is not Incognito.
+- Camera and microphone are requested by iOS when needed by an open site. Uploads and external mail links remain available. Private browsing does not hide IP addresses or signed-in identities from websites.
+- No developer analytics, advertising SDK, payment SDK, notification backend or browser account is included. Website connections, searches and icon fetches go to the relevant websites; their privacy policies apply.
+- Device-model switching and content blocking remain absent. Any future reintroduction requires an accurately described, normally reviewed update.
+- Website notifications and unread badges are not implemented. A proposed counter-only integration must first establish authorized access without message content.
 
-Проверка HTTPS сначала использует обычное доверие Apple. Лишь после отказа
-добавляется закреплённый RSA-корень из bundle с проверкой PEM/DER SHA256,
-с сохранением hostname/SSL policy, срока и системных anchors. Сертификат
-обновляется пересборкой подписанного приложения. Insecure TLS bypass отсутствует.
-ATS разрешает произвольный HTTP только web content и loopback UI: это браузер,
-а не список заранее ограниченных доменов. Для App Store потребуется объяснить
-эту web-content exception. Камера/микрофон запрашиваются системой только при
-соответствующем запросе открытого сайта, с описаниями RU/EN.
+## Local verification on Windows
 
-## Локальные проверки на Windows
+Use D: for the checkout, temporary files, caches, reports and all generated artifacts. Set TEMP/TMP to D:/tmp, npm cache to D:/npm-cache and Python cache to D:/caches/python. Existing tools are sufficient; no runtime packages are required.
 
-Собственные плеер и YouTube-адаптер: [реализация и проверенный объём](docs/media-player-verification-2026-10-23.md).
-Нативные PiP/фоновый звук подготовлены; реальная проверка iPhone пока не выполнена.
+Run JavaScript tests with Node’s test runner over tests/*.test.mjs. Run Python checks with:
 
-Все записи, TMP/cache и результаты размещать на D:. Новые инструменты не нужны:
-валидатор и тесты используют Python stdlib. JSON-синтаксис `project.yml` и
-`codemagic.yaml` совместим с YAML; это позволяет разбирать оба конфига без
-установки YAML-библиотеки.
+    python -B -m unittest discover -s tests -v
+    python -B release/validate.py --report out/source-validation.json
 
-```powershell
-$env:TEMP='D:\tmp'
-$env:TMP='D:\tmp'
-$env:PYTHONDONTWRITEBYTECODE='1'
-$env:PYTHONPYCACHEPREFIX='D:\caches\python'
-python -B -m unittest discover -s tests -v
-python -B release/validate.py --report out/source-validation.json
-```
+Static validation is not Swift compilation or an iPhone behavior test. Camera/microphone hardware and actual social-account sign-in also require a real device check.
 
-Проверяются active inputs, идентификаторы/устройства, ручные CI workflows,
-реальные certificate pins, generated icons, JSON/plist/Python syntax и
-пакетные проверки на тестовых IPA fixtures. Это не компиляция Swift и не UI test.
-Для сознательной пересборки изображений при уже установленном Pillow:
-`python -B release/icons.py`. Установка Pillow локальным workflow не выполняется.
+## Reproducing a tested build
 
-## Ручные workflows GitHub Actions
+Manual GitHub Actions workflows use standard macOS runners and the pinned Xcode/tool configuration in .github/workflows and release/ci.sh. They do not use paid Codemagic compute.
 
-Основная площадка сборки — [GitHub Actions](https://github.com/rebmx4/vatma-ios/actions).
-Репозиторий уже публичный. Выполнение на стандартном macos-26 runner бесплатно по
-[правилам GitHub](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
-Хранение artifacts имеет отдельную квоту; результаты сохраняются только на один день.
-Платные larger runners и автоматические push/PR/schedule triggers не используются.
+1. Push a source commit and dispatch **ATMA 1 - iPhone + iPad check** with its exact SHA.
+2. Require passing unit/UI checks on both device families and the artifact’s matching verified-commit.txt.
+3. Dispatch **ATMA 2 - signed IPA and TestFlight upload** with that source SHA and successful native run ID. Upload is an explicit workflow input.
+4. Verify the signed IPA’s identity, UI resources, signature and Apple processing status. App Review submission and public release remain separate actions.
 
-1. [ATMA 1 - iPhone + iPad check](https://github.com/rebmx4/vatma-ios/actions/workflows/atma-ios-check.yml).
-   Нажать Run workflow после отдельной команды владельца на один запуск.
-   Поле revision по умолчанию — atma-browser-testflight; можно указать exact SHA.
-   Workflow вызывает общий release/ci.sh prepare/smoke: статические проверки,
-   XCTest на iPhone и UI smoke на iPad, включая клавиатуру, поворот, HTTPS и перезапуск.
-   В artifact atma-native-<run_id> сохраняются логи, xcresult, screenshots и, только
-   после успеха обоих устройств, verified-commit.txt с SHA исходников.
-2. [ATMA 2 - signed IPA and TestFlight upload](https://github.com/rebmx4/vatma-ios/actions/workflows/atma-testflight.yml).
-   Отдельный ручной запуск. Указать exact source SHA из verified-commit.txt и ID
-   успешного первого запуска. Проверяются его repository, workflow, event, status,
-   conclusion и совпадение SHA. SHA workflow на main может отличаться от SHA приложения.
-   Истёкший или неуспешный artifact не допускает подписанную сборку.
-   Поле upload_to_testflight по умолчанию выключено: после явного разрешения на
-   загрузку оно включает отправку проверенного IPA в App Store Connect. Отправка
-   на внешнее TestFlight beta review и App Store review автоматически не выполняется.
+Signing material stays in encrypted repository secrets, never source. The open-source codemagic-cli-tools package is used for signing/upload only. Automatic paid-build triggers are absent.
 
-Оба job ограничены 30 минутами, используют Xcode 26.4.1 через установленный alias
-Xcode_26.4.app и Python 3.12. GitHub публикует состав
-[образа macos-26](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
-Actions закреплены по полным SHA. DerivedData собирается в рабочем каталоге; отдельного
-платного cache нет. CM_BUILD_DIR используется как совместимый alias GITHUB_WORKSPACE
-для существующего общего скрипта, а не как обращение к сервису Codemagic.
-
-Для второго workflow нужны encrypted repository secrets:
-APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER,
-APP_STORE_CONNECT_PRIVATE_KEY, CERT_KEY_B64. Ключи нельзя коммитить в исходники.
-Open-source codemagic-cli-tools 0.70.0 устанавливаются в venv рабочего каталога
-только для подписи и общения с Apple; вычислительные мощности предоставляет GitHub.
-
-На main регистрируются только файлы workflows, чтобы GitHub показывал Run workflow.
-Приложение берётся из явно указанной revision. Старые источники main не смешиваются
-с standalone browser. codemagic.yaml сохранён как неавтоматический резерв; его запуск
-тоже требует отдельного разрешения и расходует платные минуты после квоты.
-
-Новый GitHub workflow ещё не подтверждён облачным выполнением. Предыдущий Mac-прогон
-скомпилировал приложение и прошёл 24 unit tests; UI остановился на устаревшем ожидании
-содержимого страницы. Подготовленная правка: docs/native-https-smoke-2026-10-24.md.
-Полное прохождение iPhone/iPad и доставка нового build в TestFlight пока не заявляются.
-
-## Архив и границы проверки
-
-Старые `ATMA/`, `release/`, `tests/` и прежние project/CI/README сначала
-сохранены и проверены по SHA256 в
-`D:\Backups\atma-ios-before-standalone-20261023\legacy-project.zip`.
-Исходные каталоги дополнительно перенесены в `legacy-tree` рядом с архивом,
-вне активного проекта. `.native`, `.git`, исходный `vatma-ios` и `D:\browser`
-не изменялись; они не являются inputs нового Xcode project или workflow.
-
-Нужны macOS compile/XCTest, iPhone/iPad UI smoke и отдельная проверка устройства:
-TLS, persistent sign-in, cookies, загрузки, OS icons и status bar. Сборка,
-отправка и статус TestFlight не подтверждены локальными static checks.
-Подробности: `docs/superpowers/plans/task-3-report.md` и отчёты Task 1/2.
+Privacy/support copy has one source: BrowserUI/assets/legal.js. The public support pages are generated by release/store_assets.py and published only when their statements match the delivered version.

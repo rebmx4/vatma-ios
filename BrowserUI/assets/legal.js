@@ -1,5 +1,5 @@
 export default {
-  "updated": "2026-10-24",
+  "updated": "2026-10-25",
   "developer": "Alexander Ryndin",
   "email": "a1238585@bk.ru",
   "baseUrl": "https://rebmx4.github.io/vatma-ios/",
@@ -11,7 +11,7 @@ export default {
       "privacyTitle": "Политика конфиденциальности",
       "supportTitle": "Поддержка",
       "guideTitle": "Как пользоваться ATMA",
-      "updatedLabel": "Обновлено: 24 октября 2026 года",
+      "updatedLabel": "Обновлено: 25 октября 2026 года",
       "free": "ATMA бесплатна. В приложении нет покупок, подписок ATMA и собственной рекламной сети.",
       "contact": "Разработчик: Александр Рындин. Связь: a1238585@bk.ru.",
       "privacy": [
@@ -26,6 +26,13 @@ export default {
           "paragraphs": [
             "Настройки, ярлыки сайтов, папки, вкладки, снимки вкладок и загруженные файлы хранятся в контейнере приложения на устройстве. Cookies и другое хранилище сайтов сохраняются средствами WebKit. Разработчик не получает эти данные через собственный сервер ATMA.",
             "В приложение не встроены сторонние SDK аналитики, рекламы или платежей. ATMA не продаёт историю посещений и не использует её для рекламного профиля."
+          ]
+        },
+        {
+          "title": "Инкогнито",
+          "paragraphs": [
+            "Режим инкогнито открывается отдельной иконкой человека в шляпе. Его вкладки используют временное хранилище сайтов, отдельное от обычных входов. Приватные вкладки не записываются в сохранённую сессию и не восстанавливаются после перезапуска. После закрытия всех вкладок инкогнито их временная сессия очищается.",
+            "Снимки приватных страниц не показываются в обзоре вкладок. Файлы и ярлыки, которые вы специально сохраняете, остаются на устройстве. Инкогнито не скрывает IP-адрес от сайта и не делает вход в ваш аккаунт анонимным."
           ]
         },
         {
@@ -64,6 +71,13 @@ export default {
           "title": "Изменения политики",
           "paragraphs": [
             "При изменении обработки данных будет обновлена эта политика и её дата. По вопросам конфиденциальности обращайтесь к разработчику по указанному адресу."
+          ]
+        },
+        {
+          "title": "Как проверить наши заявления",
+          "paragraphs": [
+            "Исходный код ATMA и история изменений доступны в публичном репозитории github.com/rebmx4/vatma-ios. Номер проверенной версии, исходный commit и результаты сборки фиксируются в материалах выпуска. Это позволяет сопоставить заявленные возможности с исходниками; открытый код сам по себе не является независимым аудитом безопасности.",
+            "Уведомления сайтов пока не подключены. Если для них появится серверная обработка технических идентификаторов или ключей доступа, её условия будут отдельно раскрыты до включения функции."
           ]
         }
       ],
@@ -121,7 +135,7 @@ export default {
         {
           "title": "3. Освободите экран",
           "paragraphs": [
-            "Сохранённые сайты открываются с компактной нижней панелью. Строки выбора устройства нет. Кнопка ATMA возвращает на рабочий стол."
+            "Сохранённые сайты открываются с компактной нижней панелью. Домик справа возвращает на рабочий стол. Стрелки назад и вперёд доступны только при наличии соответствующей страницы в истории."
           ]
         },
         {
@@ -135,6 +149,12 @@ export default {
           "paragraphs": [
             "В настройках доступны светлая, тёмная и автоматическая тема, обои, размер текста и иконка приложения. Там же находятся политика конфиденциальности и поддержка."
           ]
+        },
+        {
+          "title": "6. Откройте инкогнито",
+          "paragraphs": [
+            "Нажмите иконку человека в шляпе на рабочем столе. На белом экране «Инкогнито» введите адрес или запрос. Кнопка «Завершить сеанс инкогнито» закрывает все приватные вкладки. Обычные ярлыки сохраняют свои обычные входы."
+          ]
         }
       ]
     },
@@ -145,7 +165,7 @@ export default {
       "privacyTitle": "Privacy Policy",
       "supportTitle": "Support",
       "guideTitle": "Getting started with ATMA",
-      "updatedLabel": "Updated: October 24, 2026",
+      "updatedLabel": "Updated: October 25, 2026",
       "free": "ATMA is free. There are no in-app purchases, ATMA subscriptions or ATMA advertising network.",
       "contact": "Developer: Alexander Ryndin. Contact: a1238585@bk.ru.",
       "privacy": [
@@ -160,6 +180,13 @@ export default {
           "paragraphs": [
             "Settings, website shortcuts, folders, tabs, tab snapshots and downloaded files stay in the app container on your device. WebKit stores cookies and other website data. The developer does not receive this data through an ATMA server.",
             "The app contains no third-party analytics, advertising or payment SDKs. ATMA does not sell your browsing history or use it to build an advertising profile."
+          ]
+        },
+        {
+          "title": "Incognito",
+          "paragraphs": [
+            "Open Incognito using the person-with-a-hat shortcut. Its tabs use a temporary website store, separate from ordinary sign-ins. Private tabs are excluded from the saved session and do not return after relaunch. Closing all Incognito tabs clears their temporary session.",
+            "Private page snapshots are not shown in the tab overview. Files and shortcuts you deliberately save remain on the device. Incognito does not hide your IP address from websites or make signing in to your account anonymous."
           ]
         },
         {
@@ -198,6 +225,13 @@ export default {
           "title": "Policy updates",
           "paragraphs": [
             "If data practices change, this policy and its date will be updated. Contact the developer at the address above with privacy questions."
+          ]
+        },
+        {
+          "title": "How to verify these statements",
+          "paragraphs": [
+            "ATMA source code and change history are public at github.com/rebmx4/vatma-ios. Release records identify the tested version, source commit and build results. This helps compare statements with source code; open source is not itself an independent security audit.",
+            "Website notifications are not connected yet. Any future server processing of technical identifiers or access tokens will be disclosed before that feature is enabled."
           ]
         }
       ],
@@ -255,7 +289,7 @@ export default {
         {
           "title": "3. Make room for the page",
           "paragraphs": [
-            "Saved websites open with a compact bottom toolbar. There is no device selector. The ATMA button returns to the home screen."
+            "Saved websites open with a compact bottom toolbar. The Home icon on the right returns to the desktop. Back and Forward become available only when the corresponding history entry exists."
           ]
         },
         {
@@ -268,6 +302,12 @@ export default {
           "title": "5. Choose your appearance",
           "paragraphs": [
             "Settings include light, dark and automatic themes, wallpaper, text size and app icons. You can also find the privacy policy and support there."
+          ]
+        },
+        {
+          "title": "6. Open Incognito",
+          "paragraphs": [
+            "Tap the person-with-a-hat shortcut on the desktop. Enter an address or search on the white Incognito screen. End Incognito session closes all private tabs. Ordinary shortcuts keep their ordinary sign-ins."
           ]
         }
       ]

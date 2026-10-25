@@ -12,9 +12,17 @@
   <link rel="stylesheet" href="/assets/cookies.css">
   <link rel="stylesheet" href="/assets/media.css">
   <script src="/app.js" type="module"></script>
+  <link rel="stylesheet" href="/incognito.css">
 </head>
 <body>
   <div class="wallpaper" aria-hidden="true"></div>
+  <main class="incognito-start" aria-label="Инкогнито">
+    <div class="incognito-card"><h1>Инкогнито</h1>
+      <form id="incognito-form" role="search"><input id="incognito-address" type="text" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес в инкогнито" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit" aria-label="Перейти в инкогнито">→</button></form>
+      <p>Вкладки и данные сайтов не сохраняются после завершения приватного сеанса. Сайты всё равно видят ваше соединение.</p>
+      <button id="end-incognito" type="button">Завершить сеанс инкогнито</button>
+    </div>
+  </main>
   <main class="home">
     <header class="home-header" hidden>
       <div class="wordmark"><img src="/assets/atma.png?v=romb-b2529185" alt=""><span>ATMA</span></div>
