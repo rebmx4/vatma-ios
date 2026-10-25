@@ -34,7 +34,7 @@ function render() {
   $('#placeholder').hidden = !!(lastDraw && state.active && Date.now() - lastDraw < 8000);
   $('#spinner').hidden = !pending;
   $('#placeholder-title').textContent = stopping ? 'Отключаем устройство' : pending ? 'Готовим устройство' : state.phase === 'error' ? 'Сеанс остановлен' : 'Готов к подключению';
-  $('#placeholder-copy').textContent = pending ? 'Первый запуск займёт несколько минут.\nMac собирает приложение.' : state.phase === 'error' ? state.message : 'Выберите устройство и нажмите «Подключить».';
+  $('#placeholder-copy').textContent = pending ? 'Подготовка нового сеанса занимает несколько минут.\nMac собирает приложение.' : state.phase === 'error' ? state.message : 'Выберите устройство и нажмите «Подключить».';
   const remaining = Math.max(0, (state.deadline ?? 0) - Date.now());
   $('#timer').textContent = state.active && state.deadline ? `Осталось ${Math.floor(remaining / 60000)}:${String(Math.floor(remaining / 1000) % 60).padStart(2, '0')}` : pending ? 'Подготовка сеанса' : 'Сеанс не запущен';
 }

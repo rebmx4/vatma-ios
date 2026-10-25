@@ -24,3 +24,13 @@ test('a definitive rejected dispatch reports an error without waiting forever fo
   assert.equal(controller.current, null);
   assert.equal(controller.snapshot().phase, 'error');
 });
+
+test('GitHub cancellation accepts an empty 202 response', async t => {
+  const server = http.createServer((req, res) => {
+    if (req.method === 'POST') { res.writeHead(202); res.end(); }
+    else { res.setHeader('content-type', 'application/json'); res.end('{"status":"in_progress"}'); }
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => server.close());
+  const github = new GitHub({ repo: 'owner/repo', credential: async () => 'test-credential', api: `http://127.0.0.1:${server.address().port}` });
+  await github.cancel({ id: 'abc', device: 'iphone', run: { id: 123, display_title: 'Apple Lab · abc · iphone' } });
+});

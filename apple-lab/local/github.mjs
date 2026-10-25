@@ -34,7 +34,8 @@ export class GitHub {
       if (response.status === 401) this.token = null;
       throw Object.assign(new Error(`GitHub ${response.status}: ${method === 'POST' ? 'операция не выполнена' : 'данные недоступны'}`), { status: response.status });
     }
-    return response.status === 204 ? null : response.json();
+    const payload = await response.text();
+    return payload ? JSON.parse(payload) : null;
   }
   async source() {
     const [repo, commit] = await Promise.all([this.request(''), this.request('/commits/' + encodeURIComponent(this.sourceRef))]);
