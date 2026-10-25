@@ -46,7 +46,6 @@ final class BrowserPrivacyUITests: XCTestCase {
         let remove = button(["Удалить Gesture fixture", "Remove Gesture fixture"])
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         XCTAssertFalse(button(["Сохранить изображение", "Сохранить фото", "Добавить в Фото", "Save Image", "Save to Photos", "Add to Photos"]).exists)
-        screenshot("desktop-new-icon-edit")
         remove.tap()
         XCTAssertFalse(button(["Сохранить", "Save"]).exists, "The remove control must not open the shortcut editor")
         ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
