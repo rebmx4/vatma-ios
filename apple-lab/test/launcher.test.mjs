@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 test('Windows launcher passes one explicit D: browser profile argument', { skip: process.platform !== 'win32' }, () => {
   const script = fileURLToPath(new URL('../Start-Apple-Lab.ps1', import.meta.url)).replaceAll("'", "''");
@@ -19,4 +20,6 @@ $global:labCaptured | ConvertTo-Json -Compress`;
   assert.equal(profiles.length, 1);
   assert.match(profiles[0], /^--user-data-dir="D:\\.*\\out\\apple-lab\\browser-profile"$/i);
   assert.equal(result.arguments.length, 9);
+  const preferences = JSON.parse(readFileSync(new URL('../../out/apple-lab/browser-profile/Default/Preferences', import.meta.url), 'utf8'));
+  assert.match(preferences.download.default_directory, /^D:\\.*\\out\\apple-lab\\downloads$/i);
 });

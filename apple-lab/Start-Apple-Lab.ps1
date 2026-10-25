@@ -27,5 +27,15 @@ $taskBrowser = @('C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
 if (-not $taskBrowser) { throw 'Microsoft Edge was not found. No browser was installed or launched with a default profile.' }
 $taskProfile = Join-Path $taskOutput 'browser-profile'
 New-Item -ItemType Directory -Force -Path $taskProfile | Out-Null
+$taskDownloads = Join-Path $taskOutput 'downloads'
+$taskDefaults = Join-Path $taskProfile 'Default'
+New-Item -ItemType Directory -Force -Path $taskDownloads, $taskDefaults | Out-Null
+$taskPreferences = Join-Path $taskDefaults 'Preferences'
+if (-not (Test-Path -LiteralPath $taskPreferences)) {
+    $taskSettings = @{ download = @{ default_directory = $taskDownloads; prompt_for_download = $false; directory_upgrade = $true }; savefile = @{ default_directory = $taskDownloads } }
+    [System.IO.File]::WriteAllText($taskPreferences, ($taskSettings | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+}
+$taskSavedSettings = Get-Content -LiteralPath $taskPreferences -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not ([string]$taskSavedSettings.download.default_directory).StartsWith('D:\', [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Apple Lab download folder must stay on D:.' }
 $taskArguments = @('--app=http://127.0.0.1:4186/', ('--user-data-dir="' + $taskProfile + '"'), '--disk-cache-dir=D:\caches\apple-lab\browser', '--no-first-run', '--no-default-browser-check', '--disable-breakpad', '--disable-crash-reporter', '--disable-features=Crashpad', '--window-size=1280,920')
 Start-Process -FilePath $taskBrowser -ArgumentList $taskArguments -WorkingDirectory $taskRoot -WindowStyle Normal | Out-Null
