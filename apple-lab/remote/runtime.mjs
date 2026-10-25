@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createPublisher } from './status.mjs';
 
 export function runtime() {
   const root = resolve(process.env.APPLE_LAB_APP_DIR);
@@ -23,13 +24,7 @@ export function runtime() {
     return result.stdout?.trim();
   }
   if (command('git', ['rev-parse', 'HEAD'], { capture: true }) !== revision) throw new Error('Source SHA mismatch');
-  async function publish(state, description, url) {
-    const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/statuses/${process.env.GITHUB_SHA}`, {
-      method: 'POST', headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ATMA-Apple-Lab' },
-      body: JSON.stringify({ state, context: `apple-lab/${session}`, description, ...(url ? { target_url: url } : {}) }), signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw new Error(`Cannot publish session state (${response.status})`);
-  }
-  const progress = stage => publish('pending', `apple-lab:${stage}`);
+  const { publish, progress } = createPublisher({ repo: process.env.GITHUB_REPOSITORY, sha: process.env.GITHUB_SHA, session, token: process.env.GITHUB_TOKEN });
   const planFile = resolve(root, 'out/apple-lab-build-plan.json');
   const readPlan = () => { const plan = JSON.parse(readFileSync(planFile, 'utf8')); if (plan.identity.manifest.revision !== revision || plan.device !== device) throw new Error('Build plan mismatch'); return plan; };
   const inspect = app => ({ info: JSON.parse(command('plutil', ['-convert', 'json', '-o', '-', app + '/Info.plist'], { capture: true })),
