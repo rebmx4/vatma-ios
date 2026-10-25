@@ -11,6 +11,7 @@ import {createLocalization} from './assets/i18n.js';
 import {renderLegalInfo} from './assets/legal-ui.js';
 import {createWebsiteIconLoader} from './assets/site-icons.js';
 import {SHORTCUT_ICON_CHOICES,normalizeShortcutIconStyle,shortcutIconArtwork} from './assets/shortcut-artwork.js';
+import {messageProvider,messagesEnabled,enabledMessageProviders,shortcutMessageCount,badgeLabel} from './assets/message-badges.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
 const appLabel=app=>app.type==='system'?localization.t(app.name):app.name;
@@ -67,6 +68,8 @@ for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.
   apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
 }
 let state, panel = null, editing = false, busy = false, toastTimer;
+let messageCounts={},messagePollBusy=false,messagePollTimer;
+let pendingMessagePrompt=null;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
@@ -249,10 +252,11 @@ async function saveCurrentSite() {
     if(!url)throw new Error('Не удалось получить адрес сайта');
     if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
     const iconUrl=await resolveShortcutIcon(site);
-    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true};
+    const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true,messageNotifications:false};
     const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
     try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
-    notify('Добавлено на рабочий стол');
+    if(messageProvider(url)){pendingMessagePrompt=entry.id;await setPanel('message-prompt');}
+    else notify('Добавлено на рабочий стол');
   }catch(error){notify(error.message);}
   finally{pinSiteBusy=false;updateQuickAdd();}
 }
@@ -272,7 +276,7 @@ function consume(next) {
   if (!next?.profileId) return;
   // Commands, polling and native push events can finish out of order.
   if(Number.isSafeInteger(state?.sequence)&&(!Number.isSafeInteger(next.sequence)||next.sequence<state.sequence))return;
-  const previousMode=state?.mode,changedTab=state?.activeTabId!==next.activeTabId;
+  const previousMode=state?.mode,previousLoading=state?.loading,changedTab=state?.activeTabId!==next.activeTabId;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
   if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
@@ -297,6 +301,24 @@ function consume(next) {
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
   if(panel==='tabs')renderTabs();
   updateQuickAdd();
+  if(next.capabilities?.messageBadges&&(changedTab||previousMode!==next.mode||previousLoading&&!next.loading))scheduleMessageBadgePoll();
+}
+function scheduleMessageBadgePoll(){clearTimeout(messagePollTimer);messagePollTimer=setTimeout(pollMessageBadges,1200);}
+async function pollMessageBadges(){
+  if(messagePollBusy||document.hidden||!state?.capabilities?.messageBadges)return;
+  const providers=enabledMessageProviders(apps);
+  if(!providers.length){if(Object.keys(messageCounts).length){messageCounts={};renderApps();if(panel==='folder')renderFolder();}return;}
+  messagePollBusy=true;
+  try{
+    const response=await api('message-badges',{providers});
+    if(providers.join(',')!==enabledMessageProviders(apps).join(','))return;
+    const next={};
+    for(const provider of providers){const count=response?.counts?.[provider];if(Number.isSafeInteger(count)&&count>=0&&count<=999)next[provider]=count;}
+    const raised=providers.filter(provider=>Number.isSafeInteger(messageCounts[provider])&&next[provider]>messageCounts[provider]);
+    const changed=JSON.stringify(messageCounts)!==JSON.stringify(next);messageCounts=next;
+    if(changed){renderApps();if(panel==='folder')renderFolder();}
+    if(raised.length)notify(`Новые сообщения: ${raised.map(provider=>provider==='vk'?'ВКонтакте':'Авито').join(', ')}`);
+  }catch{}finally{messagePollBusy=false;}
 }
 async function newBrowserTab(){
  setEditing(false);lockVault();desktopPage=0;
@@ -327,6 +349,7 @@ function saveApps(scope='public',{render=true}={}) {
   } else localStorage.setItem('atma-preview-apps', JSON.stringify(apps));
   if(render){renderApps();if(panel==='folder')renderFolder();}
   updateQuickAdd();
+  if(scope==='public')scheduleMessageBadgePoll();
   return scope==='private'?vaultWrite:Promise.resolve();
 }
 function updatePool(scope,items) { if(scope==='private')vaultApps=items;else apps=items;return saveApps(scope); }
@@ -367,6 +390,8 @@ function createItem(app, parentId = null, index = 0, scope='public') {
   tile.addEventListener('dragstart', event => event.preventDefault());
   const label = document.createElement('span'); label.className = 'app-name'; label.textContent = app.name;if(app.type!=='system')label.dataset.noTranslate='';
   item.append(tile, label);
+  const unread=shortcutMessageCount(app,scope,messageCounts);
+  if(unread>0){const badge=document.createElement('span');badge.className='message-badge';badge.textContent=badgeLabel(unread);badge.setAttribute('aria-hidden','true');item.append(badge);tile.setAttribute('aria-label',`${tile.getAttribute('aria-label')}, ${unread} непрочитанных`);}
   if (editing&&app.type!=='system') {
     const remove = document.createElement('button'); remove.className = 'app-remove'; remove.innerHTML=icon('minus');
     remove.setAttribute('aria-label', isFolder(app) ? `Расформировать ${app.name}` : `Удалить ${app.name}`);
@@ -626,7 +651,7 @@ function renderPanel() {
   $('overlay').hidden = !panel;
   $('sheet-content').replaceChildren();
   if (!panel) return;
-  const titles = {tabs:'Вкладки', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
+  const titles = {tabs:'Вкладки', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', 'message-prompt':'Сообщения', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
   if(panel==='pin')renderPIN();
@@ -637,6 +662,7 @@ function renderPanel() {
   else if(panel==='appearance')renderAppearance();
   else if(panel==='app-icon')renderAppIconPicker();
   else if(panel==='tabs')renderTabs();
+  else if(panel==='message-prompt')renderMessagePrompt();
   else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
   else if (panel === 'add') {editorScope=currentScope();renderAppForm();}
@@ -778,12 +804,23 @@ $('wallpaper-file').addEventListener('change', async event => {
     document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(file)}')`; useWallpaper('custom'); await setPanel(null);
   } catch { notify('Не удалось сохранить обои'); }
 });
+function renderMessagePrompt(){
+  const entry=findEntry(apps,pendingMessagePrompt)?.entry;
+  if(!entry){setPanel(null);return;}
+  $('sheet-content').innerHTML=`<p class="sheet-note">Показывать счётчик сообщений для ${escape(entry.name)}? Он работает, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</p><button class="primary-button" id="enable-message-count" type="button">Включить</button><button class="secondary-button" id="skip-message-count" type="button">Не сейчас</button>`;
+  $('enable-message-count').addEventListener('click',async()=>{entry.messageNotifications=true;pendingMessagePrompt=null;await saveApps();await setPanel(null);});
+  $('skip-message-count').addEventListener('click',async()=>{pendingMessagePrompt=null;await setPanel(null);});
+}
 function renderAppForm(app) {
   const editorPanel=panel,version=++appEditorVersion;
   const selectedIcon=normalizeShortcutIconStyle(app?.iconStyle);
   const siteArtwork=/^data:image\/png;base64,/i.test(app?.iconUrl||'')?'<img src="'+escape(app.iconUrl)+'" alt="">':brand({...app,id:app?.id||'site-preview',name:app?.name||'Сайт',iconStyle:'site'});
   const iconChoices='<fieldset class="shortcut-icon-picker"><legend>Иконка ярлыка</legend><div class="shortcut-icon-options">'+SHORTCUT_ICON_CHOICES.map(choice=>'<label class="shortcut-icon-option"><input type="radio" name="iconStyle" value="'+choice.id+'" '+(selectedIcon===choice.id?'checked':'')+'><span class="shortcut-icon-art">'+(choice.id==='site'?siteArtwork:shortcutIconArtwork(choice.id))+'</span><span>'+choice.label+'</span></label>').join('')+'</div></fieldset>';
-  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}<button class="primary-button" type="submit">${app ? 'Сохранить' : 'Добавить на рабочий стол'}</button></form>`;
+  const messageChoice=`<label class="message-choice" id="message-choice" hidden><input type="checkbox" name="messageNotifications" ${!app||messagesEnabled(app)?'checked':''}><span><strong>Счётчик сообщений</strong><small>Появится, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</small></span></label>`;
+  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}${messageChoice}<button class="primary-button" type="submit">${app ? 'Сохранить' : 'Добавить на рабочий стол'}</button></form>`;
+  const urlInput=$('app-form').elements.namedItem('url'),messageToggle=$('app-form').elements.namedItem('messageNotifications');
+  const updateMessageChoice=()=>{const raw=urlInput.value.trim(),value=/^[a-z][\w+.-]*:/i.test(raw)?raw:`https://${raw}`;const supported=Boolean(messageProvider(value));$('message-choice').hidden=!supported;messageToggle.disabled=!supported;};
+  urlInput.addEventListener('input',updateMessageChoice);updateMessageChoice();
   $('app-form').addEventListener('submit', async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); let url;
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
@@ -795,7 +832,7 @@ function renderAppForm(app) {
     const iconStyle=normalizeShortcutIconStyle(form.get('iconStyle')),sameURL=app?.url===url.href;
     const iconUrl=iconStyle==='site'?await resolveShortcutIcon({url:url.href,iconUrl:sameURL?app.iconUrl:''}):sameURL?app.iconUrl||'':'';
     if(panel!==editorPanel||version!==appEditorVersion||scope==='private'&&(!vaultKey||vaultKey!==key))return;
-    const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL) };
+    const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL), messageNotifications: Boolean(messageProvider(url.href)&&form.get('messageNotifications')) };
     delete entry.profileId;
     if (!entry.name) return;
     const pool=poolFor(scope);
@@ -926,5 +963,7 @@ async function start() {
   try { const version=stateActionVersion,next=await api('state');if(version===stateActionVersion)consume(next);await api('preferences', { searchEngine }); }
   catch (error) { notify(error.message); }
   setInterval(async () => { const version=stateActionVersion;try { const next=await api('state');if(version===stateActionVersion)consume(next); } catch {} }, 1000);
+  setInterval(pollMessageBadges,30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleMessageBadgePoll();});
 }
 start();

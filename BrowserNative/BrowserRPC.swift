@@ -36,6 +36,17 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "appearance": reply(try applyNativeAppearance(body), nil); return
         case "app-icon": try setApplicationIcon(body, reply: reply); return
         case "state": reply(state(), nil); return
+        case "message-badges":
+            guard let requested = body["providers"] as? [String], requested.count <= 2,
+                  requested.allSatisfy({ ["vk", "avito"].contains($0) }) else {
+                throw BrowserFailure.invalid("Unsupported message badge request.")
+            }
+            Task { [weak self] in
+                guard let self else { reply(nil, "Browser closed."); return }
+                let counts = await BrowserUnread.counts(in: self, providers: Set(requested))
+                reply(["counts": counts], nil)
+            }
+            return
         case "media/state": reply(media.state, nil); return
         case "media/activate": media.activate(currentRenderer, reply: reply); return
         case "media/command": try media.command(body, reply: reply); return

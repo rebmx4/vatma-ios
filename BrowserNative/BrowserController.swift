@@ -304,6 +304,7 @@ final class BrowserController: UIViewController {
                                  "persistentProfiles": false, "contentBlocking": false, "media": true,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,
+                                 "messageBadges": true,
                                  "translation": false, "googleAccount": false, "probe": false],
                 "searchEngine": model.preferences.searchEngine, "locale": model.preferences.locale,
                 "timezone": model.preferences.timezone, "profiles": model.profiles,
