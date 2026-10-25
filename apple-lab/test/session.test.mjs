@@ -29,6 +29,18 @@ test('stale frames, missing rendered acknowledgements and disconnect all turn gr
   state.stop(); assert.equal(state.snapshot().connected, false);
 });
 
+test('the session time limit includes startup instead of adding another hour after the build', () => {
+  let now = 10000;
+  const state = new ConnectionState(() => now); state.start('iphone');
+  now += 300000;
+  state.health({ deadline: now + 3600000 }); state.control(true); state.frame(1); state.paint(1);
+  assert.equal(state.snapshot().deadline, 3610000);
+  assert.equal(state.snapshot().connected, true);
+  now = 3610001;
+  state.health({ deadline: now + 3600000 }); state.frame(2); state.paint(2);
+  assert.equal(state.snapshot().connected, false);
+});
+
 test('disconnect during dispatch still discovers and cancels only the owned queued run', async () => {
   let resolveDispatch, dispatched = false, cancelled = false;
   const run = { id: 123, status: 'queued', html_url: 'https://github.com/owner/repo/actions/runs/123' };

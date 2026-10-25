@@ -1,12 +1,13 @@
 export class ConnectionState {
   constructor(now = Date.now) { this.now = now; this.frames = new Map(); this.phase = 'idle'; this.message = 'Нет подключения'; }
   start(device) {
+    this.startedAt = this.now();
     this.active = true; this.device = device; this.phase = 'starting'; this.message = 'Запускаем Mac и собираем ATMA…';
     this.lastFrame = this.lastPaint = this.lastHealth = 0; this.controlOpen = false;
     this.deadline = null; this.config = null; this.revision = null; this.runUrl = null; this.frames.clear();
   }
   health(value) {
-    this.lastHealth = this.now(); this.deadline = value.deadline;
+    this.lastHealth = this.now(); this.deadline = Math.min(value.deadline, this.startedAt + 3600000);
     if (value.config) this.config = value.config;
     if (this.phase === 'starting') { this.phase = 'connecting'; this.message = 'Подключаем экран и управление…'; }
   }
