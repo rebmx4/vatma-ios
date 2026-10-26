@@ -7,7 +7,7 @@ function setup(){
  const begin=source.indexOf('function consume(next)'),end=source.indexOf('async function newBrowserTab()',begin);
  assert.ok(begin>0&&end>begin);
  const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},value:'',setAttribute(){}});return nodes.get(id);};
- const context={$:get,icon:name=>name,state:undefined,panel:null,renderedPanels:[],location:{origin:'http://127.0.0.1:9999'},
+ const context={$:get,icon:name=>name,escape:value=>String(value??''),profiles:[],state:undefined,panel:null,renderedPanels:[],location:{origin:'http://127.0.0.1:9999'},
   document:{body:{dataset:{}},documentElement:{style:{setProperty(){}}},activeElement:null},
   chooseDesktopSurface(){},updateTabSurface(){},renderApps(){},updateQuickAdd(){},renderTabs(){}};
  context.renderPanel=()=>context.renderedPanels.push(context.panel);

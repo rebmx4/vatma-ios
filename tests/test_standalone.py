@@ -119,11 +119,11 @@ class PackageTests(unittest.TestCase):
                 archive.writestr("Payload/ATMA.app/BrowserUI/index.html", b"ATMA fixture")
                 archive.writestr("Payload/ATMA.app/certificates/manifest.json", b"{}")
             self.assertEqual(verify_ipa.verify(package, "7", root=fixture)["app"], "ATMA.app")
-            injected = fixture / "with-device-catalogue.ipa"
+            injected = fixture / "with-unverified-resource.ipa"
             shutil.copyfile(package, injected)
             with zipfile.ZipFile(injected, "a") as archive:
                 archive.writestr("Payload/ATMA.app/BrowserUI/profiles.json", b"[]")
-            with self.assertRaisesRegex(ValueError, "excluded payload"):
+            with self.assertRaisesRegex(ValueError, "unverified or missing browser resource"):
                 verify_ipa.verify(injected, "7", root=fixture)
             with zipfile.ZipFile(package, "a") as archive:
                 archive.writestr("Payload/ATMA.app/Frameworks/BraveCore.framework/BraveCore", b"forbidden")

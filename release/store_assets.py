@@ -72,7 +72,10 @@ def main():
     for name, value in files.items():
         target = SITE / name
         if args.check:
-            if not target.is_file() or target.read_bytes() != value:
+            actual = target.read_bytes() if target.is_file() else None
+            if actual is not None and name.endswith((".html", ".css")):
+                actual = actual.replace(b"\r\n", b"\n")
+            if actual != value:
                 raise SystemExit("Store page differs from shared source: " + name)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)

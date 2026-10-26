@@ -165,15 +165,16 @@ def validate(root=ROOT):
                 if path.suffix == ".json":
                     json.loads(text)
                 if path.suffix == ".swift":
-                    require("WKContentRuleList" not in text, "This release excludes native content filtering")
-                    require("customUserAgent =" not in text, "This release excludes custom device User-Agents")
                     require(len(text.splitlines()) < 400, "Swift source exceeds line limit")
                     imports = set(re.findall(r"\bimport\s+(\w+)", text))
                     require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit", "Security", "UniformTypeIdentifiers", "AVFoundation", "MediaPlayer"}, "Native code may import only approved Apple frameworks")
             require(path.suffix.lower() not in (".dylib", ".a", ".framework", ".xcframework"), "Embedded SDK binary is not an allowed product input")
             scanned += 1
-    for excluded in ("BrowserUI/profiles.json", "BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
-        require(not (root / excluded).exists(), "This release must not bundle excluded payloads: " + excluded)
+    profiles = load_json(root / "BrowserUI/profiles.json")
+    require(isinstance(profiles, list) and len(profiles) > 1, "Private device catalogue is missing")
+    rules = load_json(root / "BrowserUI/content-blocker.json")
+    require(isinstance(rules, list) and len(rules) > 0, "Website content rules are missing")
+    require((root / "BrowserUI/assets/youtube-protection.js").is_file(), "Video protection adapter is missing")
     for folder in ("release", "tests"):
         for path in (root / folder).glob("*.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

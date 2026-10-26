@@ -1,5 +1,5 @@
 export default {
-  "updated": "2026-10-25",
+  "updated": "2026-10-26",
   "developer": "Alexander Ryndin",
   "email": "a1238585@bk.ru",
   "baseUrl": "https://rebmx4.github.io/vatma-ios/",
@@ -11,7 +11,7 @@ export default {
       "privacyTitle": "Политика конфиденциальности",
       "supportTitle": "Поддержка",
       "guideTitle": "Как пользоваться ATMA",
-      "updatedLabel": "Обновлено: 25 октября 2026 года",
+      "updatedLabel": "Обновлено: 26 октября 2026 года",
       "free": "ATMA бесплатна. В приложении нет покупок, подписок ATMA и собственной рекламной сети.",
       "contact": "Разработчик: Александр Рындин. Связь: a1238585@bk.ru.",
       "privacy": [
@@ -31,7 +31,7 @@ export default {
         {
           "title": "Инкогнито",
           "paragraphs": [
-            "Режим инкогнито открывается отдельной иконкой человека в шляпе. Его вкладки используют временное хранилище сайтов, отдельное от обычных входов. Приватные вкладки не записываются в сохранённую сессию и не восстанавливаются после перезапуска. После закрытия всех вкладок инкогнито их временная сессия очищается.",
+            "Режим инкогнито открывается через настройки. Его вкладки используют временное хранилище сайтов, отдельное от обычных входов. Приватные вкладки не записываются в сохранённую сессию и не восстанавливаются после перезапуска. После закрытия всех вкладок инкогнито их временная сессия очищается.",
             "Снимки приватных страниц не показываются в обзоре вкладок. Файлы и ярлыки, которые вы специально сохраняете, остаются на устройстве. Инкогнито не скрывает IP-адрес от сайта и не делает вход в ваш аккаунт анонимным."
           ]
         },
@@ -39,7 +39,7 @@ export default {
           "title": "Открываемые сайты и поиск",
           "paragraphs": [
             "При открытии сайта, отправке поискового запроса или загрузке иконки браузер связывается с выбранным сайтом или поисковой системой. Эти сервисы получают обычные данные соединения, включая IP-адрес и User-Agent, а также введённые вами сведения. На них действуют собственные условия и политики.",
-            "ATMA использует системный WebKit текущего iPhone или iPad. В этой версии нет смены модели устройства или подмены User-Agent."
+            "Обычные вкладки используют системный WebKit текущего iPhone или iPad. В инкогнито можно выбрать другой User-Agent и мобильный или настольный режим сайта; это не меняет само устройство, IP-адрес и движок WebKit."
           ]
         },
         {
@@ -57,7 +57,7 @@ export default {
         {
           "title": "Удаление и хранение",
           "paragraphs": [
-            "В интерфейсе можно удалить ярлыки и cookies сайтов. Локальные данные остаются на устройстве до удаления пользователем или удаления приложения. Системное резервное копирование и диагностика iOS регулируются настройками и условиями Apple; собственной облачной синхронизации ATMA нет."
+            "В интерфейсе можно удалить ярлыки, cookies и локальные данные сайтов. Экран «Куки» показывает сайты и типы сохранённых данных, но не данные на серверах сайтов и не сохранённые пароли. Локальные данные остаются на устройстве до удаления пользователем или удаления приложения. Системное резервное копирование и диагностика iOS регулируются настройками и условиями Apple; собственной облачной синхронизации ATMA нет."
           ]
         },
         {
@@ -153,7 +153,7 @@ export default {
         {
           "title": "6. Откройте инкогнито",
           "paragraphs": [
-            "Нажмите иконку человека в шляпе на рабочем столе. На белом экране «Инкогнито» введите адрес или запрос. Кнопка «Завершить сеанс инкогнито» закрывает все приватные вкладки. Обычные ярлыки сохраняют свои обычные входы."
+            "Откройте настройки и нажмите «Открыть Инкогнито». На белом экране «Инкогнито» можно выбрать устройство для отображения сайта и ввести адрес или запрос. Кнопка «Завершить сеанс инкогнито» закрывает все приватные вкладки. Обычные ярлыки сохраняют свои обычные входы."
           ]
         }
       ]
@@ -165,7 +165,7 @@ export default {
       "privacyTitle": "Privacy Policy",
       "supportTitle": "Support",
       "guideTitle": "Getting started with ATMA",
-      "updatedLabel": "Updated: October 25, 2026",
+      "updatedLabel": "Updated: October 26, 2026",
       "free": "ATMA is free. There are no in-app purchases, ATMA subscriptions or ATMA advertising network.",
       "contact": "Developer: Alexander Ryndin. Contact: a1238585@bk.ru.",
       "privacy": [
@@ -185,7 +185,7 @@ export default {
         {
           "title": "Incognito",
           "paragraphs": [
-            "Open Incognito using the person-with-a-hat shortcut. Its tabs use a temporary website store, separate from ordinary sign-ins. Private tabs are excluded from the saved session and do not return after relaunch. Closing all Incognito tabs clears their temporary session.",
+            "Open Incognito from Settings. Its tabs use a temporary website store, separate from ordinary sign-ins. Private tabs are excluded from the saved session and do not return after relaunch. Closing all Incognito tabs clears their temporary session.",
             "Private page snapshots are not shown in the tab overview. Files and shortcuts you deliberately save remain on the device. Incognito does not hide your IP address from websites or make signing in to your account anonymous."
           ]
         },
@@ -193,7 +193,7 @@ export default {
           "title": "Websites and search",
           "paragraphs": [
             "Opening a website, submitting a search or fetching a website icon connects to the chosen website or search engine. These services receive normal connection data, including your IP address and User-Agent, and any information you enter. Their own terms and privacy policies apply.",
-            "ATMA uses system WebKit on the current iPhone or iPad. This version has no device-model switching or custom User-Agent."
+            "Ordinary tabs use system WebKit on the current iPhone or iPad. In Incognito you can choose another User-Agent and mobile or desktop website mode; this does not change the device, IP address or WebKit engine."
           ]
         },
         {
@@ -211,7 +211,7 @@ export default {
         {
           "title": "Storage and deletion",
           "paragraphs": [
-            "You can delete shortcuts and website cookies in the interface. Local data stays on your device until you delete it or remove the app. iOS backup and diagnostics are governed by Apple settings and terms; ATMA has no cloud sync service."
+            "You can delete shortcuts, cookies and local website data in the interface. The Cookies screen shows websites and stored data types, but not data on website servers or saved passwords. Local data stays on your device until you delete it or remove the app. iOS backup and diagnostics are governed by Apple settings and terms; ATMA has no cloud sync service."
           ]
         },
         {
@@ -307,7 +307,7 @@ export default {
         {
           "title": "6. Open Incognito",
           "paragraphs": [
-            "Tap the person-with-a-hat shortcut on the desktop. Enter an address or search on the white Incognito screen. End Incognito session closes all private tabs. Ordinary shortcuts keep their ordinary sign-ins."
+            "Open Settings and tap Open Incognito. On the white Incognito screen, choose a website device mode and enter an address or search. End Incognito session closes all private tabs. Ordinary shortcuts keep their ordinary sign-ins."
           ]
         }
       ]

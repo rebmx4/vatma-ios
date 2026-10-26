@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import CryptoKit
+import WebKit
 
 enum SiteTrust {
     static func evaluate(_ trust: SecTrust) -> Bool {
@@ -39,5 +40,69 @@ enum SiteTrust {
 
     private static func digest(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+@MainActor
+final class SiteBlocker {
+    private var ruleList: WKContentRuleList?
+    private var views: [ObjectIdentifier: WeakView] = [:]
+    private var installed: Set<ObjectIdentifier> = []
+    private var pendingLoads: [ObjectIdentifier: URLRequest] = [:]
+    private(set) var error: String?
+    var didChange: (() -> Void)?
+
+    init() {
+        guard let url = Bundle.main.url(forResource: "content-blocker", withExtension: "json", subdirectory: "BrowserUI"),
+              let rules = try? String(contentsOf: url, encoding: .utf8) else {
+            error = "Bundled content rules are missing."
+            return
+        }
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "atma.website-filter.v2", encodedContentRuleList: rules) { [weak self] list, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.ruleList = list
+                self.error = error?.localizedDescription ?? (list == nil ? "Content rules did not compile." : nil)
+                for entry in Array(self.views.values) { if let view = entry.view { self.apply(to: view) } }
+                let pending = self.pendingLoads
+                self.pendingLoads.removeAll()
+                for (id, request) in pending {
+                    if let view = self.views[id]?.view { view.load(request) }
+                }
+                self.didChange?()
+            }
+        }
+    }
+
+    var available: Bool { ruleList != nil }
+
+    func apply(to view: WKWebView) {
+        views = views.filter { $0.value.view != nil }
+        installed.formIntersection(Set(views.keys))
+        let id = ObjectIdentifier(view)
+        views[id] = WeakView(view)
+        if let ruleList, !installed.contains(id) {
+            view.configuration.userContentController.add(ruleList)
+            installed.insert(id)
+        }
+        BrowserPageScripts.configure(view, blocking: true)
+    }
+
+    func load(_ request: URLRequest, in view: WKWebView) {
+        apply(to: view)
+        if ruleList != nil || error != nil { view.load(request) }
+        else { pendingLoads[ObjectIdentifier(view)] = request }
+    }
+
+    func forget(_ view: WKWebView) {
+        let id = ObjectIdentifier(view)
+        pendingLoads.removeValue(forKey: id)
+        views.removeValue(forKey: id)
+        installed.remove(id)
+    }
+
+    private final class WeakView {
+        weak var view: WKWebView?
+        init(_ view: WKWebView) { self.view = view }
     }
 }

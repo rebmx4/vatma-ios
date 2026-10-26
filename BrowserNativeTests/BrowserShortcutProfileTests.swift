@@ -19,9 +19,11 @@ final class BrowserShortcutProfileTests: XCTestCase {
         model = nil; defaults = nil
     }
 
-    func testOnlyTheActualDeviceExistsWithoutABundledDeviceCatalogue() {
-        XCTAssertEqual(model.profiles.compactMap { $0["id"] as? String }, [BrowserModel.actualProfile])
-        XCTAssertNil(Bundle.main.url(forResource: "profiles", withExtension: "json", subdirectory: "BrowserUI"))
+    func testPrivateDeviceCatalogueIsBundledWhileNormalSessionsRemainActual() {
+        XCTAssertEqual(model.profiles.first?["id"] as? String, BrowserModel.actualProfile)
+        XCTAssertGreaterThan(model.profiles.count, 1)
+        XCTAssertNotNil(Bundle.main.url(forResource: "profiles", withExtension: "json", subdirectory: "BrowserUI"))
+        XCTAssertEqual(model.active.profileId, BrowserModel.actualProfile)
     }
 
     func testLegacyKeysCannotCreateAnAlternateCookieSession() async throws {

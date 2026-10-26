@@ -45,29 +45,46 @@ const paths = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
+$('go-home').innerHTML=`<span class="home-glyph">${icon('home')}</span>`;
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
 
 const DEFAULT_APPS = [
   { id: 'vk', name: 'ВКонтакте', url: 'https://vk.com/', color: '#087fff' },
   { id: 'dzen', name: 'Дзен', url: 'https://dzen.ru/', color: '#1c1c1c' },
+  { id: 'avito', name: 'Авито', url: 'https://www.avito.ru/', color: '#fff' },
   { id: 'youtube', name: 'YouTube', url: 'https://www.youtube.com/', color: '#fff' },
   { id: 'rutube', name: 'RUTUBE', url: 'https://rutube.ru/', color: '#111729' },
-  { id: 'mail', name: 'Почта Mail', url: 'https://e.mail.ru/', color: '#087cf1' },
-  { id: 'avito', name: 'Авито', url: 'https://www.avito.ru/', color: '#fff' },
   { id: 'vtb', name: 'ВТБ', url: 'https://online.vtb.ru/', color: '#0b48b2' },
   { id: 'tbank', name: 'Т-Банк', url: 'https://www.tbank.ru/', color: '#ffdf00' },
-  { id: 'ozonbank', name: 'Ozon Банк', url: 'https://finance.ozon.ru/', color: '#005bff' },
-  { id: 'ozon', name: 'Ozon', url: 'https://www.ozon.ru/', color: '#005bff' },
-  { id: 'wb', name: 'Wildberries', url: 'https://www.wildberries.ru/', color: '#b414a0' },
-  { id: 'wiki', name: 'Википедия', url: 'https://ru.wikipedia.org/', color: '#fff' },
+  { id: 'mail', name: 'Почта Mail', url: 'https://e.mail.ru/', color: '#087cf1' },
 ];
-const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#f2f3f5'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-files',type:'system',action:'files',name:'Файлы',color:'#fff'},{id:'atma-home',type:'system',action:'home',name:'ATMA',color:'#fff'}];
+const SYSTEM_APPS=[{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'}];
+const RETIRED_DEFAULTS=new Map([
+  ['ozonbank',['Ozon Банк','https://finance.ozon.ru/']],
+  ['ozon',['Ozon','https://www.ozon.ru/']],
+  ['wb',['Wildberries','https://www.wildberries.ru/']],
+  ['wiki',['Википедия','https://ru.wikipedia.org/']],
+]);
+const RETIRED_SYSTEM_IDS=new Set(['atma-incognito','atma-files','atma-home']);
+function withoutRetiredDefaults(entries){
+  return entries.flatMap(entry=>{
+    if(RETIRED_SYSTEM_IDS.has(entry.id)&&entry.type==='system')return [];
+    const original=RETIRED_DEFAULTS.get(entry.id);
+    if(original&&entry.name===original[0]&&entry.url===original[1]&&!entry.iconStyle)return [];
+    if(!isFolder(entry))return [entry];
+    const children=withoutRetiredDefaults(entry.children||[]);
+    return children.length?[{...entry,children}]:[];
+  });
+}
 let apps;
 try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')) || DEFAULT_APPS; } catch { apps = DEFAULT_APPS; }
+if(!Array.isArray(apps))apps=DEFAULT_APPS;
+apps=withoutRetiredDefaults(apps);
 for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.id)){
-  apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
+  apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});
 }
-let state, panel = null, editing = false, busy = false, toastTimer;
+try{localStorage.setItem('atma-preview-apps',JSON.stringify(apps));}catch{}
+let state, profiles = [], panel = null, editing = false, busy = false, toastTimer;
 let messageCounts={},messagePollBusy=false,messagePollTimer;
 let pendingMessagePrompt=null;
 let stateActionVersion=0;
@@ -98,7 +115,6 @@ function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
-  if($('go-home').dataset.appIcon!==appearance.icon){$('go-home').innerHTML='<span class="home-brand">'+appIconArtwork(appearance.icon,brandLogoSource)+'</span><span class="home-glyph">'+icon('home')+'</span>'; $('go-home').dataset.appIcon=appearance.icon;}
   renderToolbarMessageBadge();
   if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;notify(error.message);});}
 }
@@ -164,6 +180,7 @@ function brand(app) {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
     'atma-incognito':'<g fill="none" stroke="#242831" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 25h42M17 25l5-15h18l5 15M14 54c2-13 32-13 34 0"/><circle cx="23" cy="35" r="6"/><circle cx="39" cy="35" r="6"/><path d="M29 35h4"/></g>',
     'atma-files':'<path d="M8 20a4 4 0 0 1 4-4h12l5 5h21a4 4 0 0 1 4 4v23a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4Z" fill="#79c3ff"/><rect x="8" y="24" width="46" height="28" rx="4" fill="#0787f8"/><path d="M12 24h38" stroke="#409fff" stroke-width="1.5"/>',
+    'atma-cookies':'<circle cx="31" cy="31" r="23" fill="#c58c53"/><path d="M47 12a10 10 0 0 0 5 14 23 23 0 0 1-19 28A23 23 0 1 1 47 12Z" fill="#dba66c"/><g fill="#765039"><circle cx="20" cy="20" r="3"/><circle cx="35" cy="20" r="2.5"/><circle cx="26" cy="35" r="3"/><circle cx="40" cy="39" r="2.5"/><circle cx="17" cy="43" r="2"/></g>',
     vk: '<path fill="white" d="M10 20h7c1 10 5 14 7 14V20h7v8c3 0 8-4 9-8h7c-2 7-8 10-9 11 4 1 9 5 11 11h-8c-2-5-6-8-10-8v8h-4C16 42 10 35 10 20Z"/>',
     dzen: '<path fill="white" d="M31 10c1 16 6 21 21 22-15 1-20 6-21 22-1-16-6-21-21-22 15-1 20-6 21-22Z"/>',
     youtube: '<rect x="9" y="17" width="44" height="29" rx="9" fill="#ff0033"/><path d="m27 24 13 8-13 8Z" fill="white"/>',
@@ -192,6 +209,7 @@ async function api(action, body) {
   }
 
   if(action==='cookies'||action==='cookies/delete')return previewCookieRequest(action,body);
+  if(action==='site-data'||action==='site-data/delete')return {records:[],preview:true};
   if(action.startsWith('media/'))return previewMediaRequest(action,body);
   const response = await fetch(`/api/${action}${body ? '' : `?context=${encodeURIComponent(context)}`}`, {
     method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Atma-Token': token },
@@ -280,11 +298,14 @@ function consume(next) {
   const previousMode=state?.mode,previousLoading=state?.loading,changedTab=state?.activeTabId!==next.activeTabId;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
+  if(Array.isArray(next.profiles))profiles=next.profiles;
   if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
   document.body.dataset.mode = next.mode;
   document.body.dataset.webApp=String(Boolean(next.webApp));
   document.body.dataset.privateBrowsing=String(next.privateBrowsing===true);
   $('search-symbol').innerHTML=icon(next.privateBrowsing===true?'incognito':'search');
+  const privateDevice=profiles.find(profile=>profile.id===next.profileId);
+  $('incognito-device').innerHTML=`${icon(privateDevice?.family==='Компьютер'?'computer':privateDevice?.family==='iPad'?'tablet':'phone')}<span>${escape(privateDevice?.name||next.deviceName)}</span>${icon('down')}`;
   document.body.dataset.controlsCollapsed=String(Boolean(next.controlsCollapsed));
   if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
   updateTabSurface();
@@ -656,7 +677,7 @@ function renderPanel() {
   $('overlay').hidden = !panel;
   $('sheet-content').replaceChildren();
   if (!panel) return;
-  const titles = {tabs:'Вкладки', settings: 'Настройки', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', 'message-prompt':'Сообщения', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
+  const titles = {tabs:'Вкладки', settings: 'Настройки', cookies:'Куки', 'private-device':'Устройство инкогнито', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', 'message-prompt':'Сообщения', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
   if(panel==='pin')renderPIN();
@@ -668,6 +689,8 @@ function renderPanel() {
   else if(panel==='app-icon')renderAppIconPicker();
   else if(panel==='tabs')renderTabs();
   else if(panel==='message-prompt')renderMessagePrompt();
+  else if(panel==='private-device')renderPrivateDevices();
+  else if(panel==='cookies')renderCookieBrowser($('sheet-content'),{api,onBack:()=>setPanel(null),notify,t:localization.t,backLabel:'Рабочий стол'});
   else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
   else if (panel === 'add') {editorScope=currentScope();renderAppForm();}
@@ -755,9 +778,39 @@ function settingsPickers(container) {
     });
   }
 }
+function renderPrivateDevices(){
+  const root=$('sheet-content');
+  if(!state?.privateBrowsing){root.textContent='Выбор устройства доступен только в инкогнито.';return;}
+  root.replaceChildren();
+  const search=document.createElement('input');search.id='private-device-filter';search.className='private-device-filter';search.placeholder='Найти устройство';search.setAttribute('aria-label','Найти устройство');
+  const list=document.createElement('div');list.className='model-list';list.id='private-devices';
+  const note=document.createElement('p');note.className='sheet-note';note.textContent='Меняются User-Agent и мобильный или настольный режим сайта. Экран и движок WebKit остаются настоящими. Смена устройства обновит открытую страницу.';
+  root.append(search,list,note);
+  const render=()=>{
+    list.replaceChildren();
+    const needle=search.value.trim().toLocaleLowerCase();
+    for(const profile of profiles.filter(item=>String(item.name||'').toLocaleLowerCase().includes(needle))){
+      const button=document.createElement('button');button.className='model-row';button.dataset.profile=profile.id;
+      button.classList.toggle('selected',profile.id===state.profileId);
+      button.setAttribute('aria-pressed',String(profile.id===state.profileId));
+      button.innerHTML=`<span class="model-symbol">${icon(profile.family==='Компьютер'?'computer':profile.family==='iPad'?'tablet':'phone')}</span><span class="model-name">${escape(profile.name)}</span>${profile.id===state.profileId?`<span class="model-check">${icon('check')}</span>`:''}`;
+      button.addEventListener('click',async()=>{
+        if(busy)return;busy=true;button.disabled=true;
+        try{await action('private-device',{profileId:profile.id});await setPanel(null);}
+        catch(error){notify(error.message);}finally{busy=false;}
+      });
+      list.append(button);
+    }
+  };
+  search.addEventListener('input',render);render();
+}
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
   const appearanceButton=settingButton('Оформление','image',()=>setPanel('appearance'));appearanceButton.id='open-appearance';card.append(appearanceButton);
+  const incognitoButton=settingButton('Открыть Инкогнито','incognito',newIncognitoTab);incognitoButton.id='open-incognito';card.append(incognitoButton);
+  if(state?.privateBrowsing){const deviceButton=settingButton('Устройство инкогнито','phone',()=>setPanel('private-device'));deviceButton.id='open-private-device';card.append(deviceButton);}
+  const cookiesButton=settingButton('Куки и данные сайтов','globe',()=>setPanel('cookies'));cookiesButton.id='open-cookies-settings';card.append(cookiesButton);
+  const downloadsButton=settingButton('Загрузки','image',()=>setPanel('files'));downloadsButton.id='open-downloads';card.append(downloadsButton);
   const policyButton=settingButton('Политика конфиденциальности','lock',()=>setPanel('privacy'));policyButton.id='open-privacy';card.append(policyButton);
   const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
@@ -947,6 +1000,7 @@ document.addEventListener('pointerup',event=>{
 });
 document.addEventListener('pointercancel',cancelEmptyHomeHold);
 $('go-home').addEventListener('click', async () => { try {lockVault();desktopPage=0;await action('home');chooseDesktopSurface(state.activeTabId);$('address').value='';renderApps();showDesktopPage(0);} catch {} });
+$('incognito-device').addEventListener('click',()=>setPanel('private-device'));
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));

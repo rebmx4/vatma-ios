@@ -12,7 +12,8 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
     }
 
-    func testIncognitoDesktopIconAndWhiteSearchScreen() throws {
+    func testIncognitoOpensFromSettingsWithWhiteSearchScreen() throws {
+        button(["Настройки", "Settings"]).tap()
         let incognito = button(["Открыть Инкогнито", "Open Incognito"])
         XCTAssertTrue(incognito.waitForExistence(timeout: 10)); incognito.tap()
         let input = app.textFields.matching(NSPredicate(format: "label IN %@", ["Поиск или адрес в инкогнито", "Search or address in Incognito"])).firstMatch

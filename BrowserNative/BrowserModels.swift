@@ -52,8 +52,19 @@ final class BrowserModel {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let catalogue: [[String: Any]]
+        if let url = Bundle.main.url(forResource: "profiles", withExtension: "json", subdirectory: "BrowserUI"),
+           let data = try? Data(contentsOf: url),
+           let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            catalogue = rows.filter {
+                guard let id = $0["id"] as? String, id != Self.actualProfile,
+                      $0["name"] is String, $0["userAgent"] is String,
+                      $0["mobile"] is Bool else { return false }
+                return !id.isEmpty
+            }
+        } else { catalogue = [] }
         profiles = [["id": Self.actualProfile, "name": UIDevice.current.model,
-                     "family": "Apple", "actualDevice": true]]
+                     "family": "Apple", "actualDevice": true]] + catalogue
         let first = BrowserTab(profileId: Self.actualProfile)
         if let data = defaults.data(forKey: sessionKey), let saved = try? JSONDecoder().decode(BrowserSession.self, from: data),
            !saved.tabs.isEmpty {

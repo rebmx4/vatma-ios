@@ -16,8 +16,12 @@ function setup(host='www.youtube.com',options={enabled:true}){
  return{context,parse:input=>vm.runInContext(`JSON.parse(${JSON.stringify(JSON.stringify(input))})`,context)};
 }
 const player=()=>({videoDetails:{videoId:'fixture',lengthSeconds:'180'},playabilityStatus:{status:'OK'},streamingData:{formats:[{url:'https://media.invalid/video'}]},playerAds:[{ad:1}],adPlacements:[{placement:1}],adSlots:[{slot:1}]});
-test('the first public release leaves website advertisement data intact',()=>{
- const f=setup(),original=player();
- assert.deepEqual(JSON.parse(JSON.stringify(f.parse(original))),original,'A regular website response must retain its advertising metadata');
- assert.equal(f.context.__atmaYouTubeProtection,undefined,'This release must not install the YouTube ad adapter');
+test('YouTube adapter removes known ad fields and keeps playable metadata',()=>{
+ const f=setup(),result=f.parse(player());
+ assert.ok(f.context.__atmaYouTubeProtection);
+ assert.equal(result.playerAds,undefined);
+ assert.equal(result.adPlacements,undefined);
+ assert.equal(result.adSlots,undefined);
+ assert.equal(result.videoDetails.videoId,'fixture');
+ assert.equal(result.streamingData.formats.length,1);
 });

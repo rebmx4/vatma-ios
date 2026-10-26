@@ -20,7 +20,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
     }
 
     private func dispatch(_ action: String, body: [String: Any], reply: @escaping (Any?, String?) -> Void) throws {
-        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close"].contains(action), mode == "browse", panel == nil {
+        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close", "private-device"].contains(action), mode == "browse", panel == nil {
             captureCurrentPreview { [weak self] in
                 guard let self else { reply(nil, "Browser closed."); return }
                 do { try self.perform(action, body: body, reply: reply) }
@@ -65,6 +65,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             guard body["privateBrowsing"] == nil || body["privateBrowsing"] is Bool else { throw BrowserFailure.invalid("Invalid private mode.") }
             newTab(privateBrowsing: body["privateBrowsing"] as? Bool == true)
         case "tabs/private/close": closePrivateTabs()
+        case "private-device": try changePrivateDevice(try string("profileId", body))
         case "tabs/select": try selectTab(try string("tabId", body))
         case "tabs/close": try closeTab(try string("tabId", body))
         case "preferences": try preferences(body)
@@ -107,6 +108,18 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
                 let all = body["all"] as? Bool == true
                 guard all || body["ids"] is [String] else { throw BrowserFailure.invalid("Supply cookie IDs or all:true.") }
                 CookieService.delete(store: store, profile: profile, ids: Set(body["ids"] as? [String] ?? []), all: all) { reply($0, nil) }
+            }
+            return
+        case "site-data", "site-data/delete":
+            let store = model.store(for: model.active)
+            if action == "site-data" { WebsiteDataService.list(store: store) { reply($0, nil) } }
+            else {
+                let all = body["all"] as? Bool == true
+                let names = body["names"] as? [String] ?? []
+                guard all || (body["names"] is [String] && names.count <= 500 && names.allSatisfy({ !$0.isEmpty && $0.count <= 255 })) else {
+                    throw BrowserFailure.invalid("Supply website names or all:true.")
+                }
+                WebsiteDataService.delete(store: store, names: Set(names), all: all) { reply($0, nil) }
             }
             return
         case "files": reply(try downloads.list(), nil); return

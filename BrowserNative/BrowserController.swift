@@ -17,6 +17,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class BrowserController: UIViewController {
     let model: BrowserModel
     let server = LocalUIServer()
+    let blocker = SiteBlocker()
     let downloads = DownloadService()
     lazy var media: BrowserMediaController = {
         let controller = BrowserMediaController()
@@ -104,6 +105,7 @@ final class BrowserController: UIViewController {
         ui.scrollView.isScrollEnabled = false
         ui.scrollView.contentInsetAdjustmentBehavior = .never
         browserViewport.addSubview(ui)
+        blocker.didChange = { [weak self] in self?.publish() }
         downloads.didChange = { [weak self] tabID, error in
             guard let self else { return }
             if let error {
@@ -193,7 +195,11 @@ final class BrowserController: UIViewController {
         config.allowsPictureInPictureMediaPlayback = true
         // The page adapter gates intent without preventing WebKit metadata preload.
         config.mediaTypesRequiringUserActionForPlayback = []
-        config.defaultWebpagePreferences.preferredContentMode = .recommended
+        let privateProfile = tab.isPrivate && tab.profileId != BrowserModel.actualProfile
+            ? model.profile(tab.profileId) : nil
+        if let mobile = privateProfile?["mobile"] as? Bool {
+            config.defaultWebpagePreferences.preferredContentMode = mobile ? .mobile : .desktop
+        } else { config.defaultWebpagePreferences.preferredContentMode = .recommended }
         // Website content receives only a bounded media-state handler, never UI RPC.
         let renderer = WKWebView(frame: .zero, configuration: config)
         renderer.accessibilityIdentifier = "atma.site." + tab.id
@@ -201,8 +207,9 @@ final class BrowserController: UIViewController {
         renderer.uiDelegate = self
         renderer.allowsBackForwardNavigationGestures = true
         renderer.scrollView.contentInsetAdjustmentBehavior = .never
+        renderer.customUserAgent = privateProfile?["userAgent"] as? String
         media.register(renderer, tabID: tab.id)
-        BrowserPageScripts.configure(renderer)
+        blocker.apply(to: renderer)
         renderers[tab.id] = renderer
         observeHistory(renderer, tabID: tab.id)
         browserViewport.insertSubview(renderer, belowSubview: ui)
@@ -227,8 +234,7 @@ final class BrowserController: UIViewController {
         model.tabs[model.activeIndex].error = nil
         mode = "browse"; panel = nil; nativeError = nil
         let renderer = renderer(for: model.active)
-        BrowserPageScripts.configure(renderer)
-        renderer.load(request)
+        blocker.load(request, in: renderer)
         changed()
     }
 
@@ -242,7 +248,7 @@ final class BrowserController: UIViewController {
             let url: URL?
             if tab.url == "about:blank" { url = URL(string: tab.url) }
             else { url = try? AddressResolver.validated(tab.url) }
-            if let url { renderer(for: tab).load(URLRequest(url: url)) }
+            if let url { blocker.load(URLRequest(url: url), in: renderer(for: tab)) }
         }
         changed()
     }
@@ -252,6 +258,16 @@ final class BrowserController: UIViewController {
         tab.privateBrowsing = privateBrowsing
         model.tabs.append(tab); model.activeTabId = tab.id; mode = "home"; panel = nil
         changed()
+    }
+
+    func changePrivateDevice(_ id: String) throws {
+        guard model.active.isPrivate else { throw BrowserFailure.invalid("Device choice is only available in Incognito.") }
+        guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown device choice.") }
+        guard model.active.profileId != id else { return }
+        removeRenderer(for: model.activeTabId)
+        model.tabs[model.activeIndex].profileId = id
+        if mode == "browse", !model.active.url.isEmpty { try selectTab(model.activeTabId) }
+        else { changed() }
     }
 
     func closeTab(_ id: String) throws {
@@ -274,6 +290,7 @@ final class BrowserController: UIViewController {
         historyObservations.removeValue(forKey: id)?.forEach { $0.invalidate() }
         invalidatePreview(for: id)
         if let renderer = renderers.removeValue(forKey: id) {
+            blocker.forget(renderer)
             media.unregister(renderer)
             renderer.stopLoading()
             cleanupNavigation(for: renderer)
@@ -301,7 +318,7 @@ final class BrowserController: UIViewController {
                 "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
                 "capabilities": ["incognito": true, "cookies": true, "downloads": true, "tabs": true,
-                                 "persistentProfiles": false, "contentBlocking": false, "media": true,
+                                 "persistentProfiles": false, "contentBlocking": blocker.available, "media": true,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,
                                  "messageBadges": true,

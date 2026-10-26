@@ -38,10 +38,11 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         _ = try await fixture.start()
         _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
         try await fixture.wait("document.body.dataset.surface==='incognito'", in: fixture.controller.ui)
-        let start = try await fixture.script("return {white:getComputedStyle(document.body).backgroundColor,title:document.querySelector('.incognito-card h1').textContent,input:!!document.getElementById('incognito-address')};", in: fixture.controller.ui) as? [String: Any]
+        let start = try await fixture.script("return {white:getComputedStyle(document.body).backgroundColor,title:document.querySelector('.incognito-card h1').textContent,input:!!document.getElementById('incognito-address'),device:!!document.getElementById('incognito-device')};", in: fixture.controller.ui) as? [String: Any]
         XCTAssertEqual(start?["white"] as? String, "rgb(255, 255, 255)")
         XCTAssertEqual(start?["title"] as? String, "Инкогнито")
         XCTAssertEqual(start?["input"] as? Bool, true)
+        XCTAssertEqual(start?["device"] as? Bool, true)
         for theme in ["dark", "light"] {
             let colors = try await fixture.script("document.body.dataset.theme=theme;document.body.dataset.wallpaper='solid';return {bar:getComputedStyle(document.getElementById('browser-bar')).backgroundColor,button:getComputedStyle(document.getElementById('tabs-button')).color};", in: fixture.controller.ui, arguments: ["theme": theme]) as? [String: Any]
             XCTAssertEqual(colors?["bar"] as? String, "rgb(255, 255, 255)", theme + " private toolbar must stay white")
@@ -52,12 +53,32 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         try await fixture.wait("document.body.dataset.surface==='home'", in: fixture.controller.ui)
     }
 
+    func testDeviceChoiceIsRestrictedToIncognitoAndLeavesOrdinaryTabUnchanged() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let ordinaryID = fixture.controller.model.activeTabId
+        let ordinary = try await fixture.open(root)
+        let profile = try XCTUnwrap(fixture.controller.model.profiles.first { $0["mobile"] as? Bool == false })
+        let profileID = try XCTUnwrap(profile["id"] as? String)
+        do { _ = try await fixture.rpc("private-device", body: ["profileId": profileID]); XCTFail("Normal tabs must reject device changes") }
+        catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
+        _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
+        _ = try await fixture.rpc("private-device", body: ["profileId": profileID])
+        let privatePage = try await fixture.open(root)
+        XCTAssertEqual(privatePage.customUserAgent, profile["userAgent"] as? String)
+        XCTAssertEqual(privatePage.configuration.defaultWebpagePreferences.preferredContentMode, .desktop)
+        XCTAssertFalse(privatePage.configuration.websiteDataStore.isPersistent)
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": ordinaryID])
+        XCTAssertEqual(fixture.controller.model.active.profileId, BrowserModel.actualProfile)
+        XCTAssertNil(ordinary.customUserAgent)
+    }
+
     func testRealHistoryAndCompactHomeGlyphFollowNavigation() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         let root = try await fixture.start()
         let page = try await fixture.open(root, webApp: true)
         try await fixture.wait("document.getElementById('go-back').disabled && document.getElementById('go-forward').disabled", in: fixture.controller.ui)
-        let compactGlyph = try await fixture.script("return getComputedStyle(document.querySelector('.home-brand')).display==='none' && getComputedStyle(document.querySelector('.home-glyph')).display!=='none';", in: fixture.controller.ui) as? Bool
+        let compactGlyph = try await fixture.script("return getComputedStyle(document.querySelector('.home-glyph')).display!=='none' && !document.querySelector('#go-home img');", in: fixture.controller.ui) as? Bool
         XCTAssertEqual(compactGlyph, true)
         _ = try await fixture.open(root, path: "b", webApp: true)
         try await fixture.wait("!document.getElementById('go-back').disabled && document.getElementById('go-forward').disabled", in: fixture.controller.ui)

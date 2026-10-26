@@ -19,6 +19,38 @@ function browser(){
 }
 function payload(id,tabs=[{id,url:''}]){return{profileId:'actual-device',mode:'home',activeTabId:id,tabs,width:440,height:950,footerHeight:166};}
 
+function desktopDefaults(){
+ const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
+ const begin=source.indexOf('const DEFAULT_APPS = [');
+ const end=source.indexOf('let apps;',begin);
+ assert.ok(begin>0&&end>begin);
+ const context={isFolder:entry=>entry?.type==='folder'};
+ vm.createContext(context);
+ vm.runInContext(source.slice(begin,end)+';this.defaults=DEFAULT_APPS;this.system=SYSTEM_APPS;this.migrate=withoutRetiredDefaults;',context);
+ return context;
+}
+
+test('a new desktop contains only the ten requested shortcuts',()=>{
+ const {defaults,system}=desktopDefaults();
+ assert.deepEqual(Array.from(defaults,entry=>entry.id).concat(Array.from(system,entry=>entry.id)),
+  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-settings','atma-cookies']);
+});
+
+test('desktop migration removes obsolete stock icons but preserves edited shortcuts',()=>{
+ const {migrate}=desktopDefaults();
+ const entries=[
+  {id:'ozon',name:'Ozon',url:'https://www.ozon.ru/'},
+  {id:'wb',name:'Мой магазин',url:'https://www.wildberries.ru/'},
+  {id:'atma-files',type:'system'},
+  {id:'folder',type:'folder',children:[
+   {id:'wiki',name:'Википедия',url:'https://ru.wikipedia.org/'},
+   {id:'saved-site',name:'Мой сайт',url:'https://example.test/'},
+  ]},
+ ];
+ const migrated=JSON.parse(JSON.stringify(migrate(entries)));
+ assert.deepEqual(migrated,[entries[1],{...entries[3],children:[entries[3].children[1]]}]);
+});
+
 test('a fresh launch shows the saved website desktop, not an empty new-tab surface',()=>{
  const page=browser();page.consume(payload('initial'));
  assert.equal(page.document.body.dataset.surface,'home');

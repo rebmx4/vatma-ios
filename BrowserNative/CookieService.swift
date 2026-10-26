@@ -8,7 +8,7 @@ enum CookieService {
             let id = profile["id"] as? String ?? ""
             let rows: [[String: Any]] = cookies.sorted { ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name) }.map {
                 ["id": CookieIdentity.id(profile: id, cookie: $0), "domain": $0.domain,
-                 "path": $0.path, "name": $0.name, "value": $0.value,
+                 "path": $0.path, "name": $0.name,
                  "secure": $0.isSecure, "httpOnly": $0.isHTTPOnly, "session": $0.isSessionOnly,
                  "expires": $0.expiresDate?.timeIntervalSince1970 ?? 0]
             }

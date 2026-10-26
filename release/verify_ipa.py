@@ -48,9 +48,6 @@ def verify(path, expected_build, root=ROOT):
         info = plistlib.loads(archive.read(expected_info))
         validate_info(info, expected_build)
         prefix = "Payload/ATMA.app/"
-        for excluded in ("BrowserUI/profiles.json", "BrowserUI/content-blocker.json", "BrowserUI/assets/youtube-protection.js"):
-            if prefix + excluded in names:
-                raise ValueError("Package contains an excluded payload: " + excluded)
         for name in names:
             lower = name.lower()
             if any(token in lower for token in ("brave", "chromium", "vatma", ".appex/", ".framework/")):
@@ -65,14 +62,19 @@ def verify(path, expected_build, root=ROOT):
             if not archive.read(prefix + name):
                 raise ValueError(f"Required application resource missing: {name}")
         count = 0
+        expected_resources = set()
         for source, destination in ((root / "BrowserUI", "BrowserUI"),
                                     (root / "assets/certificates", "certificates")):
             for file in sorted(source.rglob("*")):
                 if file.is_file():
                     target = prefix + destination + "/" + file.relative_to(source).as_posix()
+                    expected_resources.add(target)
                     if archive.read(target) != file.read_bytes():
                         raise ValueError("Packaged browser resource differs from verified source")
                     count += 1
+        actual_resources = {name for name in names if name.startswith(prefix + "BrowserUI/") or name.startswith(prefix + "certificates/")}
+        if actual_resources != expected_resources:
+            raise ValueError("Package contains an unverified or missing browser resource")
         return {"status": "passed", "scope": "IPA structure, identity, icons and bundled source resources",
                 "app": "ATMA.app", "build": str(expected_build), "verified_resource_count": count,
                 "codesign": "verified separately by macOS CI"}

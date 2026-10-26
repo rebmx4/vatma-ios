@@ -2,7 +2,7 @@
 
 Native UIKit/WKWebView browser. App: **АТМА / ATMA**, bundle **ru.atma.browser**, App Store Connect **6826668990**, minimum iOS 17, iPhone and iPad.
 
-The latest internal TestFlight build **1.0.0 (2)** is VALID and IN_BETA_TESTING. Source **261de4976185dfa437a1c455a52e991cacc5eca3**, tag **atma-browser-1.0.0-build2**, native run **40156389760**, signed/upload run **40158483460**. See the [verified release record and remaining device checks](docs/releases/2026-10-25-build2.md). The App Store submission still uses build 1 with MANUAL release; public approval is separate.
+The last verified internal TestFlight build, as recorded on 2026-10-25, was **1.0.0 (2)** with source **261de4976185dfa437a1c455a52e991cacc5eca3**, tag **atma-browser-1.0.0-build2**, native run **40156389760** and signed/upload run **40158483460**. See the [release record and remaining device checks](docs/releases/2026-10-25-build2.md). Check App Store Connect again before relying on the current submission status.
 
 The previously delivered build **1.0.0 (1)** is traceable to tag **atma-browser-1.0.0-build1**, source **a879df5306cd232616e6c1a17fc123565e7197cc**, native run **40141124891** and signed/upload run **40142631653**. Store approval and availability are separate from build/upload success.
 
@@ -11,12 +11,13 @@ The previously delivered build **1.0.0 (1)** is traceable to tag **atma-browser-
 - Product sources: BrowserNative, BrowserUI, BrowserResources and assets/certificates. The standalone app does not include the legacy astrology application.
 - The bundled interface is served only on loopback. Website WKWebViews do not receive the privileged UI bridge.
 - Ordinary tabs and saved website shortcuts use the current device and one persistent website session. Ordinary saved sign-ins remain ordinary when leaving Incognito.
-- Incognito has its own desktop icon and white search start screen. Its website data store is nonpersistent; private tabs are excluded from saved-session restoration. Closing all private tabs discards that temporary session. Deliberately saved files and shortcuts remain.
+- Incognito opens from Settings and has a white search start screen. Its website data store is nonpersistent; private tabs are excluded from saved-session restoration. Closing all private tabs discards that temporary session. Deliberately saved files and shortcuts remain.
 - Private tab previews do not fetch website artwork or reveal page snapshots. The PIN page separately encrypts selected shortcut records and is not Incognito.
 - Camera and microphone are requested by iOS when needed by an open site. Uploads and external mail links remain available. Private browsing does not hide IP addresses or signed-in identities from websites.
 - No developer analytics, advertising SDK, payment SDK, notification backend or browser account is included. Website connections, searches and icon fetches go to the relevant websites; their privacy policies apply.
-- Device-model switching and content blocking remain absent. Any future reintroduction requires an accurately described, normally reviewed update.
-- Website notifications and unread badges are not implemented. A proposed counter-only integration must first establish authorized access without message content.
+- The current source offers a device choice only in Incognito by changing the User-Agent and WebKit content mode. It does not emulate the physical screen or full device fingerprint. Bundled WebKit rules and a limited YouTube page adapter aim to filter some advertising; native compilation and real-site behavior still need testing on an iPhone.
+- The Cookies screen is designed to list local WebKit site data and cookie metadata, without cookie values or website passwords, and offer deletion. These changes have not yet been tested on an iPhone.
+- VK and Avito unread counters are local to open website tabs and the running app. Website push notifications and reliable badges while ATMA is closed are not implemented.
 
 ## Local verification on Windows
 
