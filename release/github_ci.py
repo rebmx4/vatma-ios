@@ -17,7 +17,9 @@ def validate_workflow(config, *, signing):
     require(set(config["jobs"]) == {"ios"}, "Unexpected GitHub job")
     job = config["jobs"]["ios"]
     require(job["runs-on"] == "macos-26", "Use the standard public-repository Mac runner")
-    require(job["timeout-minutes"] == 30, "Mac job must be bounded to 30 minutes")
+    expected_timeout = 30 if signing else 40
+    require(job["timeout-minutes"] == expected_timeout,
+            f"Mac job must be bounded to {expected_timeout} minutes")
     expected_permissions = {"contents": "read", **({"actions": "read"} if signing else {})}
     require(config["permissions"] == expected_permissions and "permissions" not in job,
             "GitHub job must not gain write permissions")

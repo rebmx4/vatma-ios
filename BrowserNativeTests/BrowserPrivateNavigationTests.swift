@@ -58,6 +58,8 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         let root = try await fixture.start()
         let ordinaryID = fixture.controller.model.activeTabId
         let ordinary = try await fixture.open(root)
+        let ordinaryAgent = try await fixture.script("return navigator.userAgent;", in: ordinary) as? String
+        XCTAssertFalse(ordinaryAgent?.isEmpty ?? true)
         let profile = try XCTUnwrap(fixture.controller.model.profiles.first { $0["mobile"] as? Bool == false })
         let profileID = try XCTUnwrap(profile["id"] as? String)
         do { _ = try await fixture.rpc("private-device", body: ["profileId": profileID]); XCTFail("Normal tabs must reject device changes") }
@@ -70,7 +72,11 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         XCTAssertFalse(privatePage.configuration.websiteDataStore.isPersistent)
         _ = try await fixture.rpc("tabs/select", body: ["tabId": ordinaryID])
         XCTAssertEqual(fixture.controller.model.active.profileId, BrowserModel.actualProfile)
-        XCTAssertNil(ordinary.customUserAgent)
+        let systemPage = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        XCTAssertEqual(ordinary.customUserAgent, systemPage.customUserAgent)
+        XCTAssertEqual(ordinary.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
+        let currentAgent = try await fixture.script("return navigator.userAgent;", in: ordinary) as? String
+        XCTAssertEqual(currentAgent, ordinaryAgent)
     }
 
     func testRealHistoryAndCompactHomeGlyphFollowNavigation() async throws {
