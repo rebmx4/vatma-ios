@@ -207,7 +207,9 @@ final class BrowserController: UIViewController {
         renderer.uiDelegate = self
         renderer.allowsBackForwardNavigationGestures = true
         renderer.scrollView.contentInsetAdjustmentBehavior = .never
-        renderer.customUserAgent = privateProfile?["userAgent"] as? String
+        if let userAgent = privateProfile?["userAgent"] as? String {
+            renderer.customUserAgent = userAgent
+        }
         media.register(renderer, tabID: tab.id)
         blocker.apply(to: renderer)
         renderers[tab.id] = renderer

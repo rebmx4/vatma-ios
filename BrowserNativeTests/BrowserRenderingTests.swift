@@ -371,7 +371,9 @@ final class BrowserRenderingTests: XCTestCase {
               desktop:{rect:rect(desktop),scrollLeft:desktop?.scrollLeft,pages:desktop?.children.length},
               tiles:[...document.querySelectorAll('.app-item')].slice(0,24).map(item=>({id:item.dataset.app,rect:rect(item.querySelector('button'))}))});
             """, in: page)
-        XCTFail("Fixture condition timed out: \(expression); details: \(String(describing: details))")
+        let scripts = page.configuration.userContentController.userScripts
+        let mediaScriptRegistered = scripts.contains { $0.source.contains("function installAtmaMediaPage") }
+        XCTFail("Fixture condition timed out: \(expression); mediaScriptRegistered: \(mediaScriptRegistered); userScriptCount: \(scripts.count); details: \(String(describing: details))")
         throw NSError(domain: "ATMA.RenderingFixture", code: 1)
     }
 
