@@ -210,6 +210,7 @@ final class BrowserController: UIViewController {
         if let userAgent = privateProfile?["userAgent"] as? String {
             renderer.customUserAgent = userAgent
         }
+        if let privateProfile { BrowserPageScripts.setPrivateIdentity(privateProfile, for: renderer) }
         media.register(renderer, tabID: tab.id)
         blocker.apply(to: renderer)
         renderers[tab.id] = renderer

@@ -9,6 +9,7 @@ import re
 import ssl
 import struct
 from app_identity import BUNDLE_ID, TEAM_ID
+from build_webkit_filter import build as build_webkit_filter
 from github_ci import validate_workflow as validate_github_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -161,7 +162,10 @@ def validate(root=ROOT):
                 continue
             if path.suffix in (".swift", ".js", ".mjs", ".json", ".html", ".css", ".plist", ".strings", ".xcprivacy"):
                 text = path.read_text(encoding="utf-8")
-                require(not forbidden.search(text), f"Forbidden product dependency/endpoint in {path.relative_to(root)}")
+                # Filter domains can legitimately contain words such as "brave".
+                # This generated file is checked byte-for-byte against the pinned source below.
+                if path != root / "BrowserUI/content-blocker.json":
+                    require(not forbidden.search(text), f"Forbidden product dependency/endpoint in {path.relative_to(root)}")
                 if path.suffix == ".json":
                     json.loads(text)
                 if path.suffix == ".swift":
@@ -174,7 +178,11 @@ def validate(root=ROOT):
     require(isinstance(profiles, list) and len(profiles) > 1, "Private device catalogue is missing")
     rules = load_json(root / "BrowserUI/content-blocker.json")
     require(isinstance(rules, list) and len(rules) > 0, "Website content rules are missing")
-    require((root / "BrowserUI/assets/youtube-protection.js").is_file(), "Video protection adapter is missing")
+    require((root / "BrowserUI/content-blocker.json").read_bytes() == build_webkit_filter(),
+            "Website content rules differ from the pinned ATMA2 source")
+    for asset in ("youtube-protection", "site-ad-protection", "device-identity"):
+        require((root / "BrowserUI/assets" / (asset + ".js")).is_file(),
+                f"Website adapter {asset} is missing")
     for folder in ("release", "tests"):
         for path in (root / folder).glob("*.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

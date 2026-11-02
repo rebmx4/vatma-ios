@@ -59,6 +59,7 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         let ordinaryID = fixture.controller.model.activeTabId
         let ordinary = try await fixture.open(root)
         let ordinaryAgent = try await fixture.script("return navigator.userAgent;", in: ordinary) as? String
+        let ordinaryIdentity = try await fixture.script("return {platform:navigator.platform,touch:navigator.maxTouchPoints,width:screen.width,dpr:devicePixelRatio};", in: ordinary) as? [String: Any]
         XCTAssertFalse(ordinaryAgent?.isEmpty ?? true)
         let profile = try XCTUnwrap(fixture.controller.model.profiles.first { $0["mobile"] as? Bool == false })
         let profileID = try XCTUnwrap(profile["id"] as? String)
@@ -70,6 +71,13 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         XCTAssertEqual(privatePage.customUserAgent, profile["userAgent"] as? String)
         XCTAssertEqual(privatePage.configuration.defaultWebpagePreferences.preferredContentMode, .desktop)
         XCTAssertFalse(privatePage.configuration.websiteDataStore.isPersistent)
+        let masked = try await fixture.script("return {platform:navigator.platform,cores:navigator.hardwareConcurrency,touch:navigator.maxTouchPoints,width:screen.width,height:screen.height,dpr:devicePixelRatio};", in: privatePage) as? [String: Any]
+        XCTAssertEqual(masked?["platform"] as? String, profile["platform"] as? String)
+        XCTAssertEqual(masked?["cores"] as? Int, profile["cores"] as? Int)
+        XCTAssertEqual(masked?["touch"] as? Int, profile["touch"] as? Int)
+        XCTAssertEqual(masked?["width"] as? Int, profile["width"] as? Int)
+        XCTAssertEqual(masked?["height"] as? Int, profile["height"] as? Int)
+        XCTAssertEqual((masked?["dpr"] as? NSNumber)?.doubleValue, (profile["dpr"] as? NSNumber)?.doubleValue)
         _ = try await fixture.rpc("tabs/select", body: ["tabId": ordinaryID])
         XCTAssertEqual(fixture.controller.model.active.profileId, BrowserModel.actualProfile)
         let systemPage = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -77,6 +85,12 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         XCTAssertEqual(ordinary.configuration.defaultWebpagePreferences.preferredContentMode, .recommended)
         let currentAgent = try await fixture.script("return navigator.userAgent;", in: ordinary) as? String
         XCTAssertEqual(currentAgent, ordinaryAgent)
+        let currentIdentity = try await fixture.script("return {platform:navigator.platform,touch:navigator.maxTouchPoints,width:screen.width,dpr:devicePixelRatio};", in: ordinary) as? [String: Any]
+        XCTAssertEqual(currentIdentity?["platform"] as? String, ordinaryIdentity?["platform"] as? String)
+        XCTAssertEqual(currentIdentity?["touch"] as? Int, ordinaryIdentity?["touch"] as? Int)
+        XCTAssertEqual(currentIdentity?["width"] as? Int, ordinaryIdentity?["width"] as? Int)
+        XCTAssertEqual((currentIdentity?["dpr"] as? NSNumber)?.doubleValue,
+                       (ordinaryIdentity?["dpr"] as? NSNumber)?.doubleValue)
     }
 
     func testRealHistoryAndCompactHomeGlyphFollowNavigation() async throws {

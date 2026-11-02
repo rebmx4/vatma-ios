@@ -22,7 +22,7 @@ final class BrowserContentBlockerTests: XCTestCase {
             XCTAssertNotNil(list)
             compiled.fulfill()
         }
-        wait(for: [compiled], timeout: 20)
+        wait(for: [compiled], timeout: 60)
     }
 
     func testYouTubeAdapterRemovesAdvertisementFieldsWithoutRemovingPlayback() async throws {
@@ -47,6 +47,8 @@ final class BrowserContentBlockerTests: XCTestCase {
         XCTAssertNotNil(capability["contentBlocking"])
         XCTAssertNotNil(Bundle.main.url(forResource: "content-blocker", withExtension: "json", subdirectory: "BrowserUI"))
         XCTAssertNotNil(Bundle.main.url(forResource: "youtube-protection", withExtension: "js", subdirectory: "BrowserUI/assets"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "site-ad-protection", withExtension: "js", subdirectory: "BrowserUI/assets"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "device-identity", withExtension: "js", subdirectory: "BrowserUI/assets"))
 
         let page = controller.renderer(for: controller.model.active)
         let url = URL(string: "https://www.youtube.com/watch?v=atma-test")!

@@ -1,0 +1,27 @@
+ATMA iOS WebKit host rules — source and attribution
+
+The host snapshot in release/atma2-hosts.json was adapted on 2026-11-02 from
+ATMA2 blocker 0.3.1, rules 1–83 of rules/host-blocks.json (SHA-256
+ec33270e74e408b3c9086a0527c2ad7bebbb8b2aa5cc8d5d4f9e3500aa822c24).
+The snapshot contains 82,498 unique domains. The iOS adaptation groups the
+domains into individual WebKit URL filters, permits top-level navigation, and bundles no
+automatic filter updater. The complete desktop DNR exception, cosmetic and
+popup rules are not included in this iOS adaptation.
+
+EasyList and EasyPrivacy: The EasyList authors, https://easylist.to/ .
+Pinned EasyList source: https://easylist.to/easylist/easylist.txt
+SHA-256: 103cf612c2e1dbfdf0558ffaaa0c9a5dcb335525b9caa14440a4d0656ee0c87d
+Pinned EasyPrivacy source: https://easylist.to/easylist/easyprivacy.txt
+SHA-256: 7e21b9674c953dc14df24b05411f65848ccd9f41d2ab98c6d2db1f03c9a215b4
+Source pin: d500436ddfce95da5bb54780e5e000343e2a300f, 2026-10-27.
+Data license: CC BY-SA 3.0, https://easylist.to/pages/licence.html .
+Legal code: https://creativecommons.org/licenses/by-sa/3.0/legalcode .
+
+AdAway default blocklist: Kicelo, Dominik Schuermann and later contributors,
+https://github.com/AdAway/adaway.github.io/commits/master .
+Pinned source: https://raw.githubusercontent.com/AdAway/adaway.github.io/f39ba0a523564447dfa94e40327c1a14c02304dc/hosts.txt
+SHA-256: 8c925c37a5eaa5e1c582c76e12301797861addee5ad0fa0e6e46c9dd0136fe55
+Data license: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/ .
+
+The data authors do not endorse ATMA. Their license notices and rights remain
+with the original data. The independently written ATMA browser code is separate.

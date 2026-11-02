@@ -784,7 +784,7 @@ function renderPrivateDevices(){
   root.replaceChildren();
   const search=document.createElement('input');search.id='private-device-filter';search.className='private-device-filter';search.placeholder='Найти устройство';search.setAttribute('aria-label','Найти устройство');
   const list=document.createElement('div');list.className='model-list';list.id='private-devices';
-  const note=document.createElement('p');note.className='sheet-note';note.textContent='Меняются User-Agent и мобильный или настольный режим сайта. Экран и движок WebKit остаются настоящими. Смена устройства обновит открытую страницу.';
+  const note=document.createElement('p');note.className='sheet-note';note.textContent='Меняются User-Agent, режим сайта и некоторые параметры устройства, видимые JavaScript. Физический экран и движок WebKit не меняются; полный цифровой отпечаток не скрывается. Смена устройства обновит открытую страницу.';
   root.append(search,list,note);
   const render=()=>{
     list.replaceChildren();

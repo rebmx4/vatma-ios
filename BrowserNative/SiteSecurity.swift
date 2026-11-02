@@ -58,20 +58,33 @@ final class SiteBlocker {
             error = "Bundled content rules are missing."
             return
         }
-        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "atma.website-filter.v2", encodedContentRuleList: rules) { [weak self] list, error in
+        let digest = SHA256.hash(data: Data(rules.utf8)).prefix(12)
+            .map { String(format: "%02x", $0) }.joined()
+        let identifier = "atma.website-filter.v3." + digest
+        let store = WKContentRuleListStore.default()!
+        store.lookUpContentRuleList(forIdentifier: identifier) { [weak self] cached, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.ruleList = list
-                self.error = error?.localizedDescription ?? (list == nil ? "Content rules did not compile." : nil)
-                for entry in Array(self.views.values) { if let view = entry.view { self.apply(to: view) } }
-                let pending = self.pendingLoads
-                self.pendingLoads.removeAll()
-                for (id, request) in pending {
-                    if let view = self.views[id]?.view { view.load(request) }
+                if let cached { self.finishLoading(cached, error: nil) }
+                else {
+                    store.compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: rules) { [weak self] list, error in
+                        DispatchQueue.main.async { self?.finishLoading(list, error: error) }
+                    }
                 }
-                self.didChange?()
             }
         }
+    }
+
+    private func finishLoading(_ list: WKContentRuleList?, error: Error?) {
+        ruleList = list
+        self.error = error?.localizedDescription ?? (list == nil ? "Content rules did not compile." : nil)
+        for entry in Array(views.values) { if let view = entry.view { apply(to: view) } }
+        let pending = pendingLoads
+        pendingLoads.removeAll()
+        for (id, request) in pending {
+            if let view = views[id]?.view { view.load(request) }
+        }
+        didChange?()
     }
 
     var available: Bool { ruleList != nil }
