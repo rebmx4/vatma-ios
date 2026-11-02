@@ -28,6 +28,20 @@ test('settings, save site, tabs and panel dismissal retain their button actions'
  assert.ok(f.effects.some(e=>e[0]==='pin'));assert.deepEqual(f.effects.filter(e=>e[0]==='panel'),[['panel','settings'],['panel','tabs'],['panel',null],['panel',null]]);
  f.context.state.tabs=[];await f.click('tabs-button');assert.equal(f.effects.filter(e=>e[0]==='new-tab').length,2);
 });
+test('touching the Incognito device chooser while the keyboard is open opens it once before the click moves',()=>{
+ const f=setup(),input=f.get('incognito-address'),device=f.get('incognito-device');
+ f.context.document.activeElement=input;
+ input.blur=()=>{f.context.document.activeElement=null;f.effects.push(['blur']);};
+ let prevented=0;
+ device.events.get('pointerdown')({pointerType:'touch',preventDefault(){prevented++;}});
+ assert.deepEqual(f.effects,[['blur'],['panel','private-device']]);
+ device.events.get('click')({preventDefault(){prevented++;}});
+ assert.deepEqual(f.effects,[['blur'],['panel','private-device']]);
+ assert.equal(prevented,2);
+ f.runHolds();
+ device.events.get('click')({preventDefault(){prevented++;}});
+ assert.equal(f.effects.filter(effect=>effect[0]==='panel').length,2);
+});
 test('a tap on empty desktop space still exits editing',async()=>{
  const f=setup();await f.click('edit-apps');assert.equal(f.context.editing,true);
  const event={isPrimary:true,button:0,pointerId:1,clientX:20,clientY:30,target:f.get('home')};

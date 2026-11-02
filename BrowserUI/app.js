@@ -1019,7 +1019,18 @@ document.addEventListener('pointerup',event=>{
 });
 document.addEventListener('pointercancel',cancelEmptyHomeHold);
 $('go-home').addEventListener('click', async () => { try {lockVault();desktopPage=0;await action('home');chooseDesktopSurface(state.activeTabId);$('address').value='';renderApps();showDesktopPage(0);} catch {} });
-$('incognito-device').addEventListener('click',()=>{$('incognito-address').blur();setPanel('private-device');});
+let privateDeviceTouchOpened=false;
+const openPrivateDeviceChooser=()=>{$('incognito-address').blur();setPanel('private-device');};
+$('incognito-device').addEventListener('pointerdown',event=>{
+  if(event.pointerType!=='touch'||document.activeElement!==$('incognito-address'))return;
+  // The keyboard moves this button before a touch click can reach it.
+  event.preventDefault();privateDeviceTouchOpened=true;openPrivateDeviceChooser();
+  setTimeout(()=>{privateDeviceTouchOpened=false;},500);
+});
+$('incognito-device').addEventListener('click',event=>{
+  if(privateDeviceTouchOpened){event.preventDefault();privateDeviceTouchOpened=false;return;}
+  openPrivateDeviceChooser();
+});
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));
