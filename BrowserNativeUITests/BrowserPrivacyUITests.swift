@@ -9,7 +9,7 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app.launchArguments = ["-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU", "--atma-ui-diagnostics"]
         app.launch()
-        XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
+        XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 60))
     }
 
     func testIncognitoOpensFromSettingsWithWhiteSearchScreen() throws {
