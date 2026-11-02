@@ -72,9 +72,14 @@ def verify(path, expected_build, root=ROOT):
                     if archive.read(target) != file.read_bytes():
                         raise ValueError("Packaged browser resource differs from verified source")
                     count += 1
-        actual_resources = {name for name in names if name.startswith(prefix + "BrowserUI/") or name.startswith(prefix + "certificates/")}
+        actual_resources = {entry.filename for entry in archive.infolist() if not entry.is_dir()
+                            and (entry.filename.startswith(prefix + "BrowserUI/")
+                                 or entry.filename.startswith(prefix + "certificates/"))}
         if actual_resources != expected_resources:
-            raise ValueError("Package contains an unverified or missing browser resource")
+            extra = sorted(actual_resources - expected_resources)
+            missing = sorted(expected_resources - actual_resources)
+            raise ValueError("Package contains an unverified or missing browser resource: "
+                             f"extra={extra[:8]} missing={missing[:8]}")
         return {"status": "passed", "scope": "IPA structure, identity, icons and bundled source resources",
                 "app": "ATMA.app", "build": str(expected_build), "verified_resource_count": count,
                 "codesign": "verified separately by macOS CI"}

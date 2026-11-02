@@ -116,6 +116,8 @@ class PackageTests(unittest.TestCase):
                 archive.writestr("Payload/ATMA.app/ATMA", bytes.fromhex("cffaedfe") + b"test-fixture")
                 archive.writestr("Payload/ATMA.app/Assets.car", b"test-fixture")
                 archive.writestr("Payload/ATMA.app/PrivacyInfo.xcprivacy", b"test-fixture")
+                archive.writestr("Payload/ATMA.app/BrowserUI/", b"")
+                archive.writestr("Payload/ATMA.app/certificates/", b"")
                 archive.writestr("Payload/ATMA.app/BrowserUI/index.html", b"ATMA fixture")
                 archive.writestr("Payload/ATMA.app/certificates/manifest.json", b"{}")
             self.assertEqual(verify_ipa.verify(package, "7", root=fixture)["app"], "ATMA.app")
