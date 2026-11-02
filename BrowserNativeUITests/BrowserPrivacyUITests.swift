@@ -26,10 +26,12 @@ final class BrowserPrivacyUITests: XCTestCase {
 
     func testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu() throws {
         let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
-        ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).press(forDuration: 4)
+        // Keep the gesture inside Home on wide iPads, away from icons and scrollbars.
+        let emptySpace = ui.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+        emptySpace.press(forDuration: 4)
         let ordinaryRemove = button(["Удалить ВКонтакте", "Remove ВКонтакте"])
         XCTAssertTrue(ordinaryRemove.waitForExistence(timeout: 5))
-        ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
+        emptySpace.tap()
         XCTAssertTrue(ordinaryRemove.waitForNonExistence(timeout: 5))
         button(["Настройки", "Settings"]).tap()
         let add = button(["Добавить веб-приложение", "Add web app"])
@@ -49,7 +51,7 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertFalse(button(["Сохранить изображение", "Сохранить фото", "Добавить в Фото", "Save Image", "Save to Photos", "Add to Photos"]).exists)
         remove.tap()
         XCTAssertFalse(button(["Сохранить", "Save"]).exists, "The remove control must not open the shortcut editor")
-        ui.coordinate(withNormalizedOffset: CGVector(dx: 0.985, dy: 0.25)).tap()
+        emptySpace.tap()
         address.tap(); address.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Gesture fixture".count))
     }
 
