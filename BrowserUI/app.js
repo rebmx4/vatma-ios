@@ -58,14 +58,14 @@ const DEFAULT_APPS = [
   { id: 'tbank', name: 'Т-Банк', url: 'https://www.tbank.ru/', color: '#ffdf00' },
   { id: 'mail', name: 'Почта Mail', url: 'https://e.mail.ru/', color: '#087cf1' },
 ];
-const SYSTEM_APPS=[{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'}];
+const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'}];
 const RETIRED_DEFAULTS=new Map([
   ['ozonbank',['Ozon Банк','https://finance.ozon.ru/']],
   ['ozon',['Ozon','https://www.ozon.ru/']],
   ['wb',['Wildberries','https://www.wildberries.ru/']],
   ['wiki',['Википедия','https://ru.wikipedia.org/']],
 ]);
-const RETIRED_SYSTEM_IDS=new Set(['atma-incognito','atma-files','atma-home']);
+const RETIRED_SYSTEM_IDS=new Set(['atma-files','atma-home']);
 function withoutRetiredDefaults(entries){
   return entries.flatMap(entry=>{
     if(RETIRED_SYSTEM_IDS.has(entry.id)&&entry.type==='system')return [];

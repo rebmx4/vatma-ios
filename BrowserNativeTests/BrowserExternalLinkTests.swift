@@ -15,11 +15,13 @@ final class BrowserExternalLinkTests: XCTestCase {
     }
 
     func testInstallationLinksCannotNavigateOrOpenAnotherApp() {
-        let installURL = URL(string: "itms" + "-services://install")!
-        XCTAssertTrue(ExternalLinkPolicy.isAppInstallationLink(installURL))
-        XCTAssertFalse(ExternalLinkPolicy.requiresConfirmation(installURL))
-        XCTAssertFalse(ExternalLinkPolicy.allowsSubframe(installURL))
-        XCTAssertThrowsError(try AddressResolver.validated(installURL.absoluteString))
+        for text in ["itms-services://install", "ITMS-SERVICES://install", "itms-apps://itunes.apple.com/app/id123"] {
+            let installURL = URL(string: text)!
+            XCTAssertTrue(ExternalLinkPolicy.isAppInstallationLink(installURL), text)
+            XCTAssertFalse(ExternalLinkPolicy.requiresConfirmation(installURL), text)
+            XCTAssertFalse(ExternalLinkPolicy.allowsSubframe(installURL), text)
+            XCTAssertThrowsError(try AddressResolver.validated(installURL.absoluteString), text)
+        }
     }
 
     func testOnlyWebContentSchemesCanNavigateSubframes() {

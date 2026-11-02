@@ -166,7 +166,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         guard webView !== ui, let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
-        let trusted = SiteTrust.evaluate(trust)
+        let host = challenge.protectionSpace.host
+        guard SiteTrust.allowsBundledRoots(for: host) else {
+            completionHandler(.performDefaultHandling, nil); return
+        }
+        let trusted = SiteTrust.evaluate(trust, for: host)
         if !isPrivateRenderer(webView) {
             LocalUIServer.diagnostic("Site TLS trust: host=\(challenge.protectionSpace.host), trusted=\(trusted)")
         }

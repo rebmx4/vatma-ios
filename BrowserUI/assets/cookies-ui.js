@@ -92,7 +92,7 @@ export async function renderCookieBrowser(root,{api,onBack,notify,t=value=>value
   }
   function renderPasswords(){
     const card=make('div','site-data-card');
-    card.append(make('strong','','Пароли сайтов недоступны ATMA'),make('p','','WebKit не предоставляет браузеру пароли, введённые на сайтах. Cookie и токены входа здесь не показываются как пароли.'));
+    card.append(make('strong','','ATMA не хранит пароли сайтов'),make('p','','ATMA не сохраняет пароли, введённые на сайтах. При входе они передаются самому сайту. Cookie и токены входа здесь не показываются как пароли.'));
     list.append(card);
   }
   function render(){

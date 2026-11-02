@@ -2,6 +2,21 @@ import XCTest
 @testable import ATMA
 
 final class BrowserSecurityTests: XCTestCase {
+    func testBundledRussianRootIsLimitedToNamedSiteDomains() {
+        for host in ["vk.com", "id.vk.ru", "dzen.ru", "ya.ru", "passport.yandex.ru",
+                     "video.rutube.ru", "ok.ru", "m.ok.ru",
+                     "vtb.ru", "online.vtb.ru", "tbank.ru", "www.tbank.ru", "sber.ru",
+                     "online.sberbank.ru", "www.sberbank.com", "ONLINE.VTB.RU"] {
+            XCTAssertTrue(SiteTrust.allowsBundledRoots(for: host), host)
+        }
+        for host in ["example.com", "fakevk.com", "vk.com.evil.test", "evilrutube.ru", ".ok.ru", "ok.ru.",
+                     "myya.ru", "yandex.ru.evil.test",
+                     "fakevtb.ru", "vtb.ru.evil.test", "tbank.ru.evil.test", "sberbank1.ru",
+                     "gazprombank.ru", ""] {
+            XCTAssertFalse(SiteTrust.allowsBundledRoots(for: host), host)
+        }
+    }
+
     func testAddressRejectsScriptAndEmbeddedCredentials() throws {
         for input in ["javascript:alert(1)", "data:text/html,hello", "file:///etc/passwd",
                       "https://user:secret@example.com", "ftp://example.com"] {

@@ -4,13 +4,25 @@ import CryptoKit
 import WebKit
 
 enum SiteTrust {
-    static func evaluate(_ trust: SecTrust) -> Bool {
+    private static let serviceDomains: Set<String> = ["vk.com", "vk.ru", "dzen.ru", "ya.ru", "yandex.ru", "rutube.ru", "ok.ru"]
+    private static let bankDomains: Set<String> = ["vtb.ru", "tbank.ru", "sber.ru", "sberbank.ru", "sberbank.com"]
+    private static let approvedDomains = serviceDomains.union(bankDomains)
+
+    static func allowsBundledRoots(for host: String) -> Bool {
+        let host = host.lowercased()
+        guard !host.isEmpty, host == host.trimmingCharacters(in: CharacterSet(charactersIn: ".")) else { return false }
+        return approvedDomains.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    static func evaluate(_ trust: SecTrust, for host: String) -> Bool {
+        guard allowsBundledRoots(for: host),
+              SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, host as CFString)) == errSecSuccess else { return false }
         if SecTrustEvaluateWithError(trust, nil) { return true }
         let anchors = pinnedRoots()
         guard !anchors.isEmpty,
               SecTrustSetAnchorCertificates(trust, anchors as CFArray) == errSecSuccess,
               SecTrustSetAnchorCertificatesOnly(trust, false) == errSecSuccess else { return false }
-        // The challenge's original SSL/hostname policy remains attached to this trust.
+        // Keep hostname and expiry validation; only the bundled root is added.
         return SecTrustEvaluateWithError(trust, nil)
     }
 

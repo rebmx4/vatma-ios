@@ -74,7 +74,11 @@ private final class SiteResourceTrust: NSObject, URLSessionDelegate {
               let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil); return
         }
-        guard SiteTrust.evaluate(trust) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+        let host = challenge.protectionSpace.host
+        guard SiteTrust.allowsBundledRoots(for: host) else {
+            completionHandler(.performDefaultHandling, nil); return
+        }
+        guard SiteTrust.evaluate(trust, for: host) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }

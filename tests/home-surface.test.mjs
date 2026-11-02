@@ -30,10 +30,12 @@ function desktopDefaults(){
  return context;
 }
 
-test('a new desktop contains only the ten requested shortcuts',()=>{
+test('a new desktop includes the Incognito shortcut and requested websites',()=>{
  const {defaults,system}=desktopDefaults();
  assert.deepEqual(Array.from(defaults,entry=>entry.id).concat(Array.from(system,entry=>entry.id)),
-  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-settings','atma-cookies']);
+  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-incognito','atma-settings','atma-cookies']);
+ assert.deepEqual(JSON.parse(JSON.stringify(Array.from(system)[0])),
+  {id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'});
 });
 
 test('desktop migration removes obsolete stock icons but preserves edited shortcuts',()=>{
@@ -42,13 +44,14 @@ test('desktop migration removes obsolete stock icons but preserves edited shortc
   {id:'ozon',name:'Ozon',url:'https://www.ozon.ru/'},
   {id:'wb',name:'Мой магазин',url:'https://www.wildberries.ru/'},
   {id:'atma-files',type:'system'},
+  {id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито'},
   {id:'folder',type:'folder',children:[
    {id:'wiki',name:'Википедия',url:'https://ru.wikipedia.org/'},
    {id:'saved-site',name:'Мой сайт',url:'https://example.test/'},
   ]},
  ];
  const migrated=JSON.parse(JSON.stringify(migrate(entries)));
- assert.deepEqual(migrated,[entries[1],{...entries[3],children:[entries[3].children[1]]}]);
+ assert.deepEqual(migrated,[entries[1],entries[3],{...entries[4],children:[entries[4].children[1]]}]);
 });
 
 test('a fresh launch shows the saved website desktop, not an empty new-tab surface',()=>{

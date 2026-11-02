@@ -128,7 +128,14 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
             completionHandler(.performDefaultHandling, nil); return
         }
-        guard let trust = challenge.protectionSpace.serverTrust, SiteTrust.evaluate(trust) else {
+        guard let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.cancelAuthenticationChallenge, nil); return
+        }
+        let host = challenge.protectionSpace.host
+        guard SiteTrust.allowsBundledRoots(for: host) else {
+            completionHandler(.performDefaultHandling, nil); return
+        }
+        guard SiteTrust.evaluate(trust, for: host) else {
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
         completionHandler(.useCredential, URLCredential(trust: trust))
