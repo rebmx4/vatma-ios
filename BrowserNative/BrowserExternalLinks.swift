@@ -2,13 +2,24 @@ import UIKit
 import WebKit
 
 enum ExternalLinkPolicy {
-    // Web documents and executable/local URLs stay within the browser's own policy.
+    // Installation links must never reach WebKit or UIApplication.open.
+    static func isAppInstallationLink(_ url: URL) -> Bool {
+        url.scheme?.lowercased().hasPrefix("itms") == true
+    }
+
+    static func allowsSubframe(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return ["http", "https", "about", "blob", "data", "javascript"].contains(scheme)
+    }
+
+    // Web documents and local URLs stay within the browser's own policy.
     private static let internalSchemes: Set<String> = [
-        "http", "https", "about", "blob", "data", "file", "javascript", "vbscript", "atma-ui", "itms-services"
+        "http", "https", "about", "blob", "data", "file", "javascript", "vbscript", "atma-ui"
     ]
 
     static func requiresConfirmation(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return false }
+        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty,
+              !isAppInstallationLink(url) else { return false }
         return !internalSchemes.contains(scheme)
     }
 }
@@ -16,7 +27,8 @@ enum ExternalLinkPolicy {
 extension BrowserController {
     func offerExternalLink(_ url: URL, from page: WKWebView) {
         // A hidden/background page cannot bring another application forward.
-        guard page === currentRenderer, !page.isHidden, panel == nil,
+        guard ExternalLinkPolicy.requiresConfirmation(url),
+              page === currentRenderer, !page.isHidden, panel == nil,
               UIApplication.shared.applicationState == .active,
               presentedViewController == nil else { return }
         let russian = Locale.preferredLanguages.first?.hasPrefix("ru") == true

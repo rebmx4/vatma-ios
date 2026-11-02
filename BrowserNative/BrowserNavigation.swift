@@ -10,6 +10,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(allowed ? .allow : .cancel)
             return
         }
+        if ExternalLinkPolicy.isAppInstallationLink(url) {
+            decisionHandler(.cancel); return
+        }
         if navigationAction.shouldPerformDownload, ["http", "https", "blob"].contains(url.scheme ?? "") {
             if navigationAction.targetFrame?.isMainFrame == true {
                 expectDownload(webView, url: url, knownNavigation: false)
@@ -31,6 +34,8 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             if navigationAction.targetFrame?.isMainFrame == true {
                 downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             }
+        } else if !ExternalLinkPolicy.allowsSubframe(url) {
+            decisionHandler(.cancel); return
         }
         decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
     }
