@@ -34,7 +34,7 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(nativeInputTop - input.frame.maxY, 0)
         XCTAssertLessThanOrEqual(nativeInputTop - input.frame.maxY, 24, "Incognito input must sit above the system keyboard region")
         XCTAssertGreaterThanOrEqual(keyboard.frame.minY - nativeInputTop, 0)
-        XCTAssertLessThanOrEqual(keyboard.frame.minY - nativeInputTop, 96, "Only the system input accessory may separate the field from the keys")
+        XCTAssertLessThanOrEqual(keyboard.frame.minY - nativeInputTop, 140, "Only the system input accessory and prediction row may separate the field from the keys")
         XCTAssertFalse(home.isHittable, "Browser navigation hides during Incognito address entry")
         screenshot("incognito-start")
         input.typeText("example.org")
