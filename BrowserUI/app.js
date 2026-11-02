@@ -104,7 +104,7 @@ let desktopTabId=null;try{desktopTabId=sessionStorage.getItem(desktopSurfaceKey)
 const poolFor=scope=>scope==='private'?vaultApps:apps;
 const currentScope=()=>$('apps').children[desktopPage]?.dataset.scope==='private'?'private':'public';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-let wallpaper = localStorage.getItem('atma-preview-wallpaper') || 'solid';
+let wallpaper = localStorage.getItem('atma-preview-wallpaper') || 'landscape';
 let searchEngine = localStorage.getItem('atma-preview-search') || 'google';
 
 const brandLogoSource=document.querySelector('.wordmark img').getAttribute('src');
@@ -355,7 +355,7 @@ async function newIncognitoTab(){
  try{
   await action('tabs/new',{privateBrowsing:true});
   if(!state?.privateBrowsing)throw new Error('Инкогнито недоступно в этом режиме предпросмотра');
-  chooseDesktopSurface(null);$('incognito-address').value='';$('incognito-address').focus();
+  chooseDesktopSurface(null);$('incognito-address').value='';
  }catch(error){notify(error.message);}
 }
 async function selectBrowserTab(tabId){
@@ -1000,7 +1000,7 @@ document.addEventListener('pointerup',event=>{
 });
 document.addEventListener('pointercancel',cancelEmptyHomeHold);
 $('go-home').addEventListener('click', async () => { try {lockVault();desktopPage=0;await action('home');chooseDesktopSurface(state.activeTabId);$('address').value='';renderApps();showDesktopPage(0);} catch {} });
-$('incognito-device').addEventListener('click',()=>setPanel('private-device'));
+$('incognito-device').addEventListener('click',()=>{$('incognito-address').blur();setPanel('private-device');});
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));

@@ -48,6 +48,7 @@ final class BrowserWindowTests: XCTestCase {
         let source = controller.renderer(for: controller.model.active)
         let activeID = controller.model.activeTabId
         for address in ["javascript:alert(1)", "file:///private", "data:text/html,hello",
+                        "itms-services://?action=download-manifest&url=https://example.com/app.plist",
                         "about:config", "https://user:secret@example.com"] {
             XCTAssertThrowsError(try controller.createSiteWindow(from: source,
                 configuration: WKWebViewConfiguration(), url: URL(string: address)))

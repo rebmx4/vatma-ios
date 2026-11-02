@@ -1,21 +1,23 @@
 .incognito-start{display:none}
 body[data-surface=incognito]{--appearance-chrome:#fff;background:#fff;color:#20242a}
 body[data-surface=incognito] .wallpaper,body[data-surface=incognito] .home{display:none}
-body[data-surface=incognito] .incognito-start{position:fixed;inset:0 0 var(--bar-height);display:flex;align-items:center;justify-content:center;padding:28px 24px;overflow:auto;background:#fff;color:#20242a}
-.incognito-card{width:min(100%,560px);text-align:center}
-.incognito-card h1{margin:0 0 28px;font-size:32px;font-weight:600;letter-spacing:-.5px}
+body[data-surface=incognito] .incognito-start{position:fixed;inset:0 0 var(--bar-height);display:flex;align-items:stretch;justify-content:center;padding:28px 24px 12px;overflow:auto;background:#fff;color:#20242a}
+.incognito-card{width:min(100%,560px);min-height:100%;display:flex;flex-direction:column;align-items:stretch;text-align:center}
+.incognito-card h1{margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px}
 #incognito-form{display:flex;align-items:center;gap:8px;padding:5px 7px 5px 18px;border:1px solid #d9dde3;border-radius:26px;background:#f6f7f9;min-height:52px}
 #incognito-address{flex:1;min-width:0;height:42px;border:0;outline:0;background:transparent;color:#20242a;font-size:17px}
 #incognito-form button{width:40px;height:40px;border-radius:50%;background:#252b34;color:#fff;font-size:24px;flex-shrink:0}
-#incognito-device{display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-top:17px;padding:9px 13px;border-radius:15px;background:#f1f3f5;color:#303944;font-size:14px}
+#incognito-device{display:inline-flex;align-items:center;align-self:center;justify-content:center;gap:7px;margin:auto 0 12px;padding:9px 13px;border-radius:15px;background:#f1f3f5;color:#303944;font-size:14px}
 #incognito-device svg{width:17px;height:17px}
-.incognito-card p{margin:22px auto 0;max-width:410px;color:#656b75;font-size:14px;line-height:1.55}
-#end-incognito{margin-top:24px;padding:10px 14px;background:transparent;color:#303944;font-size:14px;text-decoration:underline;text-underline-offset:3px}
+.incognito-card p{margin:28px auto 0;max-width:410px;color:#656b75;font-size:14px;line-height:1.55}
+#end-incognito{align-self:center;margin-top:24px;padding:10px 14px;background:transparent;color:#303944;font-size:14px;text-decoration:underline;text-underline-offset:3px}
 body[data-surface=incognito] .browser-bar{background:#fff}
 body[data-surface=incognito] .address-form{display:none}
 body[data-surface=incognito] .browser-nav .nav-button{color:#252b34}
 body[data-surface=incognito] .home-indicator{display:none}
+body[data-surface=incognito]:has(#incognito-address:focus) .incognito-start{bottom:0;padding-bottom:8px}
+body[data-surface=incognito]:has(#incognito-address:focus) .browser-bar{display:none}
 
 .private-tab .tab-preview{display:grid;place-items:center}.private-tab .tab-preview svg{width:56px;height:56px;color:#78818c}
 
-@media(max-height:400px){body[data-surface=incognito] .incognito-start{align-items:flex-start;padding:14px 20px}.incognito-card h1{font-size:25px;margin-bottom:14px}.incognito-card p{margin-top:14px}}
+@media(max-height:400px){body[data-surface=incognito] .incognito-start{padding:14px 20px 8px}.incognito-card h1{font-size:25px}.incognito-card p{margin-top:14px}body[data-surface=incognito]:has(#incognito-address:focus) .incognito-card :is(h1,p,#end-incognito){display:none}}

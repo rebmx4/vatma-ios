@@ -211,11 +211,16 @@ final class BrowserSmokeTests: XCTestCase {
                 let bottom = min(bounds.maxY, keyboardTop)
                 let frames = [address.frame, go.frame]
                 let hittable = [self.app.textFields.firstMatch.isHittable, self.button(["Перейти", "Go"]).isHittable]
-                lastObservation = "UI=\(bounds), keyboard=\(keyboardFrame), accessory=\(String(describing: accessoryFrame)), keyboardTop=\(keyboardTop), frames=\(frames), hittable=\(hittable)"
+                let gap = bottom - address.frame.maxY
+                let homeVisible = controls.contains {
+                    $0.elementType == .button && ($0.label == "Home" || $0.label.hasPrefix("Рабочий стол"))
+                        && $0.frame.width > 0 && $0.frame.height > 0
+                }
+                lastObservation = "UI=\(bounds), keyboard=\(keyboardFrame), accessory=\(String(describing: accessoryFrame)), keyboardTop=\(keyboardTop), frames=\(frames), gap=\(gap), homeVisible=\(homeVisible), hittable=\(hittable)"
                 return frames.allSatisfy { frame in
                     frame.width > 0 && frame.height > 0 && frame.minY >= bounds.minY && frame.maxY <= bottom
                         && frame.minX >= bounds.minX && frame.maxX <= bounds.maxX
-                } && hittable.allSatisfy { $0 }
+                } && gap >= 0 && gap <= 24 && !homeVisible && hittable.allSatisfy { $0 }
             } catch {
                 lastObservation = "Accessibility snapshot failed: \(error)"
                 return false
@@ -232,7 +237,7 @@ final class BrowserSmokeTests: XCTestCase {
             add(hierarchy)
         }
         XCTAssertEqual(result, .completed,
-                       "The address field and Go button must stay above the keyboard and its accessory bar: \(lastObservation)")
+                       "Address input must sit immediately above the keyboard without browser navigation: \(lastObservation)")
     }
 
     private func focusAddressIfNeeded() throws {

@@ -32,4 +32,17 @@ final class BrowserExternalLinkTests: XCTestCase {
             XCTAssertFalse(ExternalLinkPolicy.allowsSubframe(URL(string: text)!), text)
         }
     }
+
+    @MainActor
+    func testWebsiteInstallLinkDoesNotLeaveBrowser() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let page = try await fixture.open(root)
+        let originalURL = try XCTUnwrap(page.url)
+        _ = try await fixture.script("document.getElementById('install-app').click();return true;", in: page)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(page.url, originalURL)
+        XCTAssertEqual(fixture.controller.model.active.url, originalURL.absoluteString)
+        XCTAssertNil(fixture.controller.presentedViewController, "Installation must not offer an external-app dialog")
+    }
 }

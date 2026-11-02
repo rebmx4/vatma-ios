@@ -36,7 +36,7 @@ final class BrowserControllerFixture {
 
     func start() async throws -> URL {
         let resources = Dictionary(uniqueKeysWithValues: ["a", "b", "c"].map { name in
-            ("/" + name, Data("<!doctype html><html><head><title>Page-\(name)</title></head><body><h1>Page-\(name)</h1><input type='file' id='upload'></body></html>".utf8))
+            ("/" + name, Data("<!doctype html><html><head><title>Page-\(name)</title></head><body><h1>Page-\(name)</h1><input type='file' id='upload'><a id='install-app' href='itms-services://?action=download-manifest&amp;url=https://example.com/app.plist'>Install</a></body></html>".utf8))
         })
         http = try BrowserRenderingFixtureServer(resources: resources)
         let root = try await http!.start()
