@@ -61,7 +61,7 @@ body[data-surface=incognito] #go-home{color:#252b34}
 .home,.app-item,.app-item *{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}.app-item img{-webkit-user-drag:none;pointer-events:none}
 
 /* Editing the address uses the space directly above the system keyboard. */
-body:has(#address:focus) .browser-bar{display:flex;align-items:flex-end;height:64px;padding-bottom:8px}
-body:has(#address:focus) .browser-nav,body:has(#address:focus) .home-indicator,body:has(#address:focus) #pin-site{display:none}
-body:has(#address:focus) .address-form{width:100%;max-width:580px;height:51px;flex:1;margin:0 auto}
-body:has(#address:focus) .address-entry{height:51px}
+body:has(#address:focus) .browser-bar,body.address-submit-hold .browser-bar{display:flex;align-items:flex-end;height:64px;padding-bottom:8px}
+body:has(#address:focus) .browser-nav,body:has(#address:focus) .home-indicator,body:has(#address:focus) #pin-site,body.address-submit-hold .browser-nav,body.address-submit-hold .home-indicator,body.address-submit-hold #pin-site{display:none}
+body:has(#address:focus) .address-form,body.address-submit-hold .address-form{width:100%;max-width:580px;height:51px;flex:1;margin:0 auto}
+body:has(#address:focus) .address-entry,body.address-submit-hold .address-entry{height:51px}

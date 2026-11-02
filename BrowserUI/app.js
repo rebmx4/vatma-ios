@@ -971,6 +971,19 @@ $('address-form').addEventListener('submit', event => {
   const scope=currentScope(),matching=document.body.dataset.surface==='home'?flattenApps(poolFor(scope)).find(app=>[app.name,appLabel(app)].some(name=>name.toLocaleLowerCase()===value.toLocaleLowerCase())):null;
   if(matching)activate(matching,scope);else launch(value,scope);
 });
+function holdSubmitLayout(input,button,className){
+  let timer;
+  const release=()=>{clearTimeout(timer);document.body.classList.remove(className);};
+  button.addEventListener('pointerdown',()=>{
+    if(document.activeElement!==input)return;
+    document.body.classList.add(className);
+    clearTimeout(timer);timer=setTimeout(release,1500);
+  });
+  button.addEventListener('pointercancel',release);
+  button.addEventListener('click',()=>setTimeout(release,0));
+}
+holdSubmitLayout($('address'),$('address-go'),'address-submit-hold');
+holdSubmitLayout($('incognito-address'),$('incognito-form').querySelector('button[type=submit]'),'incognito-submit-hold');
 $('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });

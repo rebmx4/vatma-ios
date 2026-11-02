@@ -15,8 +15,8 @@ body[data-surface=incognito] .browser-bar{background:#fff}
 body[data-surface=incognito] .address-form{display:none}
 body[data-surface=incognito] .browser-nav .nav-button{color:#252b34}
 body[data-surface=incognito] .home-indicator{display:none}
-body[data-surface=incognito]:has(#incognito-address:focus) .incognito-start{bottom:0;padding-bottom:8px}
-body[data-surface=incognito]:has(#incognito-address:focus) .browser-bar{display:none}
+body[data-surface=incognito]:has(#incognito-address:focus) .incognito-start,body[data-surface=incognito].incognito-submit-hold .incognito-start{bottom:0;padding-bottom:8px}
+body[data-surface=incognito]:has(#incognito-address:focus) .browser-bar,body[data-surface=incognito].incognito-submit-hold .browser-bar{display:none}
 
 .private-tab .tab-preview{display:grid;place-items:center}.private-tab .tab-preview svg{width:56px;height:56px;color:#78818c}
 

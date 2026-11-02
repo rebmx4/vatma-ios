@@ -28,10 +28,13 @@ final class BrowserPrivacyUITests: XCTestCase {
         let device = button(["Выбрать устройство для инкогнито", "Choose device for Incognito"])
         XCTAssertTrue(device.isHittable)
         XCTAssertLessThanOrEqual(device.frame.maxY, input.frame.minY, "Device choice belongs above the Incognito address field")
-        let accessory = app.toolbars.matching(identifier: "Toolbar").firstMatch
-        let keyboardTop = min(keyboard.frame.minY, accessory.exists ? accessory.frame.minY : keyboard.frame.minY)
-        XCTAssertGreaterThanOrEqual(keyboardTop - input.frame.maxY, 0)
-        XCTAssertLessThanOrEqual(keyboardTop - input.frame.maxY, 24, "Incognito input must sit immediately above the keyboard")
+        let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
+        XCTAssertTrue(ui.exists)
+        let nativeInputTop = ui.frame.maxY
+        XCTAssertGreaterThanOrEqual(nativeInputTop - input.frame.maxY, 0)
+        XCTAssertLessThanOrEqual(nativeInputTop - input.frame.maxY, 24, "Incognito input must sit above the system keyboard region")
+        XCTAssertGreaterThanOrEqual(keyboard.frame.minY - nativeInputTop, 0)
+        XCTAssertLessThanOrEqual(keyboard.frame.minY - nativeInputTop, 96, "Only the system input accessory may separate the field from the keys")
         XCTAssertFalse(home.isHittable, "Browser navigation hides during Incognito address entry")
         screenshot("incognito-start")
         input.typeText("example.org")
@@ -42,6 +45,12 @@ final class BrowserPrivacyUITests: XCTestCase {
         close.tap()
         let navigationReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in home.isHittable }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [navigationReady], timeout: 5), .completed)
+        input.tap()
+        button(["Перейти в инкогнито", "Go in Incognito"]).tap()
+        let website = app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site.")).firstMatch
+        XCTAssertTrue(website.waitForExistence(timeout: 10), "Private address submission must create a site renderer")
+        let browserNavigationReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in home.isHittable }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [browserNavigationReady], timeout: 5), .completed)
         home.tap()
         XCTAssertTrue(button(["Открыть ВКонтакте", "Open ВКонтакте"]).waitForExistence(timeout: 10))
         XCTAssertFalse(input.isHittable)
