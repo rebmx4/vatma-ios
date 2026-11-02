@@ -972,15 +972,21 @@ $('address-form').addEventListener('submit', event => {
   if(matching)activate(matching,scope);else launch(value,scope);
 });
 function holdSubmitLayout(input,button,className){
-  let timer;
-  const release=()=>{clearTimeout(timer);document.body.classList.remove(className);};
-  button.addEventListener('pointerdown',()=>{
+  let timer,touchSubmitted=false;
+  const release=()=>{clearTimeout(timer);touchSubmitted=false;document.body.classList.remove(className);};
+  button.addEventListener('pointerdown',event=>{
     if(document.activeElement!==input)return;
     document.body.classList.add(className);
     clearTimeout(timer);timer=setTimeout(release,1500);
+    // The native keyboard can start closing before click and move the whole WebKit viewport.
+    // Submit on the touch start while the button is still in its original position.
+    if(event.pointerType==='touch'){
+      event.preventDefault();touchSubmitted=true;button.form.requestSubmit(button);
+    }
   });
+  button.addEventListener('mousedown',event=>{if(document.activeElement===input)event.preventDefault();});
   button.addEventListener('pointercancel',release);
-  button.addEventListener('click',()=>setTimeout(release,0));
+  button.addEventListener('click',event=>{if(touchSubmitted)event.preventDefault();setTimeout(release,0);});
 }
 holdSubmitLayout($('address'),$('address-go'),'address-submit-hold');
 holdSubmitLayout($('incognito-address'),$('incognito-form').querySelector('button[type=submit]'),'incognito-submit-hold');
