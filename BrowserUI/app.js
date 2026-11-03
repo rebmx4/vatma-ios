@@ -1,6 +1,6 @@
 import {APPEARANCE_KEY,ICON_CHOICES,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
-import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, freezeSlots, placeEntry } from './workspace-model.js';
-import { createVault, openVault, sealVault } from './vault.js';
+import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry } from './workspace-model.js';
+import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview} from './tabs-view.js';
 import {observeDesktopViewport} from './desktop-viewport.js';
 import {previewCookieRequest} from './assets/cookie-rpc.js';
@@ -58,7 +58,7 @@ const DEFAULT_APPS = [
   { id: 'tbank', name: 'Т-Банк', url: 'https://www.tbank.ru/', color: '#ffdf00' },
   { id: 'mail', name: 'Почта Mail', url: 'https://e.mail.ru/', color: '#087cf1' },
 ];
-const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'}];
+const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'},{id:'atma-private-desktop',type:'system',action:'private-desktop',name:'Приватный стол',color:'#183747'}];
 const RETIRED_DEFAULTS=new Map([
   ['ozonbank',['Ozon Банк','https://finance.ozon.ru/']],
   ['ozon',['Ozon','https://www.ozon.ru/']],
@@ -79,7 +79,7 @@ function withoutRetiredDefaults(entries){
 let apps;
 try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')) || DEFAULT_APPS; } catch { apps = DEFAULT_APPS; }
 if(!Array.isArray(apps))apps=DEFAULT_APPS;
-apps=withoutRetiredDefaults(apps);
+apps=collapseSingletonFolders(withoutRetiredDefaults(apps));
 for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.id)){
   apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});
 }
@@ -93,10 +93,13 @@ let appEditorVersion=0;
 const DESKTOP_HOLD_MS = 750; // iPhone SpringBoard 26.4.1: 0.6875s failed, 0.75s entered editing.
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
+const ALIGNMENT_SNAPSHOT_KEY='atma-preview-alignment-origin';
+let alignmentSnapshot;try{alignmentSnapshot=JSON.parse(localStorage.getItem(ALIGNMENT_SNAPSHOT_KEY));}catch{}
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
 let vaultRecord;try{vaultRecord=JSON.parse(localStorage.getItem('atma-preview-vault'))}catch{}
 let vaultKey=null, vaultApps=[], vaultWrite=Promise.resolve(), vaultIdleTimer, pageLockTimer;
 let pinDigits='',firstPin=null,pinBusy=false,pinEpoch=0,pendingVaultMove=null,pendingVaultAdd=false,autoLockAfter=0;
+let pinSetup='choice',biometricStatus={available:false,kind:'none'},enableBiometryAfterPIN=false;
 let filePreviewUrl=null;
 let disposeMediaPanel;
 const desktopSurfaceKey=`atma-preview-desktop-tab:${context}`;
@@ -174,6 +177,7 @@ function renderAppIconPicker() {
 }
 
 function brand(app) {
+  if(app.id==='atma-private-desktop')return `<svg viewBox="0 0 62 62" aria-hidden="true"><rect width="62" height="62" rx="15" fill="#183747"/><rect x="19" y="29" width="24" height="20" rx="4" fill="none" stroke="white" stroke-width="3"/><path d="M24 29v-7a7 7 0 0 1 14 0v7m-7 8v5" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>`;
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
   if(app.type!=='system'){const customArtwork=shortcutIconArtwork(app.iconStyle);if(customArtwork)return customArtwork;}
   const content = {
@@ -199,6 +203,8 @@ function brand(app) {
 
 async function api(action, body) {
   if(window.webkit?.messageHandlers?.atma)return window.webkit.messageHandlers.atma.postMessage({action,body:body||{}});
+  if(action==='vault/biometry/status')return {available:false,kind:'none'};
+  if(action.startsWith('vault/biometry/'))throw new Error('Биометрия доступна только на iPhone или iPad');
   if(action==='site-resource'){
     const response=await fetch(body.url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
     if(!response.ok)throw new Error('Значок сайта недоступен');
@@ -241,7 +247,7 @@ function paintShortcutIcon(target,app,scope){
     const current=findEntry(poolFor(scope),id)?.entry;
     if(current?.url!==url||normalizeShortcutIconStyle(current.iconStyle)!=='site')return;
     paint(iconUrl);
-    if(current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false}).catch(()=>{});}
+    if(current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false,layoutChanged:false}).catch(()=>{});}
   });
 }
 let pinSiteBusy=false,pinSiteArtKey='';
@@ -364,7 +370,7 @@ async function selectBrowserTab(tabId){
 function renderTabs(){
  renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
 }
-function saveApps(scope='public',{render=true}={}) {
+function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
   if(scope==='private') {
     if(!vaultKey)return Promise.reject(new Error('Закрытая страница заблокирована'));
     const items=structuredClone(vaultApps),key=vaultKey,record=vaultRecord;
@@ -372,7 +378,10 @@ function saveApps(scope='public',{render=true}={}) {
       const next=await sealVault(key,items,record);localStorage.setItem('atma-preview-vault',JSON.stringify(next));vaultRecord=next;
     });
     vaultWrite.catch(()=>notify('Не удалось сохранить закрытую страницу'));
-  } else localStorage.setItem('atma-preview-apps', JSON.stringify(apps));
+  } else {
+    if(layoutChanged){alignmentSnapshot=null;localStorage.removeItem(ALIGNMENT_SNAPSHOT_KEY);}
+    localStorage.setItem('atma-preview-apps', JSON.stringify(apps));
+  }
   if(render){renderApps();if(panel==='folder')renderFolder();}
   updateQuickAdd();
   if(scope==='public')scheduleMessageBadgePoll();
@@ -427,7 +436,7 @@ function createItem(app, parentId = null, index = 0, scope='public') {
 }
 function activate(app,scope='public') {
   if (isFolder(app)) openFolder(app.id,scope);
-  else if(app.type==='system'){setEditing(false);if(app.action==='home')$('go-home').click();else if(app.action==='incognito')newIncognitoTab();else setPanel(app.action);}
+  else if(app.type==='system'){setEditing(false);if(app.action==='home')$('go-home').click();else if(app.action==='incognito')newIncognitoTab();else if(app.action==='private-desktop')requestVault();else setPanel(app.action);}
   else if (editing) openAppEditor(app,scope);
   else launchShortcut(app,scope);
 }
@@ -442,6 +451,11 @@ function renderApps() {
   $('apps').replaceChildren();
   $('apps').classList.toggle('editing', editing);
   const {columns,rows}=gridMetrics(), capacity=columns*rows;
+  const privateShortcut=findEntry(apps,'atma-private-desktop')?.entry;
+  if(privateShortcut&&!Number.isInteger(privateShortcut.slots?.[columns])){
+    privateShortcut.slots={...privateShortcut.slots,[columns]:capacity};
+    localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
+  }
   const arranged=filter?visible.map((entry,slot)=>({entry,slot})):arrangeEntries(visible,columns);
   const pageCount=filter?Math.max(1,Math.ceil(visible.length/capacity)):Math.max(publicPages,Math.ceil((Math.max(-1,...arranged.map(p=>p.slot))+1)/capacity));
   if(!filter)publicPages=pageCount;
@@ -458,14 +472,11 @@ function renderApps() {
   }
   privatePageStart=pageCount;
   const privateLayout=arrangeEntries(vaultApps,columns);
-  privatePageCount=vaultKey?Math.max(1,Math.ceil((Math.max(-1,...privateLayout.map(p=>p.slot))+1)/capacity)):1;
+  privatePageCount=vaultKey?Math.max(1,Math.ceil((Math.max(-1,...privateLayout.map(p=>p.slot))+1)/capacity)):0;
   for(let page=0;page<privatePageCount;page++) {
     const grid=document.createElement('div');grid.className='app-grid desktop-page private-page';grid.dataset.scope='private';grid.dataset.page=page+pageCount;
     grid.style.gridTemplateRows=`repeat(${rows},${innerWidth>=700?98:86}px)`;
-    if(!vaultKey) {
-      grid.innerHTML=`<div class="private-cover">${icon('lock')}<h2>Закрытая страница</h2><p>Здесь приложения видны<br>только после ввода кода</p><button id="unlock-page">${vaultRecord?'Ввести код':'Задать код из 6 цифр'}</button></div>`;
-      grid.querySelector('button').addEventListener('click',requestVault);
-    } else for(let cell=0;cell<capacity;cell++) {
+    for(let cell=0;cell<capacity;cell++) {
       const slot=page*capacity+cell,positioned=privateLayout.find(p=>p.slot===slot);
       const item=positioned?createItem(positioned.entry,null,slot,'private'):document.createElement('div');
       if(!positioned){item.className='desktop-slot';item.setAttribute('aria-hidden','true');}
@@ -493,6 +504,37 @@ $('apps').addEventListener('scroll',()=>{
   const page=Math.round($('apps').scrollLeft/$('apps').clientWidth);desktopPage=page;
   [...$('desktop-dots').children].forEach((dot,index)=>{dot.classList.toggle('active',index===page);dot.setAttribute('aria-current',index===page?'page':'false');});
   clearTimeout(pageLockTimer);pageLockTimer=setTimeout(()=>{if(vaultKey&&currentScope()==='public'&&Date.now()>autoLockAfter)lockVault();},220);
+});
+let blankPointer=null,lastBlankTap=null;
+function toggleDesktopAlignment(){
+  const {columns,rows}=gridMetrics(),capacity=columns*rows;
+  if(alignmentSnapshot?.columns===columns&&alignmentSnapshot?.positions){
+    apps=freezeSlots(apps,columns);
+    for(const app of apps){
+      const slot=alignmentSnapshot.positions[app.id];
+      if(Number.isInteger(slot)&&slot>=0&&slot<10000)app.slots[columns]=slot;
+    }
+    alignmentSnapshot=null;localStorage.removeItem(ALIGNMENT_SNAPSHOT_KEY);
+  }else{
+    const original=freezeSlots(apps,columns),shifted=shiftEntriesToOppositeEdge(original,columns,capacity);
+    if(!shifted.changed)return;
+    alignmentSnapshot={columns,positions:Object.fromEntries(original.map(app=>[app.id,app.slots[columns]]))};
+    apps=shifted.items;localStorage.setItem(ALIGNMENT_SNAPSHOT_KEY,JSON.stringify(alignmentSnapshot));
+  }
+  localStorage.setItem('atma-preview-apps',JSON.stringify(apps));renderApps();
+}
+$('apps').addEventListener('pointerdown',event=>{
+  const page=event.target.closest('.desktop-page');
+  blankPointer=!editing&&!panel&&!gesture&&page?.dataset.scope==='public'&&!event.target.closest('.app-item')
+    ?{id:event.pointerId,x:event.clientX,y:event.clientY,page:page.dataset.page}:null;
+});
+$('apps').addEventListener('pointerup',event=>{
+  const start=blankPointer;blankPointer=null;
+  if(!start||event.pointerId!==start.id||gesture||Math.hypot(event.clientX-start.x,event.clientY-start.y)>12)return;
+  const now=Date.now();
+  if(lastBlankTap&&lastBlankTap.page===start.page&&now-lastBlankTap.time<380&&Math.hypot(event.clientX-lastBlankTap.x,event.clientY-lastBlankTap.y)<40){
+    lastBlankTap=null;toggleDesktopAlignment();
+  }else lastBlankTap={time:now,x:event.clientX,y:event.clientY,page:start.page};
 });
 function beginGesture(event, app, parentId,scope='public') {
   if (event.button !== 0 || gesture) return;
@@ -562,11 +604,24 @@ function updateDropTarget(x,y,current) {
   if(empty&&!panel){const slot=Number(empty.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;empty.classList.add('drop-cell');return;}
   const target = hit.map(item=>item.closest('.app-item')).find(item=>item && item.dataset.app !== current.id&&item.dataset.scope===current.scope);
   const targetId = target?.dataset.app || null;
-  if (!target) { clearHover(); return; }
+  if (!target) {
+    if(!panel){
+      const grid=$('apps').children[desktopPage],bounds=$('apps').getBoundingClientRect();
+      if(grid?.dataset.scope===current.scope&&x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom){
+        const slots=[...grid.querySelectorAll('.desktop-slot')];
+        const nearest=slots.reduce((best,item)=>{
+          const rect=item.getBoundingClientRect(),distance=Math.hypot(x-rect.left-rect.width/2,y-rect.top-rect.height/2);
+          return !best||distance<best.distance?{item,distance}:best;
+        },null)?.item;
+        if(nearest){const slot=Number(nearest.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;nearest.classList.add('drop-cell');return;}
+      }
+    }
+    clearHover(); return;
+  }
   const pool=poolFor(current.scope),sourceEntry = findEntry(pool,current.id)?.entry, targetEntry = findEntry(pool,targetId)?.entry;
   const rect = target.querySelector('.app-tile').getBoundingClientRect();
   const center = Math.abs(x-(rect.x+rect.width/2)) < rect.width*.36 && Math.abs(y-(rect.y+rect.height/2)) < rect.height*.36;
-  const canCombine = panel !== 'folder' && center && !isFolder(sourceEntry) && !!targetEntry;
+  const canCombine = panel !== 'folder' && center && !isFolder(sourceEntry) && !!targetEntry && sourceEntry?.id!=='atma-private-desktop' && targetEntry.id!=='atma-private-desktop';
   const hoverKey = `${targetId}:${canCombine}`;
   if (hoverKey === current.hoverKey) return;
   clearHover(); current.hoverKey=hoverKey;
@@ -646,7 +701,7 @@ function renderFolder() {
   const updateDots=()=>{const index=Math.round($('folder-pages').scrollLeft/$('folder-pages').clientWidth);[...$('folder-dots').children].forEach((dot,i)=>dot.classList.toggle('active',i===index));};
   $('folder-pages').scrollLeft=page*$('folder-pages').clientWidth; updateDots(); $('folder-pages').addEventListener('scroll',updateDots);
   $('folder-done').addEventListener('click',()=>setEditing(!editing));
-  $('folder-name').addEventListener('change',event=>{folder.name=event.target.value.trim()||'Папка';saveApps(folderScope);});
+  $('folder-name').addEventListener('change',event=>{folder.name=event.target.value.trim()||'Папка';saveApps(folderScope,{layoutChanged:false});});
   $('folder-name').addEventListener('keydown',event=>{if(event.key==='Enter')event.currentTarget.blur();});
   animatePositions($('sheet-content'),previous);
 }
@@ -814,7 +869,7 @@ function renderSettings() {
   const policyButton=settingButton('Политика конфиденциальности','lock',()=>setPanel('privacy'));policyButton.id='open-privacy';card.append(policyButton);
   const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
-  card.append(settingButton('Закрытая страница · код из 6 цифр','lock',()=>{showDesktopPage(privatePageStart);requestVault();}));
+  card.append(settingButton('Приватный стол','lock',requestVault));
   card.append(settingButton('Добавить страницу рабочего стола','plus',async()=>{publicPages++;localStorage.setItem('atma-preview-page-count',publicPages);await setPanel(null);renderApps();showDesktopPage(publicPages-1);}));
   const addDesktopButton=settingButton('Добавить веб-приложение','plus',()=>{if(currentScope()==='private'&&!vaultKey){pendingVaultAdd=true;requestVault();}else setPanel('add');});addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
   const probe=settingButton('Проверить, что видит сайт', 'phone', async () => { try { await action('probe'); } catch {} });probe.disabled=state?.capabilities?.probe===false;card.append(probe);
@@ -866,7 +921,7 @@ function renderMessagePrompt(){
   const entry=findEntry(apps,pendingMessagePrompt)?.entry;
   if(!entry){setPanel(null);return;}
   $('sheet-content').innerHTML=`<p class="sheet-note">Показывать счётчик сообщений для ${escape(entry.name)}? Он работает, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</p><button class="primary-button" id="enable-message-count" type="button">Включить</button><button class="secondary-button" id="skip-message-count" type="button">Не сейчас</button>`;
-  $('enable-message-count').addEventListener('click',async()=>{entry.messageNotifications=true;pendingMessagePrompt=null;await saveApps();await setPanel(null);});
+  $('enable-message-count').addEventListener('click',async()=>{entry.messageNotifications=true;pendingMessagePrompt=null;await saveApps('public',{layoutChanged:false});await setPanel(null);});
   $('skip-message-count').addEventListener('click',async()=>{pendingMessagePrompt=null;await setPanel(null);});
 }
 function renderAppForm(app) {
@@ -895,7 +950,7 @@ function renderAppForm(app) {
     if (!entry.name) return;
     const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(scope);if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
+    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
   });
   if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
     if(editorScope==='private') {
@@ -904,12 +959,35 @@ function renderAppForm(app) {
   }));
 }
 async function openAppEditor(app,scope='public') { editorScope=scope;await setPanel('edit');renderAppForm(app); }
-function requestVault() {lockVault();pinDigits='';firstPin=null;pinBusy=false;pinEpoch++;setPanel('pin');}
+function requestVault() {
+  lockVault();pinDigits='';firstPin=null;pinBusy=false;enableBiometryAfterPIN=false;
+  pinSetup=vaultRecord?'unlock':'choice';const epoch=++pinEpoch;setPanel('pin');
+  api('vault/biometry/status').then(result=>{if(epoch===pinEpoch&&panel==='pin'){biometricStatus=result;renderPIN();}}).catch(()=>{});
+}
+const biometricName=()=>biometricStatus.kind==='touchID'?'Touch ID':'Face ID';
 function renderPIN() {
-  $('sheet-title').textContent='Закрытая страница';
-  const creating=!vaultRecord,title=creating?(firstPin?'Повторите код':'Придумайте код'):'Введите код';
-  $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>${title}</h2><p class="pin-subtitle">6 цифр для закрытой страницы</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div><p class="pin-note">${creating?'Код нельзя восстановить. ':''}Код закрывает страницу с ярлыками. Входы на сайты остаются в браузере.</p>`;
+  $('sheet-title').textContent='Приватный стол';
+  const creating=!vaultRecord,biometricOnly=vaultRecord?.auth==='biometric';
+  if(creating&&pinSetup==='choice'){
+    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>Приватный стол</h2><p class="pin-subtitle">Выберите способ входа</p><div class="vault-choices"><button data-vault-choice="pin" ${pinBusy?'disabled':''}>Код из 6 цифр</button>${biometricStatus.available?`<button data-vault-choice="biometric" ${pinBusy?'disabled':''}>${biometricName()}</button><button data-vault-choice="both" ${pinBusy?'disabled':''}>Код и ${biometricName()}</button>`:''}<button data-vault-choice="cancel" ${pinBusy?'disabled':''}>Отмена</button></div><p class="pin-note">Замок скрывает ярлыки, но не историю и входы на сайты. При входе только по биометрии ключ нельзя перенести на другое устройство.</p>`;
+    for(const button of document.querySelectorAll('[data-vault-choice]'))button.addEventListener('click',()=>{
+      if(pinBusy)return;
+      const choice=button.dataset.vaultChoice;
+      if(choice==='cancel'){setPanel(null);return;}
+      if(choice==='biometric'){createBiometricVault();return;}
+      pinSetup=choice;renderPIN();
+    });
+    return;
+  }
+  if(biometricOnly){
+    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>Приватный стол</h2><p class="pin-subtitle">Вход через ${biometricName()}</p><div class="vault-choices"><button data-vault-biometry ${!biometricStatus.available||pinBusy?'disabled':''}>Открыть через ${biometricName()}</button><button data-pin="cancel">Отмена</button></div><p class="pin-note">Если биометрия изменена или код устройства отключён, ключ на этом устройстве станет недоступен.</p>`;
+  }else{
+    const title=creating?(firstPin?'Повторите код':'Придумайте код'):'Введите код';
+    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>${title}</h2><p class="pin-subtitle">6 цифр для приватного стола</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div>${!creating&&vaultRecord?.biometric&&biometricStatus.available?`<button class="vault-biometry-link" data-vault-biometry>Открыть через ${biometricName()}</button>`:''}${!creating&&!vaultRecord?.biometric&&biometricStatus.available?`<label class="vault-biometry-optin"><input type="checkbox" id="vault-enable-biometry" ${enableBiometryAfterPIN?'checked':''}> Включить ${biometricName()} после ввода кода</label>`:''}<p class="pin-note">${creating?'Код нельзя восстановить. ':''}Входы на сайты хранятся отдельно в браузере.</p>`;
+  }
   for(const button of document.querySelectorAll('[data-pin]'))button.addEventListener('click',()=>pinKey(button.dataset.pin));
+  document.querySelector('[data-vault-biometry]')?.addEventListener('click',unlockWithBiometry);
+  document.getElementById('vault-enable-biometry')?.addEventListener('change',event=>{enableBiometryAfterPIN=event.target.checked;});
 }
 function pinKey(value) {
   if(pinBusy)return;
@@ -927,17 +1005,53 @@ async function submitPIN() {
       if(!firstPin){firstPin=pin;pinDigits='';pinBusy=false;renderPIN();return;}
       if(pin!==firstPin){firstPin=null;throw new Error('Коды не совпали. Придумайте код ещё раз');}
       const created=await createVault(pin,[]);if(epoch!==pinEpoch)return;
+      if(pinSetup==='both'){
+        const vaultId=crypto.randomUUID(),secret=await pinVaultSecret(pin,created.record);
+        await api('vault/biometry/enroll',{vaultId,secret});if(epoch!==pinEpoch)return;
+        created.record={...created.record,vaultId,biometric:true};
+      }
       localStorage.setItem('atma-preview-vault',JSON.stringify(created.record));vaultRecord=created.record;vaultKey=created.key;vaultApps=[];
     } else {
       let opened;
       try{opened=await openVault(pin,vaultRecord);}catch {
         if(epoch!==pinEpoch)return;
-        const attempts=(throttle?.attempts||0)+1;localStorage.setItem('atma-preview-vault-throttle',JSON.stringify({attempts:attempts>=5?0:attempts,until:attempts>=5?Date.now()+30000:0}));throw new Error(attempts>=5?'Слишком много попыток. Подождите 30 сек.':'Неверный код');
+        const attempts=(throttle?.attempts||0)+1;localStorage.setItem('atma-preview-vault-throttle',JSON.stringify({attempts:attempts>=3?0:attempts,until:attempts>=3?Date.now()+30000:0}));throw new Error(attempts>=3?(vaultRecord.biometric&&biometricStatus.available?'Неверный код. Попробуйте Face ID/Touch ID или подождите 30 сек.':'Слишком много попыток. Подождите 30 сек.'):'Неверный код');
       }
-      if(epoch!==pinEpoch)return;vaultKey=opened.key;vaultApps=opened.items;
+      if(epoch!==pinEpoch)return;vaultKey=opened.key;vaultApps=collapseSingletonFolders(opened.items);
+      if(vaultApps.length!==opened.items.length)await saveApps('private',{render:false});
+      if(enableBiometryAfterPIN&&biometricStatus.available&&!vaultRecord.biometric){
+        const vaultId=crypto.randomUUID(),secret=await pinVaultSecret(pin,vaultRecord);
+        try{await api('vault/biometry/enroll',{vaultId,secret});if(epoch!==pinEpoch)return;
+          vaultRecord={...vaultRecord,vaultId,biometric:true};localStorage.setItem('atma-preview-vault',JSON.stringify(vaultRecord));
+        }catch(error){notify(error.message);}
+      }
     }
     localStorage.removeItem('atma-preview-vault-throttle');pinDigits='';firstPin=null;await finishVaultUnlock();
   } catch(error){if(epoch===pinEpoch){pinDigits='';notify(error.message);}}
+  finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
+}
+async function createBiometricVault(){
+  if(pinBusy||vaultRecord||!biometricStatus.available)return;
+  const epoch=pinEpoch;pinBusy=true;renderPIN();
+  try{
+    const vaultId=crypto.randomUUID(),secret=randomVaultSecret();
+    await api('vault/biometry/enroll',{vaultId,secret});if(epoch!==pinEpoch)return;
+    const created=await createVaultWithSecret(secret,[],vaultId);if(epoch!==pinEpoch)return;
+    localStorage.setItem('atma-preview-vault',JSON.stringify(created.record));
+    vaultRecord=created.record;vaultKey=created.key;vaultApps=[];await finishVaultUnlock();
+  }catch(error){if(epoch===pinEpoch)notify(error.message);}
+  finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
+}
+async function unlockWithBiometry(){
+  if(pinBusy||!vaultRecord?.biometric||!vaultRecord.vaultId||!biometricStatus.available)return;
+  const epoch=pinEpoch;pinBusy=true;renderPIN();
+  try{
+    const {secret}=await api('vault/biometry/unlock',{vaultId:vaultRecord.vaultId});if(epoch!==pinEpoch)return;
+    const opened=await openVaultWithSecret(secret,vaultRecord);if(epoch!==pinEpoch)return;
+    vaultKey=opened.key;vaultApps=collapseSingletonFolders(opened.items);pinDigits='';firstPin=null;
+    if(vaultApps.length!==opened.items.length)await saveApps('private',{render:false});
+    localStorage.removeItem('atma-preview-vault-throttle');await finishVaultUnlock();
+  }catch(error){if(epoch===pinEpoch)notify(error.message);}
   finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
 }
 async function finishVaultUnlock() {

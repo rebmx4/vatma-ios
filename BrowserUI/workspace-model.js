@@ -12,6 +12,31 @@ export function arrangeEntries(entries, columns = 4) {
     return{entry,slot:slots.get(entry.id)};
   });
 }
+export function shiftEntriesToOppositeEdge(entries, columns, capacity) {
+  if(!Number.isInteger(capacity)||capacity<columns||capacity%columns)return{items:entries,changed:false};
+  const items=freezeSlots(entries,columns),pages=new Map(),rows=capacity/columns;
+  for(const entry of items){
+    const slot=entry.slots[columns],page=Math.floor(slot/capacity),row=Math.floor((slot%capacity)/columns);
+    const bounds=pages.get(page)||{first:row,last:row};
+    bounds.first=Math.min(bounds.first,row);bounds.last=Math.max(bounds.last,row);pages.set(page,bounds);
+  }
+  let changed=false;
+  for(const entry of items){
+    const slot=entry.slots[columns],bounds=pages.get(Math.floor(slot/capacity));
+    const topSpace=bounds.first,bottomSpace=rows-1-bounds.last;
+    const offset=(topSpace<bottomSpace?bottomSpace:-topSpace)*columns;
+    if(offset){entry.slots[columns]=slot+offset;changed=true;}
+  }
+  return{items,changed};
+}
+export function collapseSingletonFolders(items) {
+  return items.flatMap(item=>{
+    if(!isFolder(item))return[item];
+    if(item.children.length>1)return[item];
+    if(!item.children.length)return[];
+    return[{...item.children[0],slots:{...item.children[0].slots,...item.slots}}];
+  });
+}
 export function freezeSlots(entries, columns = 4) {
   const items=structuredClone(entries);
   for(const {entry,slot} of arrangeEntries(items,columns))entry.slots={...entry.slots,[columns]:slot};
@@ -28,7 +53,7 @@ export function placeEntry(entries, id, slot, columns = 4) {
   }
   source.entry.slots={...source.entry.slots,[columns]:slot};
   if(source.parent){source.list.splice(source.index,1);items.push(source.entry);}
-  return{items:items.filter(item=>!isFolder(item)||item.children.length),changed:true};
+  return{items:collapseSingletonFolders(items),changed:true};
 }
 export function findEntry(entries, id) {
   for (let index = 0; index < entries.length; index++) {
@@ -67,12 +92,12 @@ export function dropEntry(entries, sourceId, targetId, options = {}) {
     source.list.splice(source.index, 1);
     list.splice(Math.min(index, list.length), 0, source.entry);
   }
-  const result = items.filter(item => !isFolder(item) || item.children.length);
+  const result = collapseSingletonFolders(items);
   return { items: result, changed: JSON.stringify(result) !== JSON.stringify(entries), folderId };
 }
 export function removeEntry(entries, id) {
   const items = structuredClone(entries), found = findEntry(items, id);
   if (!found) return entries;
   found.list.splice(found.index, 1, ...(isFolder(found.entry) ? found.entry.children : []));
-  return items.filter(item => !isFolder(item) || item.children.length);
+  return collapseSingletonFolders(items);
 }

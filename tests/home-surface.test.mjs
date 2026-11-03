@@ -33,7 +33,7 @@ function desktopDefaults(){
 test('a new desktop includes the Incognito shortcut and requested websites',()=>{
  const {defaults,system}=desktopDefaults();
  assert.deepEqual(Array.from(defaults,entry=>entry.id).concat(Array.from(system,entry=>entry.id)),
-  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-incognito','atma-settings','atma-cookies']);
+  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-incognito','atma-settings','atma-cookies','atma-private-desktop']);
  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(system)[0])),
   {id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'});
 });

@@ -171,7 +171,7 @@ def validate(root=ROOT):
                 if path.suffix == ".swift":
                     require(len(text.splitlines()) < 400, "Swift source exceeds line limit")
                     imports = set(re.findall(r"\bimport\s+(\w+)", text))
-                    require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit", "Security", "UniformTypeIdentifiers", "AVFoundation", "MediaPlayer"}, "Native code may import only approved Apple frameworks")
+                    require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit", "Security", "LocalAuthentication", "UniformTypeIdentifiers", "AVFoundation", "MediaPlayer"}, "Native code may import only approved Apple frameworks")
             require(path.suffix.lower() not in (".dylib", ".a", ".framework", ".xcframework"), "Embedded SDK binary is not an allowed product input")
             scanned += 1
     profiles = load_json(root / "BrowserUI/profiles.json")

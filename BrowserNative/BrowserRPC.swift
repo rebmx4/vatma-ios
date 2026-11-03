@@ -33,6 +33,9 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
 
     private func perform(_ action: String, body: [String: Any], reply: @escaping (Any?, String?) -> Void) throws {
         switch action {
+        case "vault/biometry/status": reply(VaultBiometrics.status(), nil); return
+        case "vault/biometry/enroll": try VaultBiometrics.enroll(body, reply: reply); return
+        case "vault/biometry/unlock": try VaultBiometrics.unlock(body, reply: reply); return
         case "appearance": reply(try applyNativeAppearance(body), nil); return
         case "app-icon": try setApplicationIcon(body, reply: reply); return
         case "state": reply(state(), nil); return

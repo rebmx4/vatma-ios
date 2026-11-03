@@ -32,5 +32,6 @@
   </dict>
   <key>NSCameraUsageDescription</key><string>ATMA запрашивает доступ к камере, когда вы разрешаете его открытому сайту.</string>
   <key>NSMicrophoneUsageDescription</key><string>ATMA запрашивает доступ к микрофону, когда вы разрешаете его открытому сайту.</string>
+  <key>NSFaceIDUsageDescription</key><string>Face ID защищает доступ к приватному столу ATMA, если вы включите эту функцию.</string>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
 </dict></plist>
