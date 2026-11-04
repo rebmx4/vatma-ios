@@ -53,6 +53,66 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         try await fixture.wait("document.body.dataset.surface==='home'", in: fixture.controller.ui)
     }
 
+    func testShortcutKeepsItsPageAliveAcrossHomeAndAnotherShortcut() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let firstURL = root.appendingPathComponent("a").absoluteString
+        let secondURL = root.appendingPathComponent("b").absoluteString
+        _ = try await fixture.rpc("shortcut/open", body: ["url": firstURL, "shortcutId": "public:custom-a"])
+        let firstID = fixture.controller.model.activeTabId
+        let first = try XCTUnwrap(fixture.controller.currentRenderer)
+        try await fixture.wait("document.title==='Page-a'", in: first)
+        _ = try await fixture.script("window.__uploadProgress=42;return true;", in: first)
+
+        _ = try await fixture.rpc("home")
+        _ = try await fixture.rpc("shortcut/open", body: ["url": secondURL, "shortcutId": "public:custom-b"])
+        let secondID = fixture.controller.model.activeTabId
+        let second = try XCTUnwrap(fixture.controller.currentRenderer)
+        try await fixture.wait("document.title==='Page-b'", in: second)
+        XCTAssertNotEqual(firstID, secondID)
+        XCTAssertTrue(fixture.controller.renderers[firstID] === first)
+
+        _ = try await fixture.rpc("home")
+        _ = try await fixture.rpc("shortcut/open", body: ["url": firstURL, "shortcutId": "public:custom-a"])
+        XCTAssertEqual(fixture.controller.model.activeTabId, firstID)
+        XCTAssertTrue(fixture.controller.currentRenderer === first)
+        let progress = try await fixture.script("return window.__uploadProgress;", in: first) as? Int
+        XCTAssertEqual(progress, 42)
+        XCTAssertEqual(fixture.controller.model.tabs.count, 2)
+
+        _ = try await fixture.rpc("home")
+        let editedURL = root.appendingPathComponent("c").absoluteString
+        _ = try await fixture.rpc("shortcut/open", body: ["url": editedURL, "shortcutId": "public:custom-a"])
+        let editedID = fixture.controller.model.activeTabId
+        XCTAssertNotEqual(editedID, firstID, "Editing a shortcut URL must open its new target")
+        XCTAssertNil(fixture.controller.model.tabs.first { $0.id == firstID }?.shortcutId)
+        let edited = try XCTUnwrap(fixture.controller.currentRenderer)
+        try await fixture.wait("document.title==='Page-c'", in: edited)
+    }
+
+    func testSwitchingOpenTabsKeepsEachLivePage() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let first = try await fixture.open(root, path: "a")
+        let firstID = fixture.controller.model.activeTabId
+        _ = try await fixture.script("window.__inProgress='first';return true;", in: first)
+
+        _ = try await fixture.rpc("tabs/new")
+        let second = try await fixture.open(root, path: "b")
+        let secondID = fixture.controller.model.activeTabId
+        _ = try await fixture.script("window.__inProgress='second';return true;", in: second)
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": firstID])
+        XCTAssertTrue(fixture.controller.currentRenderer === first)
+        let firstProgress = try await fixture.script("return window.__inProgress;", in: first) as? String
+        XCTAssertEqual(firstProgress, "first")
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": secondID])
+        XCTAssertTrue(fixture.controller.currentRenderer === second)
+        let secondProgress = try await fixture.script("return window.__inProgress;", in: second) as? String
+        XCTAssertEqual(secondProgress, "second")
+    }
+
     func testDeviceChoiceIsRestrictedToIncognitoAndLeavesOrdinaryTabUnchanged() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         let root = try await fixture.start()

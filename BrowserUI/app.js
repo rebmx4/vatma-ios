@@ -3,6 +3,7 @@ import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntrie
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview} from './tabs-view.js';
 import {observeDesktopViewport} from './desktop-viewport.js';
+import {selectAddressOnFirstTap} from './address-selection.js';
 import {previewCookieRequest} from './assets/cookie-rpc.js';
 import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
@@ -712,7 +713,9 @@ async function launch(url,scope='public',options={}) {
 }
 async function launchShortcut(app,scope='public') {
   if(scope==='private'&&!vaultKey)return;
-  try{if(state?.privateBrowsing)await action('tabs/new');await launch(app.url,scope,{webApp:true});}catch(error){notify(error.message);}
+  setEditing(false);
+  if(scope==='private')lockVault();
+  try { await action('shortcut/open',{url:app.url,shortcutId:`${scope}:${app.id}`});$('address').blur(); } catch {}
 }
 async function setPanel(name, options = {}) {
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
@@ -1104,6 +1107,8 @@ function holdSubmitLayout(input,button,className){
 }
 holdSubmitLayout($('address'),$('address-go'),'address-submit-hold');
 holdSubmitLayout($('incognito-address'),$('incognito-form').querySelector('button[type=submit]'),'incognito-submit-hold');
+selectAddressOnFirstTap($('address'));
+selectAddressOnFirstTap($('incognito-address'));
 $('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });

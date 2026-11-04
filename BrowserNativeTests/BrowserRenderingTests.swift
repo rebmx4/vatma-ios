@@ -244,7 +244,7 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(reloaded, stored, "Saved artwork must survive a fresh UI document without the website")
     }
 
-    func testManualShortcutReadsLargePageMetadataAndRepairsAnOldMissingIcon() async throws {
+    func testManualShortcutRepairsMissingIconAndCollapsesSingletonFolder() async throws {
         let url = try await startFixture(video: false, largeMetadata: true).appendingPathComponent("manifest-only").absoluteString
         try await waitForUI()
         _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
@@ -260,8 +260,8 @@ final class BrowserRenderingTests: XCTestCase {
         _ = try await script("const apps=JSON.parse(localStorage.getItem('atma-preview-apps')); const index=apps.findIndex(app=>app.name==='Manual icon fixture'),app=apps[index];delete app.iconUrl;apps.splice(index,1,{id:'icon-fixture-folder',type:'folder',name:'Icons',children:[app]}); localStorage.setItem('atma-preview-apps',JSON.stringify(apps)); return true;", in: controller.ui)
         controller.ui.reload()
         try await waitForUI()
-        let repairedApp = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.id==='icon-fixture-folder').children[0]"
-        try await waitFor("\(repairedApp)?.iconUrl?.startsWith('data:image/png;base64,') && document.querySelector('[data-app=icon-fixture-folder] .folder-miniatures img')?.naturalWidth===192", in: controller.ui)
+        let repairedApp = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Manual icon fixture')"
+        try await waitFor("\(repairedApp)?.iconUrl?.startsWith('data:image/png;base64,') && !document.querySelector('[data-app=icon-fixture-folder]') && document.querySelector('[data-app='+\(repairedApp).id+'] .app-tile img')?.naturalWidth===192", in: controller.ui)
         let repaired = try await script("return \(repairedApp).iconUrl;", in: controller.ui) as? String
         XCTAssertEqual(repaired, icon, "Previously created shortcuts must recover their website artwork")
     }

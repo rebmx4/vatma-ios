@@ -224,7 +224,7 @@ final class BrowserController: UIViewController {
         try open(URLRequest(url: url), webApp: webApp)
     }
 
-    func open(_ request: URLRequest, webApp: Bool? = nil) throws {
+    func open(_ request: URLRequest, webApp: Bool? = nil, shortcutId: String? = nil) throws {
         guard let url = request.url else { throw BrowserFailure.invalid("Missing navigation URL.") }
         _ = try AddressResolver.validated(url.absoluteString)
         if let webApp {
@@ -235,10 +235,29 @@ final class BrowserController: UIViewController {
         view.endEditing(true)
         model.tabs[model.activeIndex].url = url.absoluteString
         model.tabs[model.activeIndex].error = nil
+        model.tabs[model.activeIndex].shortcutId = shortcutId
+        model.tabs[model.activeIndex].shortcutStartURL = shortcutId == nil ? nil : url.absoluteString
         mode = "browse"; panel = nil; nativeError = nil
         let renderer = renderer(for: model.active)
         blocker.load(request, in: renderer)
         changed()
+    }
+
+    func openShortcut(_ input: String, shortcutId: String) throws {
+        guard shortcutId.utf8.count <= 256 else { throw BrowserFailure.invalid("Invalid shortcut ID.") }
+        let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
+        if let index = model.tabs.firstIndex(where: { !$0.isPrivate && $0.shortcutId == shortcutId }) {
+            let tab = model.tabs[index]
+            if tab.shortcutStartURL == url.absoluteString {
+                try selectTab(tab.id)
+                return
+            }
+            // An edited shortcut starts a new page; keep the old tab as a normal tab.
+            model.tabs[index].shortcutId = nil
+            model.tabs[index].shortcutStartURL = nil
+        }
+        if model.active.isPrivate || !model.active.url.isEmpty || model.active.shortcutId != nil { newTab() }
+        try open(URLRequest(url: url), webApp: true, shortcutId: shortcutId)
     }
 
     func selectTab(_ id: String) throws {

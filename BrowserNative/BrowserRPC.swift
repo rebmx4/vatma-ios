@@ -60,6 +60,8 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             guard body["profileId"] == nil,
                   body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Device switching is not supported.") }
             try open(try string("url", body), webApp: body["webApp"] as? Bool)
+        case "shortcut/open":
+            try openShortcut(try string("url", body), shortcutId: try string("shortcutId", body))
         case "home": returnHome()
         case "panel":
             guard body["panel"] == nil || body["panel"] is NSNull || body["panel"] is String else { throw BrowserFailure.invalid("Invalid panel.") }

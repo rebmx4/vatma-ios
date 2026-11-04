@@ -11,6 +11,8 @@ struct BrowserTab: Codable {
     var loading = false
     var error: String?
     var webApp: Bool?
+    var shortcutId: String?
+    var shortcutStartURL: String?
     var appControlsCollapsed: Bool?
     var privateBrowsing: Bool?
     var isPrivate: Bool { privateBrowsing == true }
