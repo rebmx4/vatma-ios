@@ -63,6 +63,18 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "shortcut/open":
             try openShortcut(try string("url", body), shortcutId: try string("shortcutId", body))
         case "home": returnHome()
+        case "translation/language":
+            let language = try string("language", body)
+            guard ["ru", "en"].contains(language) else { throw BrowserFailure.invalid("Unsupported interface language.") }
+            pageTranslation.prefersRussian = language == "ru"
+            pageTranslation.reconcile()
+        case "translation/toggle":
+            guard BrowserPageTranslation.available, mode == "browse" else {
+                throw BrowserFailure.invalid("Перевод страницы сейчас недоступен.")
+            }
+            panel = nil
+            pageTranslation.toggle()
+            changed()
         case "panel":
             guard body["panel"] == nil || body["panel"] is NSNull || body["panel"] is String else { throw BrowserFailure.invalid("Invalid panel.") }
             panel = body["panel"] as? String; changed()
@@ -78,7 +90,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "forward": currentRenderer?.goForward()
         case "refresh":
             if let currentRenderer { currentRenderer.reload() }
-            else if !model.active.url.isEmpty { try open(model.active.url) }
+            else if !model.active.url.isEmpty { try selectTab(model.activeTabId) }
         case "site-resource":
             let address = try string("url", body), kind = try string("kind", body)
             _ = try AddressResolver.validated(address)

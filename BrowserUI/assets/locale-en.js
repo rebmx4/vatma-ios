@@ -8,6 +8,7 @@ export default {
  'Иконка ярлыка':'Shortcut icon','Иконка сайта':'Website icon','Глобус':'Globe','Чат':'Chat','Покупки':'Shopping','Работа':'Work','Сердце':'Heart','Звезда':'Star',
  'Политика конфиденциальности':'Privacy Policy','Поддержка':'Support','Не удалось открыть страницу':'Could not open the page',
  'Настройки':'Settings','Файлы':'Files','‹ Файлы':'‹ Files','Рабочий стол':'Home','Браузер':'Browser','Основная':'Default','Размер текста интерфейса':'Interface text size',
+ 'Очистить адрес':'Clear address','Показать оригинал':'Show original','Перевести на русский':'Translate to Russian','Перевод страницы сейчас недоступен.':'Page translation is currently unavailable.',
  'Куки':'Cookies','Куки и данные сайтов':'Cookies and website data','‹ Рабочий стол':'‹ Home',
  'Оформление':'Appearance','Тема интерфейса':'Interface theme','Обои':'Wallpaper','Тема':'Theme','Авто':'Auto','Светлая':'Light','Тёмная':'Dark',
  'Автоматическая тема':'Automatic theme','Тёмная тема':'Dark theme','Светлая тема':'Light theme','Размер текста':'Text size','Иконка приложения':'App icon',

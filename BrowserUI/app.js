@@ -303,6 +303,7 @@ function consume(next) {
   // Commands, polling and native push events can finish out of order.
   if(Number.isSafeInteger(state?.sequence)&&(!Number.isSafeInteger(next.sequence)||next.sequence<state.sequence))return;
   const previousMode=state?.mode,previousLoading=state?.loading,changedTab=state?.activeTabId!==next.activeTabId;
+  const previousTranslation=state?.translationStatus;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
   if(Array.isArray(next.profiles))profiles=next.profiles;
@@ -319,6 +320,10 @@ function consume(next) {
   $('go-back').disabled = next.mode !== 'browse' || next.canGoBack !== true;
   $('go-forward').disabled = next.mode !== 'browse' || next.canGoForward !== true;
   $('refresh').disabled = next.mode !== 'browse';
+  $('show-original').hidden = next.mode !== 'browse' || next.translationStatus !== 'translated';
+  if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
+    notify(localization.t('Перевод страницы сейчас недоступен.'));
+  }
   if(changedTab)$('address').value=next.mode==='browse'?(next.url||''):'';
   else if (document.activeElement !== $('address') && next.mode === 'browse') $('address').value = next.url === `${location.origin}/probe` ? '' : (next.url || '');
   if (panel !== next.panel) {
@@ -864,6 +869,12 @@ function renderPrivateDevices(){
 }
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
+  if (state?.mode === 'browse' && state.capabilities?.pageTranslation) {
+    const label = state.translationStatus === 'translated' ? 'Показать оригинал' : 'Перевести на русский';
+    const translation = settingButton(label, 'globe', () => action('translation/toggle').catch(() => {}));
+    translation.disabled = state.loading || state.translationStatus === 'translating';
+    card.append(translation);
+  }
   const appearanceButton=settingButton('Оформление','image',()=>setPanel('appearance'));appearanceButton.id='open-appearance';card.append(appearanceButton);
   const incognitoButton=settingButton('Открыть Инкогнито','incognito',newIncognitoTab);incognitoButton.id='open-incognito';card.append(incognitoButton);
   if(state?.privateBrowsing){const deviceButton=settingButton('Устройство инкогнито','phone',()=>setPanel('private-device'));deviceButton.id='open-private-device';card.append(deviceButton);}
@@ -883,7 +894,10 @@ function renderSettings() {
   $('sheet-content').append(preferences);
   $('search-engine').value = searchEngine;
   $('interface-language').value=localization.language;
-  $('interface-language').addEventListener('change',event=>localization.set(event.target.value));
+  $('interface-language').addEventListener('change', event => {
+    localization.set(event.target.value);
+    syncPageTranslationLanguage();
+  });
   $('site-language').value = ['ru-RU','en-US'].includes(state?.locale)?state.locale:'ru-RU';
   $('site-timezone').value = state?.timezone || 'Europe/Moscow';
   $('site-language').disabled=state?.capabilities?.localeEmulation===false;
@@ -1107,8 +1121,8 @@ function holdSubmitLayout(input,button,className){
 }
 holdSubmitLayout($('address'),$('address-go'),'address-submit-hold');
 holdSubmitLayout($('incognito-address'),$('incognito-form').querySelector('button[type=submit]'),'incognito-submit-hold');
-selectAddressOnFirstTap($('address'));
-selectAddressOnFirstTap($('incognito-address'));
+selectAddressOnFirstTap($('address'), $('address-clear'));
+selectAddressOnFirstTap($('incognito-address'), $('incognito-address-clear'));
 $('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
@@ -1153,6 +1167,7 @@ $('incognito-device').addEventListener('click',event=>{
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));
+$('show-original').addEventListener('click', () => action('translation/toggle').catch(() => {}));
 $('scrim').addEventListener('click', () => setPanel(null)); $('sheet-close').addEventListener('click', () => setPanel(null));
 document.addEventListener('keydown', event => {
   if(panel==='pin'&&(/^\d$/.test(event.key)||event.key==='Backspace')){event.preventDefault();pinKey(event.key==='Backspace'?'back':event.key);return;}
@@ -1161,6 +1176,12 @@ document.addEventListener('keydown', event => {
 window.addEventListener('message', event => { if (event.source === parent && event.data?.type === 'atma-state' && event.data.state.id === context) consume(event.data.state); });
 window.addEventListener('atma-native-state',event=>{if(window.webkit?.messageHandlers?.atma)consume(event.detail);});
 
+function syncPageTranslationLanguage() {
+  if (state?.capabilities?.pageTranslation) {
+    return api('translation/language', {language:localization.language}).catch(() => {});
+  }
+}
+
 async function start() {
   applyAppearance();
   useWallpaper(wallpaper);
@@ -1168,7 +1189,13 @@ async function start() {
     try { const db = await wallpaperDB(); const request = db.transaction('preferences').objectStore('preferences').get('wallpaper'); request.onsuccess = () => { if (request.result) document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(request.result)}')`; db.close(); }; } catch {}
   }
   renderApps();
-  try { const version=stateActionVersion,next=await api('state');if(version===stateActionVersion)consume(next);await api('preferences', { searchEngine }); }
+  try {
+    const version = stateActionVersion;
+    const next = await api('state');
+    if (version === stateActionVersion) consume(next);
+    await api('preferences', {searchEngine});
+    await syncPageTranslationLanguage();
+  }
   catch (error) { notify(error.message); }
   setInterval(async () => { const version=stateActionVersion;try { const next=await api('state');if(version===stateActionVersion)consume(next); } catch {} }, 1000);
   setInterval(pollMessageBadges,30000);

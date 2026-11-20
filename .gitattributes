@@ -8,3 +8,6 @@
 
 # Bundled trust roots are SHA256-pinned; preserve their exact bytes on checkout.
 assets/certificates/*.crt binary
+
+# The generated WebKit rules must match the pinned source byte for byte.
+BrowserUI/content-blocker.json text eol=lf

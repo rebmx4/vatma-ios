@@ -94,6 +94,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView !== ui else { return }
+        pageTranslation.invalidate(webView)
         media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
         update(webView)
     }
@@ -105,6 +106,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             media.setPageVisible(webView, visible: !webView.isHidden || (panel == "media" && webView === currentRenderer), force: true)
             downloadTransitions.removeValue(forKey: ObjectIdentifier(webView))
             update(webView, loading: false)
+            pageTranslation.didFinish(webView)
             let finishedURL = webView.url
             BrowserSiteResource.metadata(in: webView) { [weak self, weak webView] metadata in
                 guard let self, let webView, webView.url == finishedURL,
@@ -155,7 +157,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         if webView === ui { webView.reload() }
-        else { media.invalidate(webView); update(webView, error: "WebKit ended this tab's content process. Reload the tab to continue.") }
+        else {
+            pageTranslation.invalidate(webView)
+            media.invalidate(webView)
+            update(webView, error: "WebKit ended this tab's content process. Reload the tab to continue.", loading: false)
+        }
     }
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,

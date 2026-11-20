@@ -113,6 +113,29 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         XCTAssertEqual(secondProgress, "second")
     }
 
+    func testOpeningAnAddressFromHomeKeepsTheShortcutPage() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let shortcut = ["url": root.appendingPathComponent("a").absoluteString, "shortcutId": "public:custom-a"]
+        _ = try await fixture.rpc("shortcut/open", body: shortcut)
+        let shortcutID = fixture.controller.model.activeTabId
+        let page = try XCTUnwrap(fixture.controller.currentRenderer)
+        try await fixture.wait("document.title==='Page-a'", in: page)
+        _ = try await fixture.script("history.pushState({},'', '#upload'); window.__uploadProgress=42; return true;", in: page)
+        _ = try await fixture.rpc("home")
+
+        let other = try await fixture.open(root, path: "b")
+        XCTAssertFalse(other === page)
+        _ = try await fixture.rpc("home")
+        _ = try await fixture.rpc("shortcut/open", body: shortcut)
+
+        XCTAssertEqual(fixture.controller.model.activeTabId, shortcutID)
+        XCTAssertTrue(fixture.controller.currentRenderer === page)
+        let progress = try await fixture.script("return [location.hash, window.__uploadProgress];", in: page) as? [Any]
+        XCTAssertEqual(progress?.first as? String, "#upload")
+        XCTAssertEqual(progress?.last as? Int, 42)
+    }
+
     func testDeviceChoiceIsRestrictedToIncognitoAndLeavesOrdinaryTabUnchanged() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         let root = try await fixture.start()

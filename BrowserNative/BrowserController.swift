@@ -19,6 +19,7 @@ final class BrowserController: UIViewController {
     let server = LocalUIServer()
     let blocker = SiteBlocker()
     let downloads = DownloadService()
+    lazy var pageTranslation = BrowserPageTranslation(browser: self)
     lazy var media: BrowserMediaController = {
         let controller = BrowserMediaController()
         controller.isActive = { [weak self] in self?.currentRenderer === $0 }
@@ -221,6 +222,9 @@ final class BrowserController: UIViewController {
 
     func open(_ input: String, webApp: Bool? = nil) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
+        if mode == "home", !model.active.url.isEmpty || currentRenderer != nil {
+            newTab(privateBrowsing: model.active.isPrivate)
+        }
         try open(URLRequest(url: url), webApp: webApp)
     }
 
@@ -235,8 +239,10 @@ final class BrowserController: UIViewController {
         view.endEditing(true)
         model.tabs[model.activeIndex].url = url.absoluteString
         model.tabs[model.activeIndex].error = nil
-        model.tabs[model.activeIndex].shortcutId = shortcutId
-        model.tabs[model.activeIndex].shortcutStartURL = shortcutId == nil ? nil : url.absoluteString
+        if let shortcutId {
+            model.tabs[model.activeIndex].shortcutId = shortcutId
+            model.tabs[model.activeIndex].shortcutStartURL = url.absoluteString
+        }
         mode = "browse"; panel = nil; nativeError = nil
         let renderer = renderer(for: model.active)
         blocker.load(request, in: renderer)
@@ -312,6 +318,7 @@ final class BrowserController: UIViewController {
         historyObservations.removeValue(forKey: id)?.forEach { $0.invalidate() }
         invalidatePreview(for: id)
         if let renderer = renderers.removeValue(forKey: id) {
+            pageTranslation.invalidate(renderer)
             blocker.forget(renderer)
             media.unregister(renderer)
             renderer.stopLoading()
@@ -325,6 +332,7 @@ final class BrowserController: UIViewController {
         model.save()
         view.setNeedsLayout()
         publish()
+        pageTranslation.reconcile()
     }
 
     func state() -> [String: Any] {
@@ -339,8 +347,10 @@ final class BrowserController: UIViewController {
                 "canGoBack": mode == "browse" && currentRenderer?.canGoBack == true,
                 "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
+                "translationStatus": pageTranslation.status,
                 "capabilities": ["incognito": true, "cookies": true, "downloads": true, "tabs": true,
                                  "persistentProfiles": false, "contentBlocking": blocker.available, "media": true,
+                                 "pageTranslation": BrowserPageTranslation.available,
                                  "fullFingerprintEmulation": false, "localeEmulation": false,
                                  "timezoneEmulation": false, "sync": false, "push": false,
                                  "messageBadges": true,
