@@ -1,4 +1,5 @@
 import BackgroundTasks
+import Combine
 import CoreTransferable
 import PhotosUI
 import SwiftUI
@@ -55,8 +56,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+struct NativePickerRequest {
+    var destination: Destination?
+    var type: String
+}
+
 final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     @Published var offline = false
+    let uploadSelection = PassthroughSubject<NativePickerRequest,Never>()
+    let openTransfers = PassthroughSubject<Void,Never>()
     private let bridge = "phoneDiskNative"
     lazy var view:WKWebView = {
         let config=WKWebViewConfiguration()
@@ -64,6 +72,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         config.allowsInlineMediaPlayback=true
         let script = """
         document.addEventListener('click',e=>{
+          if(e.target.closest('button[data-tab=transfers]')) window.webkit.messageHandlers.phoneDiskNative.postMessage('queue');
           const el=e.target.closest('button[data-action^="enable:"]');
           if(el?.getAttribute('aria-checked')==='false') window.webkit.messageHandlers.phoneDiskNative.postMessage('enable');
         },true);
@@ -91,8 +100,19 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host==Transfers.base.host,
-              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme,message.body as? String == "enable" else { return }
-        Task { @MainActor in await Transfers.shared.authorization() }
+              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme else { return }
+        if let action=message.body as? String {
+            if action=="enable" { Task { @MainActor in await Transfers.shared.authorization() } }
+            if action=="queue" { openTransfers.send(()) }
+        } else if let selection=message.body as? [String:String], selection["action"]=="upload" {
+            let type=selection["type"] ?? "files"
+            guard ["files","album","photo","video"].contains(type) else { return }
+            if let source=selection["source"],let path=selection["path"] {
+                let target=Destination(source:source,path:path)
+                guard Transfers.valid(target) else { return }
+                uploadSelection.send(NativePickerRequest(destination:target,type:type))
+            } else { uploadSelection.send(NativePickerRequest(destination:nil,type:type)) }
+        }
     }
 
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping (WKNavigationActionPolicy)->Void) {
@@ -110,6 +130,17 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
         offline=false
+        let install="""
+        if (typeof pickUpload === 'function' && !window.phoneDiskUploadsInstalled) {
+          window.phoneDiskUploadsInstalled=true;
+          pickUpload=(target,type) => {
+            const message={action:'upload',type:type || 'files'};
+            if(target?.source && target?.path) { message.source=target.source; message.path=target.path; }
+            window.webkit.messageHandlers.phoneDiskNative.postMessage(message);
+          };
+        }
+        """
+        webView.evaluateJavaScript(install,completionHandler:nil)
         Task { @MainActor in try? await Transfers.shared.scan() }
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
@@ -147,6 +178,8 @@ struct DiskScreen: View {
     @State private var showQueue=false
     @State private var showDestinations=false
     @State private var pickPhotos=false
+    @State private var pickerType="album"
+    @State private var keyboardUp=false
 
     var body: some View {
         VStack(spacing:0) {
@@ -166,6 +199,7 @@ struct DiskScreen: View {
                 }
             }
             #endif
+            if !keyboardUp {
             HStack {
                 Menu {
                     Button("Выгрузить из Файлов",systemImage:"folder"){ choose(false) }
@@ -182,6 +216,18 @@ struct DiskScreen: View {
             }
             .font(.footnote).padding(.horizontal,14).padding(.vertical,7)
             .background(.bar)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for:UIResponder.keyboardWillShowNotification)) { _ in keyboardUp=true }
+        .onReceive(NotificationCenter.default.publisher(for:UIResponder.keyboardWillHideNotification)) { _ in keyboardUp=false }
+        .onReceive(disk.openTransfers) { _ in
+            showQueue=true
+        }
+        .onReceive(disk.uploadSelection) { selection in
+            pickerType=selection.type
+            pickPhotos=selection.type != "files"
+            if let destination=selection.destination { pick(destination) }
+            else { showDestinations=true }
         }
         .sheet(isPresented:$showQueue) { queue }
         .confirmationDialog("Папка назначения",isPresented:$showDestinations,titleVisibility:.visible) {
@@ -193,7 +239,7 @@ struct DiskScreen: View {
             do { if let destination { for url in try result.get() { try transfers.enqueueFile(url,destination:destination) } } }
             catch { transfers.message=error.localizedDescription }
         }
-        .photosPicker(isPresented:$showPhotos,selection:$photos,maxSelectionCount:20,matching:.any(of:[.images,.videos]))
+        .photosPicker(isPresented:$showPhotos,selection:$photos,maxSelectionCount:20,matching:pickerType=="photo" ? .images : pickerType=="video" ? .videos : .any(of:[.images,.videos]))
         .onChange(of:photos) { _, selected in
             guard !selected.isEmpty, let destination else { return }
             Task {
@@ -214,6 +260,7 @@ struct DiskScreen: View {
 
     private func choose(_ isPhoto:Bool) {
         pickPhotos=isPhoto
+        pickerType=isPhoto ? "album" : "files"
         Task { @MainActor in
             if let folder=await disk.destination() { pick(folder) }
             else { showDestinations=true }
