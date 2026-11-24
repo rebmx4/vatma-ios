@@ -71,10 +71,18 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         config.websiteDataStore = .default()
         config.allowsInlineMediaPlayback=true
         let script = """
-        document.addEventListener('click',e=>{
-          if(e.target.closest('button[data-tab=transfers]')) window.webkit.messageHandlers.phoneDiskNative.postMessage('queue');
-          const el=e.target.closest('button[data-action^="enable:"]');
-          if(el?.getAttribute('aria-checked')==='false') window.webkit.messageHandlers.phoneDiskNative.postMessage('enable');
+        const deviceSettings = document.getElementById('device-settings');
+        if (deviceSettings) deviceSettings.hidden = false;
+        document.addEventListener('click', event => {
+          const bridge = window.webkit.messageHandlers.phoneDiskNative;
+          const setting = event.target.closest('#device-settings [data-native-setting]');
+          if (setting) {
+            bridge.postMessage(setting.dataset.nativeSetting);
+            return;
+          }
+          if (event.target.closest('button[data-tab=transfers]')) bridge.postMessage('queue');
+          const toggle = event.target.closest('button[data-action^="enable:"]');
+          if (toggle?.getAttribute('aria-checked') === 'false') bridge.postMessage('enable');
         },true);
         """
         config.userContentController.addUserScript(WKUserScript(source:script,injectionTime:.atDocumentEnd,forMainFrameOnly:true))
@@ -87,23 +95,24 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         return view
     }()
 
-    func destination() async -> Destination? {
-        let script="typeof folder === 'object' && folder ? {source:folder.source,path:folder.path} : null"
-        guard let result=try? await view.evaluateJavaScript(script) as? [String:String],
-              let source=result["source"],let path=result["path"] else { return nil }
-        let destination=Destination(source:source,path:path)
-        return Transfers.valid(destination) ? destination : nil
-    }
-
-    func openBackup() { view.evaluateJavaScript("typeof switchTab==='function' && switchTab('backup')",completionHandler:nil) }
     func reload() { offline=false; view.load(URLRequest(url:Transfers.base)) }
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host==Transfers.base.host,
               message.frameInfo.securityOrigin.protocol==Transfers.base.scheme else { return }
         if let action=message.body as? String {
-            if action=="enable" { Task { @MainActor in await Transfers.shared.authorization() } }
-            if action=="queue" { openTransfers.send(()) }
+            switch action {
+            case "enable":
+                Task { @MainActor in await Transfers.shared.authorization() }
+            case "queue":
+                openTransfers.send(())
+            case "disable-auto":
+                Transfers.shared.disableAuto()
+            case "notifications":
+                Transfers.shared.askNotifications()
+            default:
+                break
+            }
         } else if let selection=message.body as? [String:String], selection["action"]=="upload" {
             let type=selection["type"] ?? "files"
             guard ["files","album","photo","video"].contains(type) else { return }
@@ -179,7 +188,6 @@ struct DiskScreen: View {
     @State private var showDestinations=false
     @State private var pickPhotos=false
     @State private var pickerType="album"
-    @State private var keyboardUp=false
 
     var body: some View {
         VStack(spacing:0) {
@@ -199,27 +207,7 @@ struct DiskScreen: View {
                 }
             }
             #endif
-            if !keyboardUp {
-            HStack {
-                Menu {
-                    Button("Выгрузить из Файлов",systemImage:"folder"){ choose(false) }
-                    Button("Выгрузить из Фото",systemImage:"photo"){ choose(true) }
-                    Button("Автокопии",systemImage:"arrow.triangle.2.circlepath"){ disk.openBackup() }
-                    Button("Разрешить медиатеку",systemImage:"photo.on.rectangle"){
-                        Task { await transfers.authorization(); disk.openBackup() }
-                    }
-                    Button("Выключить обнаружение фото на iPhone"){ transfers.disableAuto() }
-                    Button("Уведомления о передаче",systemImage:"bell"){ transfers.askNotifications() }
-                } label: { Label("Мой диск",systemImage:"externaldrive") }
-                Spacer()
-                Button { showQueue=true } label: { Label("Передача",systemImage:"arrow.up.arrow.down") }
-            }
-            .font(.footnote).padding(.horizontal,14).padding(.vertical,7)
-            .background(.bar)
-            }
         }
-        .onReceive(NotificationCenter.default.publisher(for:UIResponder.keyboardWillShowNotification)) { _ in keyboardUp=true }
-        .onReceive(NotificationCenter.default.publisher(for:UIResponder.keyboardWillHideNotification)) { _ in keyboardUp=false }
         .onReceive(disk.openTransfers) { _ in
             showQueue=true
         }
@@ -258,14 +246,6 @@ struct DiskScreen: View {
         } message:{ Text(transfers.message) }
     }
 
-    private func choose(_ isPhoto:Bool) {
-        pickPhotos=isPhoto
-        pickerType=isPhoto ? "album" : "files"
-        Task { @MainActor in
-            if let folder=await disk.destination() { pick(folder) }
-            else { showDestinations=true }
-        }
-    }
     private func pick(_ target:Destination) {
         destination=target
         if pickPhotos { showPhotos=true }
