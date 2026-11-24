@@ -1,0 +1,64 @@
+{
+  "name": "Мой диск — iPhone and TestFlight",
+  "on": {
+    "push": {
+      "branches": [
+        "phone-disk/testflight"
+      ],
+      "paths": [
+        "PhoneDisk/**",
+        ".github/workflows/phone-disk.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "phonedisk-testflight",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "ios": {
+      "runs-on": "macos-26",
+      "timeout-minutes": 40,
+      "env": {
+        "DEVELOPER_DIR": "/Applications/Xcode_26.4.app/Contents/Developer",
+        "HOMEBREW_NO_AUTO_UPDATE": "1"
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Generate iPhone project",
+          "run": "brew list xcodegen >/dev/null 2>&1 || brew install xcodegen\ncd PhoneDisk\nxcodegen generate"
+        },
+        {
+          "name": "Build and launch on iPhone simulator",
+          "run": "set -euo pipefail\nxcodebuild -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath \"$RUNNER_TEMP/phonedisk-build\" CODE_SIGNING_ALLOWED=NO build\nexport PHONE_DISK_SIM=\"$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin)[\"devices\"]; print(next(x[\"udid\"] for v in sorted(d,reverse=True) for x in d[v] if x[\"name\"].startswith(\"iPhone\")))' )\"\nxcrun simctl boot \"$PHONE_DISK_SIM\"\nxcrun simctl bootstatus \"$PHONE_DISK_SIM\" -b\nxcrun simctl install \"$PHONE_DISK_SIM\" \"$RUNNER_TEMP/phonedisk-build/Build/Products/Debug-iphonesimulator/PhoneDisk.app\"\nxcrun simctl launch \"$PHONE_DISK_SIM\" ru.atma.phonedisk\nxcrun simctl launch \"$PHONE_DISK_SIM\" ru.atma.phonedisk >/dev/null\n"
+        },
+        {
+          "name": "Set up signing tools",
+          "if": "contains(github.event.head_commit.message, '[testflight]')",
+          "run": "python3 -m venv \"$RUNNER_TEMP/phonedisk-python\"\n\"$RUNNER_TEMP/phonedisk-python/bin/pip\" install codemagic-cli-tools\necho \"$RUNNER_TEMP/phonedisk-python/bin\" >> \"$GITHUB_PATH\""
+        },
+        {
+          "name": "Sign, archive and upload the separate app",
+          "if": "contains(github.event.head_commit.message, '[testflight]')",
+          "env": {
+            "APP_STORE_CONNECT_ISSUER_ID": "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}",
+            "APP_STORE_CONNECT_KEY_IDENTIFIER": "${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}",
+            "APP_STORE_CONNECT_PRIVATE_KEY": "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}",
+            "CERT_KEY_B64": "${{ secrets.CERT_KEY_B64 }}"
+          },
+          "run": "set -euo pipefail\ntest -n \"$APP_STORE_CONNECT_ISSUER_ID\" && test -n \"$APP_STORE_CONNECT_KEY_IDENTIFIER\" && test -n \"$APP_STORE_CONNECT_PRIVATE_KEY\" && test -n \"$CERT_KEY_B64\"\nkeychain initialize\nexport CERTIFICATE_PRIVATE_KEY\nCERTIFICATE_PRIVATE_KEY=\"$(printf '%s' \"$CERT_KEY_B64\" | base64 --decode)\"\napp-store-connect fetch-signing-files ru.atma.phonedisk --type IOS_APP_STORE --create\nkeychain add-certificates\nxcode-project use-profiles --project PhoneDisk/PhoneDisk.xcodeproj --export-options-plist \"$RUNNER_TEMP/phonedisk-export.plist\"\nnumber=\"$((GITHUB_RUN_NUMBER*10+GITHUB_RUN_ATTEMPT))\"\nxcodebuild archive -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk -configuration Release -destination 'generic/platform=iOS' -archivePath \"$RUNNER_TEMP/PhoneDisk.xcarchive\" CURRENT_PROJECT_VERSION=\"$number\"\ncodesign --verify --deep --strict \"$RUNNER_TEMP/PhoneDisk.xcarchive/Products/Applications/PhoneDisk.app\"\nxcodebuild -exportArchive -archivePath \"$RUNNER_TEMP/PhoneDisk.xcarchive\" -exportPath \"$RUNNER_TEMP/phonedisk-ipa\" -exportOptionsPlist \"$RUNNER_TEMP/phonedisk-export.plist\"\napp-store-connect publish --path \"$RUNNER_TEMP/phonedisk-ipa/PhoneDisk.ipa\" --enable-package-validation\necho \"Uploaded 1.0.0 ($number)\" >> \"$GITHUB_STEP_SUMMARY\"\n"
+        }
+      ]
+    }
+  }
+}
