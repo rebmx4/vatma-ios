@@ -1,0 +1,114 @@
+name: PhoneDisk 14 for ATMA TestFlight
+
+on:
+  push:
+    branches: [phone-disk/atma-beta-14]
+    paths:
+      - "PhoneDisk/**"
+      - ".github/workflows/phone-disk-atma.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atma-testflight-6774934498
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    if: contains(github.event.head_commit.message, '[atma-disk-testflight-14]')
+    runs-on: macos-26
+    timeout-minutes: 26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      ATMA_ID: "6774934498"
+      ATMA_BUNDLE: ru.atma.app
+      ATMA_TEAM: GR3WB4Z646
+      ATMA_VERSION: "1.0.0"
+      ATMA_BUILD: "14"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Compile the iOS beta
+        run: |
+          set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          cd PhoneDisk
+          xcodegen generate
+          xcodebuild -project PhoneDisk.xcodeproj -scheme PhoneDisk -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/simulator" \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Install Apple signing tools
+        run: |
+          set -euo pipefail
+          tool_dir="$RUNNER_TEMP/atma-disk-venv"
+          python3 -m venv "$tool_dir"
+          "$tool_dir/bin/pip" install --disable-pip-version-check codemagic-cli-tools==0.70.0
+          echo "$tool_dir/bin" >> "$GITHUB_PATH"
+      - name: Sign and validate the ATMA archive
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CERT_KEY_B64: ${{ secrets.CERT_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          latest="$(app-store-connect get-latest-testflight-build-number "$ATMA_ID")"
+          if [[ ! "$latest" =~ ^[0-9]+$ ]] || (( latest + 1 != ATMA_BUILD )); then
+            echo "The selected TestFlight number is no longer the next build for ATMA."
+            exit 1
+          fi
+          keychain initialize
+          export CERTIFICATE_PRIVATE_KEY
+          CERTIFICATE_PRIVATE_KEY="$(printf '%s' "$CERT_KEY_B64" | base64 --decode)"
+          app-store-connect fetch-signing-files "$ATMA_BUNDLE" --type IOS_APP_STORE --create
+          keychain add-certificates
+          project=PhoneDisk/PhoneDisk.xcodeproj
+          options="$RUNNER_TEMP/atma-disk-export.plist"
+          xcode-project use-profiles --project "$project" --export-options-plist "$options"
+          archive="$RUNNER_TEMP/ATMA-Disk.xcarchive"
+          xcodebuild archive -project "$project" -scheme PhoneDisk -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$archive" \
+            CURRENT_PROJECT_VERSION="$ATMA_BUILD" MARKETING_VERSION="$ATMA_VERSION"
+          app="$archive/Products/Applications/PhoneDisk.app"
+          codesign --verify --deep --strict "$app"
+          entitlements="$RUNNER_TEMP/atma-disk-entitlements.plist"
+          codesign -d --entitlements :- "$app" > "$entitlements"
+          python3 - "$app/Info.plist" "$entitlements" <<'PY'
+          import os
+          import plistlib
+          import sys
+
+          def plist(path):
+              with open(path, "rb") as file:
+                  return plistlib.load(file)
+
+          info = plist(sys.argv[1])
+          signed = plist(sys.argv[2])
+          bundle = os.environ["ATMA_BUNDLE"]
+          assert info["CFBundleIdentifier"] == bundle, "Unexpected bundle identifier"
+          assert info["CFBundleShortVersionString"] == os.environ["ATMA_VERSION"]
+          assert info["CFBundleVersion"] == os.environ["ATMA_BUILD"]
+          assert sorted(info["UIDeviceFamily"]) == [1, 2], "iPhone and iPad must both be supported"
+          assert info["BGTaskSchedulerPermittedIdentifiers"] == [bundle + ".scan"]
+          assert signed["application-identifier"] == os.environ["ATMA_TEAM"] + "." + bundle
+          assert not signed.get("get-task-allow", False)
+          print("Verified the signed ATMA beta identity, build number, and background task.")
+          PY
+          icon="$(find "$app" -maxdepth 1 -name 'AppIcon60x60@*.png' -print -quit)"
+          test -n "$icon"
+          swift PhoneDisk/Tests/check-icon.swift "$icon"
+          xcodebuild -exportArchive -archivePath "$archive" -exportPath "$RUNNER_TEMP/atma-disk-ipa" \
+            -exportOptionsPlist "$options"
+      - name: Upload build 14 to TestFlight
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          app-store-connect publish --path "$RUNNER_TEMP/atma-disk-ipa/PhoneDisk.ipa" --enable-package-validation
+          echo "Uploaded the ATMA 1.0.0 (14) PhoneDisk beta to App Store Connect." >> "$GITHUB_STEP_SUMMARY"

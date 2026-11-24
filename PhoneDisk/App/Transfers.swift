@@ -45,8 +45,9 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         #endif
         return URL(string:"https://files.rynpro.ru/")!
     }()
-    static let processing = "ru.atma.phonedisk.scan"
-    static let identifier = "ru.atma.phonedisk.transfers"
+    private static let bundleID = Bundle.main.bundleIdentifier ?? "ru.atma.app"
+    static let processing = "\(bundleID).scan"
+    static let identifier = "\(bundleID).transfers"
     static let sources = Set(["photos-c","interviews-d","camera-e","backup-c","backup-d","backup-e"])
     private static let support = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
         .appendingPathComponent("PhoneDisk",isDirectory:true)

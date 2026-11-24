@@ -27,7 +27,7 @@
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>Доступ нужен, чтобы сохранять загруженные фото и видео.</string>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array><string>ru.atma.phonedisk.scan</string></array>
+    <array><string>$(PRODUCT_BUNDLE_IDENTIFIER).scan</string></array>
     <key>UIBackgroundModes</key>
     <array><string>processing</string></array>
     <key>UIFileSharingEnabled</key><true/>
