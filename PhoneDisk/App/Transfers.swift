@@ -42,12 +42,12 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let base: URL = {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
-            return URL(string:"http://127.0.0.1:18878/")!
+            return URL(string:"https://127.0.0.1:18878/")!
         }
         #endif
         return URL(string:"https://files.rynpro.ru/")!
     }()
-    private static let bundleID = Bundle.main.bundleIdentifier ?? "ru.atma.app"
+    private static let bundleID = Bundle.main.bundleIdentifier ?? "ru.atma.phonedisk"
     static let processing = "\(bundleID).scan"
     static let identifier = "\(bundleID).transfers"
     static let sources = Set(["photos-c","interviews-d","camera-e","backup-c","backup-d","backup-e"])

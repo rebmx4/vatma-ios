@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "16"
+    CURRENT_PROJECT_VERSION: "62"
     DEVELOPMENT_LANGUAGE: ru
 
 targets:
@@ -20,7 +20,7 @@ targets:
       - Assets.xcassets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.atma.app
+        PRODUCT_BUNDLE_IDENTIFIER: ru.atma.phonedisk
         PRODUCT_NAME: PhoneDisk
         INFOPLIST_FILE: Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

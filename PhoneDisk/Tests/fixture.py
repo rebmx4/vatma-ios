@@ -1,5 +1,6 @@
 import argparse
 import json
+import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -7,7 +8,10 @@ from urllib.parse import parse_qs, urlsplit
 
 parser=argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
-output=parser.parse_args().output
+parser.add_argument("certificate", nargs="?")
+parser.add_argument("private_key", nargs="?")
+options=parser.parse_args()
+output=options.output
 staged={}
 backup=output.parent/"autocopy-results"
 backup.mkdir()
@@ -133,4 +137,9 @@ const check = setInterval(() => {
         target.write_bytes(data)
         self.reply(200,json.dumps({"succeeded":[item]}).encode())
 
-ThreadingHTTPServer(("127.0.0.1",18878),Fixture).serve_forever()
+server=ThreadingHTTPServer(("127.0.0.1",18878),Fixture)
+if options.certificate and options.private_key:
+    tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(options.certificate,options.private_key)
+    server.socket=tls.wrap_socket(server.socket,server_side=True)
+server.serve_forever()
