@@ -1,5 +1,6 @@
 import argparse
 import json
+import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -7,18 +8,21 @@ from urllib.parse import parse_qs, urlsplit
 
 parser=argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
-output=parser.parse_args().output
+parser.add_argument("certificate", type=Path)
+parser.add_argument("key", type=Path)
+arguments=parser.parse_args()
+output=arguments.output
 staged={}
 downloads=b"PhoneDisk download fixture\n"
 
 class Fixture(BaseHTTPRequestHandler):
-    protocol_version="HTTP/1.0"
+    protocol_version="HTTP/1.1"
 
     def log_message(self,*args):
         pass
 
     def reply(self, status, data=b"",kind="application/json",**headers):
-        print(f"{self.command} {urlsplit(self.path).path} -> {status}", flush=True)
+        print(f"{self.command} {self.path} -> {status}", flush=True)
         self.send_response(status)
         self.send_header("Content-Type",kind)
         self.send_header("Content-Length",str(len(data)))
@@ -78,4 +82,8 @@ class Fixture(BaseHTTPRequestHandler):
         output.write_bytes(data)
         self.reply(200,json.dumps({"succeeded":[item]}).encode())
 
-ThreadingHTTPServer(("127.0.0.1",18878),Fixture).serve_forever()
+server=ThreadingHTTPServer(("127.0.0.1",18878),Fixture)
+tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+tls.load_cert_chain(arguments.certificate,arguments.key)
+server.socket=tls.wrap_socket(server.socket,server_side=True)
+server.serve_forever()

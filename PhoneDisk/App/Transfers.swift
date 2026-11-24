@@ -40,7 +40,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let base: URL = {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
-            return URL(string:"http://127.0.0.1:18878/")!
+            return URL(string:"https://127.0.0.1:18878/")!
         }
         #endif
         return URL(string:"https://files.rynpro.ru/")!
@@ -326,6 +326,13 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     try? data.write(to:resumeFile(id),options:.atomic)
                 } else { try? FileManager.default.removeItem(at:resumeFile(id)) }
             }
+            #if DEBUG && targetEnvironment(simulator)
+            if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
+                let failure = error as NSError
+                failed(id,"\(failure.domain) \(failure.code)")
+                return
+            }
+            #endif
             failed(id,error.localizedDescription); return
         }
         guard let response=task.response as? HTTPURLResponse,(200..<300).contains(response.statusCode),Self.sameHost(response.url) else {
