@@ -1,7 +1,9 @@
 import BackgroundTasks
 import Foundation
+import OSLog
 import Photos
 import SwiftUI
+import UIKit
 import UserNotifications
 import WebKit
 
@@ -60,7 +62,12 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var eventWork = 0
     private var eventsFinished = false
     private var scanning = false
+    private var scanAgain = false
+    private var backupSettingsRevision = 0
     private let defaults = UserDefaults.standard
+    private static let automaticTransferLimit = 2
+    private static let backupLog = Logger(subsystem: bundleID, category: "Autocopies")
+    @MainActor private static var checkingSchedule = false
 
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier:Self.identifier)
@@ -98,7 +105,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         session.getAllTasks { tasks in
             DispatchQueue.main.async {
                 self.active.formUnion(tasks.compactMap(\.taskDescription))
-                for job in self.jobs where job.phase != "Готово" && !self.active.contains(job.id) {
+                for job in self.jobs where job.asset == nil && job.phase != "Готово" && !self.active.contains(job.id) {
                     self.start(job.id)
                 }
             }
@@ -194,16 +201,24 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return legal.isEmpty ? "Файл" : String(legal.prefix(120))
     }
 
-    func enqueueFile(_ url:URL, destination:Destination, name:String? = nil, asset:String? = nil) throws {
+    func enqueueFile(_ url:URL, destination:Destination, name:String? = nil) throws {
+        let id = try storeUpload(url, destination:destination, name:name)
+        start(id)
+    }
+
+    private func storeUpload(_ url:URL, destination:Destination, name:String?, asset:String? = nil) throws -> String {
         guard Self.valid(destination) else { throw DiskFailure.rejected }
-        if let asset, jobs.contains(where:{$0.asset==asset}) { return }
         let id = UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        try FileManager.default.copyItem(at:url,to:stage(id))
+        if asset != nil {
+            try FileManager.default.moveItem(at:url,to:stage(id))
+        } else {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            try FileManager.default.copyItem(at:url,to:stage(id))
+        }
         jobs.insert(DiskJob(id:id,name:filename(name ?? url.lastPathComponent),destination:destination,asset:asset),at:0)
         save()
-        start(id)
+        return id
     }
 
     func enqueueDownload(_ url:URL,_ name:String?) {
@@ -218,37 +233,47 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func start(_ id:String) {
+        Task { @MainActor in await beginTransfer(id) }
+    }
+
+    @MainActor private func beginTransfer(_ id:String) async {
         guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),job.phase != "Готово" else { return }
         active.insert(id)
         update(id){$0.phase="Подготовка"}
-        Task { @MainActor in
-            do {
-                if let destination=job.destination {
-                    try await requireDrive(destination.source)
-                    if job.uploaded { try await publish(job,destination); done(id); return }
-                    let hold=Destination(source:destination.source,path:"/.phone-disk-incoming")
-                    try await mkdir(hold)
-                    if destination.source.hasPrefix("backup-") && destination.path != "/" { try await mkdir(destination) }
-                    var transfer=try await request(Self.address("/api/resources",["source":destination.source,"path":hold.path+"/"+id,"isDir":"false","override":"true"]),method:"POST")
-                    transfer.setValue("application/octet-stream",forHTTPHeaderField:"Content-Type")
-                    let task=session.uploadTask(with:transfer,fromFile:stage(id))
-                    task.taskDescription=id
-                    update(id){$0.phase="Выгрузка"}
-                    task.resume()
-                } else if let url=job.downloadURL {
-                    let source=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="source"})?.value
-                    guard let source,Self.sources.contains(source) else { throw DiskFailure.rejected }
-                    try await requireDrive(source)
-                    let download=try await request(url)
-                    let task: URLSessionDownloadTask
-                    if let resume=try? Data(contentsOf:resumeFile(id)) {
-                        task=session.downloadTask(withResumeData:resume)
-                    } else { task=session.downloadTask(with:download) }
-                    task.taskDescription=id
-                    update(id){$0.phase="Скачивание"}
-                    task.resume()
-                }
-            } catch { failed(id,error.localizedDescription) }
+        do {
+            try Task.checkCancellation()
+            if let destination=job.destination {
+                try await requireDrive(destination.source)
+                if job.uploaded { try await publish(job,destination); done(id); return }
+                let hold=Destination(source:destination.source,path:"/.phone-disk-incoming")
+                try await mkdir(hold)
+                if destination.source.hasPrefix("backup-") && destination.path != "/" { try await mkdir(destination) }
+                var transfer=try await request(Self.address("/api/resources",["source":destination.source,"path":hold.path+"/"+id,"isDir":"false","override":"true"]),method:"POST")
+                try Task.checkCancellation()
+                transfer.setValue("application/octet-stream",forHTTPHeaderField:"Content-Type")
+                let task=session.uploadTask(with:transfer,fromFile:stage(id))
+                task.taskDescription=id
+                update(id){$0.phase="Выгрузка"}
+                task.resume()
+            } else if let url=job.downloadURL {
+                let source=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="source"})?.value
+                guard let source,Self.sources.contains(source) else { throw DiskFailure.rejected }
+                try await requireDrive(source)
+                let download=try await request(url)
+                try Task.checkCancellation()
+                let task: URLSessionDownloadTask
+                if let resume=try? Data(contentsOf:resumeFile(id)) {
+                    task=session.downloadTask(withResumeData:resume)
+                } else { task=session.downloadTask(with:download) }
+                task.taskDescription=id
+                update(id){$0.phase="Скачивание"}
+                task.resume()
+            }
+        } catch is CancellationError {
+            active.remove(id)
+            update(id){$0.phase="Ожидает"}
+        } catch {
+            failed(id,error.localizedDescription)
         }
     }
 
@@ -284,11 +309,18 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func done(_ id:String) {
+        let automatic = jobs.first(where: { $0.id == id })?.asset != nil
         active.remove(id)
         update(id){$0.phase="Готово";$0.progress=1}
         try? FileManager.default.removeItem(at:stage(id))
         try? FileManager.default.removeItem(at:resumeFile(id))
         notify(success:true)
+        if automatic {
+            Self.schedule()
+            Task { @MainActor in
+                if UIApplication.shared.applicationState == .active { try? await scan() }
+            }
+        }
     }
 
     private func failed(_ id:String,_ text:String) {
@@ -362,11 +394,27 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     static func schedule() {
-        guard UserDefaults.standard.bool(forKey:"photo-auto") else { return }
+        Task { @MainActor in await scheduleIfNeeded() }
+    }
+
+    @MainActor static func scheduleIfNeeded() async {
+        guard UserDefaults.standard.bool(forKey:"photo-auto"), !checkingSchedule else { return }
+        checkingSchedule=true
+        defer { checkingSchedule=false }
+        let pending=await BGTaskScheduler.shared.pendingTaskRequests()
+        guard UserDefaults.standard.bool(forKey:"photo-auto"), !Task.isCancelled,
+              !pending.contains(where:{ $0.identifier == processing && $0.earliestBeginDate == nil })
+        else { return }
         let request=BGProcessingTaskRequest(identifier:processing)
         request.requiresNetworkConnectivity=true
-        request.earliestBeginDate=Date(timeIntervalSinceNow:900)
-        try? BGTaskScheduler.shared.submit(request)
+        do { try BGTaskScheduler.shared.submit(request) }
+        catch { backupLog.error("Could not schedule automatic backup: \((error as NSError).code)") }
+    }
+
+    @MainActor func backupSettingsChanged(enabled:Bool) async {
+        backupSettingsRevision += 1
+        if enabled { await authorization() }
+        else { try? await scan() }
     }
 
     @MainActor func authorization() async {
@@ -381,46 +429,131 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor func scan() async throws {
-        guard !scanning,defaults.bool(forKey:"photo-auto"),
-              let cutoff=defaults.object(forKey:"photo-cutoff") as? Date else { return }
+        guard defaults.bool(forKey:"photo-auto") else { return }
         let access=PHPhotoLibrary.authorizationStatus(for:.readWrite)
         guard access == .authorized || access == .limited else { return }
+        if scanning {
+            if UIApplication.shared.applicationState == .active { scanAgain=true }
+            return
+        }
         scanning=true
-        defer { scanning=false }
+        defer {
+            scanning=false
+            if scanAgain {
+                scanAgain=false
+                Task { @MainActor in try? await scan() }
+            }
+        }
+        let revision=backupSettingsRevision
         let data=try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/autocopies.json"])))
         guard let settings=try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw DiskFailure.rejected }
+
+        func destination(for type:String, folder:String) -> Destination? {
+            guard let preference=settings[type] as? [String:Any], preference["enabled"] as? Bool == true,
+                  let disk=(preference["disk"] as? String)?.lowercased(), ["c","d","e"].contains(disk)
+            else { return nil }
+            return Destination(source:"backup-"+disk,path:folder)
+        }
+
+        let video=destination(for:"video",folder:"/Видео")
+        let cutoff=defaults.object(forKey:"photo-cutoff") as? Date
+        let photo=cutoff == nil ? nil : destination(for:"photo",folder:"/Фото")
+        let destinations=[video, photo].compactMap { $0 }
+        guard !destinations.isEmpty else { return }
+        Self.schedule()
+
+        let taskIDs: [String] = await withCheckedContinuation { continuation in
+            session.getAllTasks { continuation.resume(returning:$0.compactMap(\.taskDescription)) }
+        }
+        active.formUnion(taskIDs)
+        var remaining=Self.automaticTransferLimit - jobs.filter {
+            $0.asset != nil && $0.phase != "Готово" && active.contains($0.id)
+        }.count
+        guard remaining > 0 else { return }
+        func current() -> Bool {
+            defaults.bool(forKey:"photo-auto") && backupSettingsRevision == revision
+        }
+
+        let previous = jobs.reversed().filter { job in
+            guard job.asset != nil, job.phase != "Готово", !active.contains(job.id), let target=job.destination
+            else { return false }
+            return destinations.contains { $0.source == target.source && $0.path == target.path }
+        }
+        for job in previous {
+            if remaining <= 0 { break }
+            try Task.checkCancellation()
+            guard current() else { return }
+            await beginTransfer(job.id)
+            if active.contains(job.id) { remaining -= 1 }
+        }
+        guard remaining > 0 else { return }
+
+        var known: [String: Set<String>] = [:]
+        for job in jobs {
+            if let source=job.destination?.source, let asset=job.asset {
+                known[source, default:[]].insert(asset)
+            }
+        }
+
         let options=PHFetchOptions()
-        options.predicate=NSPredicate(format:"creationDate >= %@",cutoff as NSDate)
-        options.sortDescriptors=[NSSortDescriptor(key:"creationDate",ascending:true)]
+        var predicates: [NSPredicate] = []
+        if video != nil {
+            predicates.append(NSPredicate(format:"mediaType == %d",Int(PHAssetMediaType.video.rawValue)))
+            options.includeHiddenAssets=true
+            options.includeAssetSourceTypes=[.typeUserLibrary,.typeCloudShared,.typeiTunesSynced]
+        }
+        if photo != nil, let cutoff {
+            predicates.append(NSPredicate(format:"mediaType == %d AND creationDate >= %@",Int(PHAssetMediaType.image.rawValue),cutoff as NSDate))
+        }
+        options.predicate=NSCompoundPredicate(orPredicateWithSubpredicates:predicates)
+        options.sortDescriptors=[NSSortDescriptor(key:"creationDate",ascending:false)]
         let assets=PHAsset.fetchAssets(with:options)
-        var queued=0
+        var preparationError: Error?
+        var prepared=0
         for index in 0..<assets.count {
             try Task.checkCancellation()
-            if queued>=10 { break }
+            guard current() else { return }
+            if remaining <= 0 { break }
             let item=assets.object(at:index)
-            let video=item.mediaType == .video
-            guard video || item.mediaType == .image,
-                  let preference=settings[video ? "video":"photo"] as? [String:Any],preference["enabled"] as? Bool == true,
-                  let disk=(preference["disk"] as? String)?.lowercased(),["c","d","e"].contains(disk),
-                  !jobs.contains(where:{$0.asset==item.localIdentifier}),
-                  let asset=PHAssetResource.assetResources(for:item).first(where:{video ? $0.type == .video : $0.type == .photo}) else { continue }
+            let isVideo=item.mediaType == .video
+            guard let target=isVideo ? video : photo,
+                  isVideo || (!item.isHidden && item.sourceType.contains(.typeUserLibrary)),
+                  known[target.source]?.contains(item.localIdentifier) != true
+            else { continue }
+            let resources=PHAssetResource.assetResources(for:item)
+            let original=resources.first { isVideo ? $0.type == .video : $0.type == .photo }
+            guard let asset=original ?? (isVideo ? resources.first { $0.type == .fullSizeVideo } : nil)
+            else { continue }
             let temporary=Self.support.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at:temporary) }
-            let settings=PHAssetResourceRequestOptions()
-            settings.isNetworkAccessAllowed=true
-            try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<Void,Error>) in
-                PHAssetResourceManager.default().writeData(for:asset,toFile:temporary,options:settings) { error in
-                    if let error { continuation.resume(throwing:error) } else { continuation.resume() }
+            let downloadOptions=PHAssetResourceRequestOptions()
+            downloadOptions.isNetworkAccessAllowed=true
+            do {
+                try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<Void,Error>) in
+                    PHAssetResourceManager.default().writeData(for:asset,toFile:temporary,options:downloadOptions) { error in
+                        if let error { continuation.resume(throwing:error) } else { continuation.resume() }
+                    }
                 }
+                try Task.checkCancellation()
+                guard current() else { return }
+                let id=try storeUpload(temporary,destination:target,name:asset.originalFilename,asset:item.localIdentifier)
+                known[target.source, default:[]].insert(item.localIdentifier)
+                await beginTransfer(id)
+                remaining -= 1
+                prepared += 1
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // An unavailable original must not prevent later videos from reaching the queue.
+                preparationError=error
+                Self.backupLog.error("Could not prepare a library asset: \((error as NSError).code)")
             }
-            try Task.checkCancellation()
-            try enqueueFile(temporary,destination:Destination(source:"backup-"+disk,path:video ? "/Видео":"/Фото"),
-                            name:asset.originalFilename,asset:item.localIdentifier)
-            queued += 1
         }
+        if let preparationError, prepared == 0 { throw preparationError }
     }
 
-    func disableAuto() {
+    @MainActor func disableAuto() {
+        backupSettingsRevision += 1
         defaults.set(false,forKey:"photo-auto")
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.processing)
     }

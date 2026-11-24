@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         BGTaskScheduler.shared.register(forTaskWithIdentifier:Transfers.processing,using:nil) { job in
             let completion=ProcessingCompletion(job)
             let run = Task { @MainActor in
-                Transfers.schedule()
+                await Transfers.scheduleIfNeeded()
                 do { try await Transfers.shared.scan(); completion.finish(!Task.isCancelled) }
                 catch { completion.finish(false) }
             }
@@ -81,8 +81,6 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             return;
           }
           if (event.target.closest('button[data-tab=transfers]')) bridge.postMessage('queue');
-          const toggle = event.target.closest('button[data-action^="enable:"]');
-          if (toggle?.getAttribute('aria-checked') === 'false') bridge.postMessage('enable');
         },true);
         """
         config.userContentController.addUserScript(WKUserScript(source:script,injectionTime:.atDocumentEnd,forMainFrameOnly:true))
@@ -107,12 +105,14 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             case "queue":
                 openTransfers.send(())
             case "disable-auto":
-                Transfers.shared.disableAuto()
+                Task { @MainActor in Transfers.shared.disableAuto() }
             case "notifications":
                 Transfers.shared.askNotifications()
             default:
                 break
             }
+        } else if let update=message.body as? [String:String], update["action"]=="backup-settings" {
+            Task { @MainActor in await Transfers.shared.backupSettingsChanged(enabled:update["enabled"]=="true") }
         } else if let selection=message.body as? [String:String], selection["action"]=="upload" {
             let type=selection["type"] ?? "files"
             guard ["files","album","photo","video"].contains(type) else { return }
@@ -146,6 +146,16 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             const message={action:'upload',type:type || 'files'};
             if(target?.source && target?.path) { message.source=target.source; message.path=target.path; }
             window.webkit.messageHandlers.phoneDiskNative.postMessage(message);
+          };
+        }
+        if (typeof saveSettings === 'function' && !window.phoneDiskBackupInstalled) {
+          window.phoneDiskBackupInstalled=true;
+          const save=saveSettings;
+          saveSettings=async (type, patch) => {
+            await save(type, patch);
+            window.webkit.messageHandlers.phoneDiskNative.postMessage({
+              action:'backup-settings', enabled:String(patch.enabled === true)
+            });
           };
         }
         """
