@@ -7,24 +7,6 @@ import UIKit
 import UserNotifications
 import WebKit
 
-struct Destination: Codable {
-    var source: String
-    var path: String
-}
-
-struct DiskJob: Codable, Identifiable {
-    var id: String
-    var name: String
-    var destination: Destination?
-    var downloadURL: URL?
-    var asset: String?
-    var phase: String = "Ожидает"
-    var uploaded = false
-    var progress: Double = 0
-    var localName: String?
-    var remotePath: String?
-}
-
 enum DiskFailure: LocalizedError {
     case signIn, response(Int), rejected
     var errorDescription: String? {
@@ -488,24 +470,13 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         guard remaining > 0 else { return }
 
-        var known: [String: Set<String>] = [:]
-        for job in jobs {
-            if let source=job.destination?.source, let asset=job.asset {
-                known[source, default:[]].insert(asset)
-            }
-        }
-
+        var history=BackupHistory(jobs:jobs)
         let options=PHFetchOptions()
-        var predicates: [NSPredicate] = []
         if video != nil {
-            predicates.append(NSPredicate(format:"mediaType == %d",Int(PHAssetMediaType.video.rawValue)))
             options.includeHiddenAssets=true
             options.includeAssetSourceTypes=[.typeUserLibrary,.typeCloudShared,.typeiTunesSynced]
         }
-        if photo != nil, let cutoff {
-            predicates.append(NSPredicate(format:"mediaType == %d AND creationDate >= %@",Int(PHAssetMediaType.image.rawValue),cutoff as NSDate))
-        }
-        options.predicate=NSCompoundPredicate(orPredicateWithSubpredicates:predicates)
+        options.predicate=backupAssetPredicate(includeVideo:video != nil,photoCutoff:photo == nil ? nil : cutoff)
         options.sortDescriptors=[NSSortDescriptor(key:"creationDate",ascending:false)]
         let assets=PHAsset.fetchAssets(with:options)
         var preparationError: Error?
@@ -518,7 +489,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             let isVideo=item.mediaType == .video
             guard let target=isVideo ? video : photo,
                   isVideo || (!item.isHidden && item.sourceType.contains(.typeUserLibrary)),
-                  known[target.source]?.contains(item.localIdentifier) != true
+                  !history.contains(item.localIdentifier,on:target.source)
             else { continue }
             let resources=PHAssetResource.assetResources(for:item)
             let original=resources.first { isVideo ? $0.type == .video : $0.type == .photo }
@@ -537,7 +508,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 try Task.checkCancellation()
                 guard current() else { return }
                 let id=try storeUpload(temporary,destination:target,name:asset.originalFilename,asset:item.localIdentifier)
-                known[target.source, default:[]].insert(item.localIdentifier)
+                history.record(item.localIdentifier,on:target.source)
                 await beginTransfer(id)
                 remaining -= 1
                 prepared += 1
