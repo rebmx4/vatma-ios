@@ -18,6 +18,7 @@ class Fixture(BaseHTTPRequestHandler):
         pass
 
     def reply(self, status, data=b"",kind="application/json",**headers):
+        print(f"{self.command} {urlsplit(self.path).path} -> {status}", flush=True)
         self.send_response(status)
         self.send_header("Content-Type",kind)
         self.send_header("Content-Length",str(len(data)))
