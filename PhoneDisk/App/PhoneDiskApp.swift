@@ -25,14 +25,25 @@ struct PhoneDiskApp: App {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    private final class ProcessingCompletion {
+        let job:BGTask
+        private var finished=false
+        init(_ job:BGTask) { self.job=job }
+        func finish(_ success:Bool) {
+            guard !finished else { return }
+            finished=true
+            job.setTaskCompleted(success:success)
+        }
+    }
     func application(_ application:UIApplication,didFinishLaunchingWithOptions options:[UIApplication.LaunchOptionsKey:Any]? = nil)->Bool {
         BGTaskScheduler.shared.register(forTaskWithIdentifier:Transfers.processing,using:nil) { job in
+            let completion=ProcessingCompletion(job)
             let run = Task { @MainActor in
                 Transfers.schedule()
-                do { try await Transfers.shared.scan(); job.setTaskCompleted(success:!Task.isCancelled) }
-                catch { job.setTaskCompleted(success:false) }
+                do { try await Transfers.shared.scan(); completion.finish(!Task.isCancelled) }
+                catch { completion.finish(false) }
             }
-            job.expirationHandler={ run.cancel() }
+            job.expirationHandler={ run.cancel(); DispatchQueue.main.async { completion.finish(false) } }
         }
         _ = Transfers.shared
         return true
@@ -80,7 +91,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host==Transfers.base.host,
-              message.frameInfo.securityOrigin.protocol=="https",message.body as? String == "enable" else { return }
+              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme,message.body as? String == "enable" else { return }
         Task { @MainActor in await Transfers.shared.authorization() }
     }
 
@@ -144,6 +155,17 @@ struct DiskScreen: View {
                     Label("Домашний ПК недоступен",systemImage:"wifi.slash")
                 } actions: { Button("Повторить"){ disk.reload() }.buttonStyle(.borderedProminent) }
             } else { WebSurface(browser:disk) }
+            #if DEBUG && targetEnvironment(simulator)
+            if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
+                Button("Выбрать пробный файл") {
+                    let url=FileManager.default.temporaryDirectory.appendingPathComponent("fixture-source.txt")
+                    do {
+                        try Data("PhoneDisk fixture bytes\n".utf8).write(to:url)
+                        try transfers.enqueueFile(url,destination:Destination(source:"photos-c",path:"/"),name:"fixture-data.txt")
+                    } catch { transfers.message=error.localizedDescription }
+                }
+            }
+            #endif
             HStack {
                 Menu {
                     Button("Выгрузить из Файлов",systemImage:"folder"){ choose(false) }

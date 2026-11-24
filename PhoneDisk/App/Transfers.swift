@@ -20,6 +20,7 @@ struct DiskJob: Codable, Identifiable {
     var uploaded = false
     var progress: Double = 0
     var localName: String?
+    var remotePath: String?
 }
 
 enum DiskFailure: LocalizedError {
@@ -36,7 +37,14 @@ enum DiskFailure: LocalizedError {
 
 final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = Transfers()
-    static let base = URL(string:"https://files.rynpro.ru/")!
+    static let base: URL = {
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
+            return URL(string:"http://127.0.0.1:18878/")!
+        }
+        #endif
+        return URL(string:"https://files.rynpro.ru/")!
+    }()
     static let processing = "ru.atma.phonedisk.scan"
     static let identifier = "ru.atma.phonedisk.transfers"
     static let sources = Set(["photos-c","interviews-d","camera-e","backup-c","backup-d","backup-e"])
@@ -82,7 +90,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     static func sameHost(_ url: URL?) -> Bool {
-        url?.scheme == "https" && url?.host == base.host && (url?.port == nil || url?.port == 443) && url?.user == nil && url?.password == nil
+        url?.scheme == base.scheme && url?.host == base.host && (url?.port ?? 443) == (base.port ?? 443) && url?.user == nil && url?.password == nil
     }
 
     func recover() {
@@ -131,7 +139,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return url.url!
     }
 
-    private func request(_ url:URL, method:String = "GET") async throws -> URLRequest {
+    @MainActor private func request(_ url:URL, method:String = "GET") async throws -> URLRequest {
         guard Self.sameHost(url) else { throw DiskFailure.rejected }
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies {
@@ -159,6 +167,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func stage(_ id:String) -> URL { Self.support.appendingPathComponent(id) }
+    private func resumeFile(_ id:String) -> URL { Self.support.appendingPathComponent("resume-"+id) }
     private func filename(_ name:String) -> String {
         let legal = name.replacingOccurrences(of:"[<>:\"/\\\\|?*\\x00-\\x1F]",with:"_",options:.regularExpression)
             .trimmingCharacters(in:CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn:".")))
@@ -206,7 +215,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     update(id){$0.phase="Выгрузка"}
                     task.resume()
                 } else if let url=job.downloadURL {
-                    let task=session.downloadTask(with:try await request(url))
+                    let download=try await request(url)
+                    let task: URLSessionDownloadTask
+                    if let resume=try? Data(contentsOf:resumeFile(id)) {
+                        task=session.downloadTask(withResumeData:resume)
+                    } else { task=session.downloadTask(with:download) }
                     task.taskDescription=id
                     update(id){$0.phase="Скачивание"}
                     task.resume()
@@ -215,9 +228,23 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
-    private func publish(_ job:DiskJob,_ destination:Destination) async throws {
+    @MainActor private func publish(_ job:DiskJob,_ destination:Destination) async throws {
         let source=destination.source, stage="/.phone-disk-incoming/"+job.id
-        let path=(destination.path == "/" ? "" : destination.path)+"/"+job.id.prefix(12)+"-"+job.name
+        let directory = destination.path == "/" ? "" : destination.path
+        func exists(_ path: String) async throws -> Bool {
+            do {
+                _ = try await checked(request(Self.address("/api/resources",["source":source,"path":path])))
+                return true
+            } catch DiskFailure.response(404) { return false }
+        }
+        let path:String
+        if let saved=jobs.first(where:{$0.id==job.id})?.remotePath { path=saved }
+        else {
+            let original=directory+"/"+job.name
+            if try await exists(original) { path=directory+"/"+job.id.prefix(12)+"-"+job.name }
+            else { path=original }
+            update(job.id){$0.remotePath=path}
+        }
         var move=try await request(Self.address("/api/resources"),method:"PATCH")
         move.setValue("application/json",forHTTPHeaderField:"Content-Type")
         move.httpBody=try JSONSerialization.data(withJSONObject:["action":"move","items":[["fromSource":source,"fromPath":stage,"toSource":source,"toPath":path]],"overwrite":false,"rename":false])
@@ -227,8 +254,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             let success=value?["succeeded"] as? [[String:Any]]
             guard success?.contains(where:{($0["toPath"] as? String)==path}) == true else { throw DiskFailure.rejected }
         } catch {
-            let check=try await request(Self.address("/api/resources",["source":source,"path":path]))
-            _ = try await checked(check)
+            guard !(try await exists(stage)), try await exists(path) else { throw error }
         }
     }
 
@@ -236,6 +262,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         active.remove(id)
         update(id){$0.phase="Готово";$0.progress=1}
         try? FileManager.default.removeItem(at:stage(id))
+        try? FileManager.default.removeItem(at:resumeFile(id))
         notify(success:true)
     }
 
@@ -269,8 +296,16 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func urlSession(_ session:URLSession,task:URLSessionTask,didCompleteWithError error:Error?) {
         guard let id=task.taskDescription,let job=jobs.first(where:{$0.id==id}) else { return }
-        if let error { failed(id,error.localizedDescription); return }
+        if let error {
+            if job.downloadURL != nil {
+                if let data=(error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+                    try? data.write(to:resumeFile(id),options:.atomic)
+                } else { try? FileManager.default.removeItem(at:resumeFile(id)) }
+            }
+            failed(id,error.localizedDescription); return
+        }
         guard let response=task.response as? HTTPURLResponse,(200..<300).contains(response.statusCode),Self.sameHost(response.url) else {
+            if job.downloadURL != nil { try? FileManager.default.removeItem(at:resumeFile(id)) }
             failed(id,DiskFailure.response((task.response as? HTTPURLResponse)?.statusCode ?? 0).localizedDescription); return
         }
         if let destination=job.destination {
@@ -309,7 +344,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         try? BGTaskScheduler.shared.submit(request)
     }
 
-    func authorization() async {
+    @MainActor func authorization() async {
         let status=await PHPhotoLibrary.requestAuthorization(for:.readWrite)
         guard status == .authorized || status == .limited else {
             message="Медиатека недоступна. Разрешение можно изменить в настройках iPhone."; return
@@ -320,7 +355,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         try? await scan()
     }
 
-    func scan() async throws {
+    @MainActor func scan() async throws {
         guard !scanning,defaults.bool(forKey:"photo-auto"),
               let cutoff=defaults.object(forKey:"photo-cutoff") as? Date else { return }
         let access=PHPhotoLibrary.authorizationStatus(for:.readWrite)

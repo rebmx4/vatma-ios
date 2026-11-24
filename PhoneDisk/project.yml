@@ -27,5 +27,22 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: "NO"
         GENERATE_INFOPLIST_FILE: "NO"
-    scheme:
-      gatherCoverageData: false
+
+  PhoneDiskUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: PhoneDisk
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: PhoneDisk
+schemes:
+  PhoneDisk:
+    build:
+      targets:
+        PhoneDisk: all
+    test:
+      targets:
+        - PhoneDiskUITests
