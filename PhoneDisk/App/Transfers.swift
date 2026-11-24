@@ -160,6 +160,25 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return data
     }
 
+    private func requireDrive(_ source:String) async throws {
+        let data=try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/drives.json"])))
+        guard let catalogue=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              catalogue["schema"] as? Int==1,
+              let drives=catalogue["drives"] as? [[String:Any]] else { throw DiskFailure.rejected }
+        let backup=source.hasPrefix("backup-")
+        guard let drive=drives.first(where:{ (($0[backup ? "backup":"root"] as? [String:Any])?["source"] as? String)==source }),
+              let letter=drive["id"] as? String,["C","D","E"].contains(letter),
+              let route=drive[backup ? "backup":"root"] as? [String:Any],
+              route["trashed"]==nil || route["trashed"] is NSNull,
+              (backup ? (drive["registered"] as? Bool==true) : (drive["available"] as? Bool==true)) else {
+            throw DiskFailure.response(404)
+        }
+        if letter != "C" {
+            let marker=Self.address("/api/resources",["source":"registered-"+letter.lowercased(),"path":"/"])
+            _ = try await checked(request(marker))
+        }
+    }
+
     private func mkdir(_ destination:Destination) async throws {
         let url = Self.address("/api/resources",["source":destination.source,"path":destination.path,"isDir":"true","override":"false"])
         do { _ = try await checked(request(url,method:"POST")) }
@@ -204,6 +223,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         Task { @MainActor in
             do {
                 if let destination=job.destination {
+                    try await requireDrive(destination.source)
                     if job.uploaded { try await publish(job,destination); done(id); return }
                     let hold=Destination(source:destination.source,path:"/.phone-disk-incoming")
                     try await mkdir(hold)
@@ -215,6 +235,9 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     update(id){$0.phase="Выгрузка"}
                     task.resume()
                 } else if let url=job.downloadURL {
+                    let source=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="source"})?.value
+                    guard let source,Self.sources.contains(source) else { throw DiskFailure.rejected }
+                    try await requireDrive(source)
                     let download=try await request(url)
                     let task: URLSessionDownloadTask
                     if let resume=try? Data(contentsOf:resumeFile(id)) {
@@ -230,6 +253,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     @MainActor private func publish(_ job:DiskJob,_ destination:Destination) async throws {
         let source=destination.source, stage="/.phone-disk-incoming/"+job.id
+        try await requireDrive(source)
         let directory = destination.path == "/" ? "" : destination.path
         func exists(_ path: String) async throws -> Bool {
             do {

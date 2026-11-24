@@ -1,6 +1,5 @@
 import argparse
 import json
-import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,7 +41,10 @@ class Fixture(BaseHTTPRequestHandler):
                        Set_Cookie="fixture=allowed; Path=/; Max-Age=3600; HttpOnly")
             return
         if not self.logged_in(): return
-        if params.get("source")==["photos-c"] and params.get("file")==["/ci-download.txt"]:
+        if params.get("source")==["settings"] and params.get("file")==["/drives.json"]:
+            info={"schema":1,"drives":[{"id":"C","available":True,"registered":True,"root":{"source":"photos-c"}}]}
+            self.reply(200,json.dumps(info).encode())
+        elif params.get("source")==["photos-c"] and params.get("file")==["/ci-download.txt"]:
             self.reply(200,downloads,"application/octet-stream",Content_Disposition='attachment; filename="ci-download.txt"')
         elif params.get("path",[None])[0] in staged:
             self.reply(200,b'{}')
