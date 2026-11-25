@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import OSLog
+import Security
 import UIKit
 
 struct TransferReading {
@@ -33,16 +34,6 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    private struct TaskKey: Hashable {
-        let session: ObjectIdentifier
-        let task: Int
-
-        init(_ session: URLSession, _ task: URLSessionTask) {
-            self.session = ObjectIdentifier(session)
-            self.task = task.taskIdentifier
-        }
-    }
-
     private let directory: URL
     private var openLedger: TransferLedger?
     private var ledger: TransferLedger? {
@@ -51,9 +42,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
     private let routes = DiskRoutes.shared
     private let log = Logger(subsystem:Bundle.main.bundleIdentifier ?? "ru.atma.phonedisk",category:"Transfers")
-    private var sessions: [DiskRoute:URLSession] = [:]
-    private var foregroundDownloads: [DiskRoute:URLSession] = [:]
-    private var handoffs = Set<TaskKey>()
+    private var sessions: [String:URLSession] = [:]
     private var activeIDs = Set<String>()
     private var completions: [String:() -> Void] = [:]
     private var ended = Set<String>()
@@ -75,65 +64,60 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     private func part(_ id: String) -> URL { directory.appendingPathComponent("v2-part-" + id) }
     private func incoming(_ id: String) -> URL { directory.appendingPathComponent("v2-download-" + id) }
 
-    private func background(_ route: DiskRoute) -> URLSession {
-        if let session = sessions[route] { return session }
-        let configuration = URLSessionConfiguration.background(withIdentifier:route.identifier)
-        configuration.proxyConfigurations = route.proxy
+    private func background(_ route: DiskRoute, identifier: String? = nil) -> URLSession {
+        let key = identifier ?? route.backgroundIdentifier
+        if let session = sessions[key] { return session }
+        let configuration: URLSessionConfiguration
+        #if DEBUG && targetEnvironment(simulator)
+        if Transfers.base.host == "127.0.0.1" { configuration = .ephemeral }
+        else { configuration = .background(withIdentifier:key) }
+        #else
+        configuration = .background(withIdentifier:key)
+        #endif
+        if key == route.identifier { configuration.proxyConfigurations = route.proxy }
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 12 * 3600
         let session = URLSession(configuration:configuration,delegate:self,delegateQueue:.main)
-        sessions[route] = session
+        sessions[key] = session
         var saved = UserDefaults.standard.stringArray(forKey:"phone-disk-transfer-routes") ?? []
-        if !saved.contains(route.identifier) {
-            saved.append(route.identifier)
+        if !saved.contains(key) {
+            saved.append(key)
             UserDefaults.standard.set(saved,forKey:"phone-disk-transfer-routes")
         }
         return session
     }
 
-    @MainActor private func downloadSession(_ route: DiskRoute) -> URLSession {
-        guard UIApplication.shared.applicationState == .active else { return background(route) }
-        if let session = foregroundDownloads[route] { return session }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.proxyConfigurations = route.proxy
-        configuration.httpShouldSetCookies = false
-        configuration.timeoutIntervalForRequest = 60
-        let session = URLSession(configuration:configuration,delegate:self,delegateQueue:.main)
-        foregroundDownloads[route] = session
-        return session
-    }
-
     private func route(for session: URLSession) -> DiskRoute? {
-        if let identifier = session.configuration.identifier { return DiskRoute.restore(identifier) }
-        return foregroundDownloads.first(where:{$0.value === session})?.key
+        let identifier = session.configuration.identifier ?? sessions.first(where:{$0.value === session})?.key
+        return identifier.flatMap(DiskRoute.restore)
     }
 
-    @MainActor func reconcileDownloadSessions() async {
-        let inForeground = UIApplication.shared.applicationState == .active
-        let previous = inForeground ? sessions : foregroundDownloads
-        for session in previous.values {
-            for task in await session.allTasks {
-                guard (UIApplication.shared.applicationState == .active) == inForeground else { return }
-                guard task is URLSessionDownloadTask, task.state == .running || task.state == .suspended,
-                      let slice = Slice(task), isRunnable?(slice.id) != false,
-                      handoffs.insert(TaskKey(session,task)).inserted else { continue }
-                task.cancel()
-            }
-        }
+    private func isObsolete(_ session: URLSession) -> Bool {
+        guard let identifier = session.configuration.identifier, let route = DiskRoute.restore(identifier) else { return false }
+        return identifier == route.identifier
     }
 
     func recover() async -> Set<String> {
         for identifier in UserDefaults.standard.stringArray(forKey:"phone-disk-transfer-routes") ?? [] {
-            if let route = DiskRoute.restore(identifier) { _ = background(route) }
-        }
-        for session in Array(sessions.values) {
-            let pending = await withCheckedContinuation { continuation in
-                session.getAllTasks { continuation.resume(returning:$0.compactMap { Slice($0)?.id }) }
+            guard let route = DiskRoute.restore(identifier) else { continue }
+            let session = background(route,identifier:identifier)
+            let tasks = await session.allTasks
+            if isObsolete(session) {
+                // The previous session could keep a retired transfer queued across an app update.
+                tasks.forEach { $0.cancel() }
+                continue
             }
-            activeIDs.formUnion(pending)
+            let pending = tasks.filter { task in
+                guard let slice = Slice(task), isRunnable?(slice.id) != false else {
+                    task.cancel()
+                    return false
+                }
+                return task.state == .running || task.state == .suspended
+            }
+            activeIDs.formUnion(pending.compactMap { Slice($0)?.id })
         }
         return activeIDs
     }
@@ -141,7 +125,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     func handleEvents(_ identifier: String, _ completion: @escaping () -> Void) -> Bool {
         guard let route = DiskRoute.restore(identifier) else { return false }
         completions[identifier] = completion
-        _ = background(route)
+        _ = background(route,identifier:identifier)
         finishEvents(identifier)
         return true
     }
@@ -154,22 +138,23 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     func switchRoute(to route: DiskRoute) {
-        for (previous,session) in Array(sessions) + Array(foregroundDownloads) where previous != route {
+        for (identifier,session) in Array(sessions) where DiskRoute.restore(identifier) != route {
             session.getAllTasks { tasks in tasks.forEach { $0.cancel() } }
         }
     }
 
     @MainActor func cancel(_ id: String) async {
-        for session in Array(sessions.values) + Array(foregroundDownloads.values) {
+        for session in Array(sessions.values) {
             for task in await session.allTasks where Slice(task)?.id == id {
                 task.cancel()
             }
         }
     }
 
-    func discardDownload(_ id:String) {
+    func discard(_ id:String) {
         try? ledger?.remove(id)
         try? FileManager.default.removeItem(at:incoming(id))
+        try? FileManager.default.removeItem(at:part(id))
     }
 
     @MainActor private func deviceKey(_ route: DiskRoute) async throws -> DiskDeviceKey {
@@ -307,7 +292,13 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let output = part(job.id)
         let start = number * receipt.partSize, size = min(receipt.partSize,receipt.size - start)
         let (_,hash) = try await Task.detached(priority:.utility) { try Self.readFile(input,start:start,length:size,output:output) }.value
-        var request = try await self.request(Transfers.address("/api/v2/uploads/\(manifest.id)/parts/\(number)"),"PUT",route:route)
+        let partURL = Transfers.address("/api/v2/uploads/\(manifest.id)/parts/\(number)")
+        var request = try await self.request(partURL,"PUT",route:route)
+        guard isRunnable?(job.id) != false else {
+            try? FileManager.default.removeItem(at:output)
+            throw CancellationError()
+        }
+        request.url = route.backgroundURL(partURL)
         request.setValue("application/octet-stream",forHTTPHeaderField:"Content-Type")
         request.setValue(hash,forHTTPHeaderField:"X-Part-SHA256")
         let task = background(route).uploadTask(with:request,fromFile:output)
@@ -357,11 +348,13 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
             try FileManager.default.moveItem(at:progress,to:published)
             return true
         }
-        var request = try await self.request(Transfers.address("/api/v2/file",query),"GET",route:route)
+        let fileURL = Transfers.address("/api/v2/file",query)
+        var request = try await self.request(fileURL,"GET",route:route)
         guard isRunnable?(job.id) != false else { throw CancellationError() }
+        request.url = route.backgroundURL(fileURL)
         request.setValue("bytes=\(receipt.confirmed)-\(min(size,receipt.confirmed + receipt.partSize)-1)",forHTTPHeaderField:"Range")
         request.setValue(etag,forHTTPHeaderField:"If-Range")
-        startTask(downloadSession(route).downloadTask(with:request),job.id,receipt.confirmed)
+        startTask(background(route).downloadTask(with:request),job.id,receipt.confirmed)
         return false
     }
 
@@ -378,7 +371,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     private func speed(_ session: URLSession,_ task: URLSessionTask,_ bytes: Int64) {
-        guard let slice = Slice(task), isRunnable?(slice.id) != false,
+        guard !isObsolete(session), let slice = Slice(task), isRunnable?(slice.id) != false,
               let value = speeds[slice.id],let receipt = try? ledger?.read(slice.id),
               let route = route(for:session) else { return }
         let now = ProcessInfo.processInfo.systemUptime, elapsed = now - value.0
@@ -396,17 +389,35 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
                     totalBytesWritten: Int64,totalBytesExpectedToWrite: Int64) { speed(session,downloadTask,totalBytesWritten) }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        guard let route = route(for:session),
+        guard !isObsolete(session), let route = route(for:session),
               let response = task.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { return }
         let bytes = max(task.countOfBytesSent,task.countOfBytesReceived)
         routes.record(route,bytes:bytes,duration:metrics.taskInterval.duration)
     }
 
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard !isObsolete(session), let route = route(for:session), let address = route.address,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            completionHandler(.performDefaultHandling,nil)
+            return
+        }
+        guard challenge.protectionSpace.host == address, challenge.protectionSpace.port == DiskRoute.backgroundPort,
+              let trust = challenge.protectionSpace.serverTrust, let host = Transfers.base.host,
+              SecTrustSetPolicies(trust,SecPolicyCreateSSL(true,host as CFString)) == errSecSuccess,
+              SecTrustEvaluateWithError(trust,nil) else {
+            completionHandler(.cancelAuthenticationChallenge,nil)
+            return
+        }
+        completionHandler(.useCredential,URLCredential(trust:trust))
+    }
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let slice = Slice(downloadTask), isRunnable?(slice.id) != false else { return }
+        guard !isObsolete(session), let route = route(for:session),
+              let slice = Slice(downloadTask), isRunnable?(slice.id) != false else { return }
         do {
             guard let ledger, var receipt = try ledger.read(slice.id), receipt.confirmed == slice.start,
-                  let reply = downloadTask.response as? HTTPURLResponse, Transfers.sameHost(reply.url),reply.statusCode == 206,
+                  let reply = downloadTask.response as? HTTPURLResponse, route.acceptsBackgroundURL(reply.url),reply.statusCode == 206,
                   reply.value(forHTTPHeaderField:"ETag") == receipt.etag else { throw DiskFailure.rejected }
             let end = min(receipt.size,receipt.confirmed + receipt.partSize)
             guard reply.value(forHTTPHeaderField:"Content-Range") == "bytes \(receipt.confirmed)-\(end-1)/\(receipt.size)" else { throw DiskFailure.rejected }
@@ -425,22 +436,23 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let slice = Slice(task) else { return }
+        guard !isObsolete(session), let route = route(for:session), let slice = Slice(task) else { return }
         let identifier = session.configuration.identifier
-        let handoff = handoffs.remove(TaskKey(session,task)) != nil
         activeIDs.remove(slice.id)
         speeds.removeValue(forKey:slice.id)
         let savedError = downloadErrors.removeValue(forKey:slice.id)
         var result = error ?? savedError
         if task is URLSessionUploadTask { try? FileManager.default.removeItem(at:part(slice.id)) }
-        if let reply = task.response as? HTTPURLResponse, !(200..<300).contains(reply.statusCode) {
-            if reply.statusCode == 401 { DiskDeviceKey.clear(task.originalRequest?.value(forHTTPHeaderField:"Authorization").map { String($0.dropFirst(7)) }) }
-            result = DiskFailure.response(reply.statusCode)
+        if let reply = task.response as? HTTPURLResponse {
+            if !route.acceptsBackgroundURL(reply.url) { result = DiskFailure.rejected }
+            else if !(200..<300).contains(reply.statusCode) {
+                if reply.statusCode == 401 { DiskDeviceKey.clear(task.originalRequest?.value(forHTTPHeaderField:"Authorization").map { String($0.dropFirst(7)) }) }
+                result = DiskFailure.response(reply.statusCode)
+            }
         }
-        if handoff, (error as? URLError)?.code == .cancelled { result = nil }
         if let error = error as? URLError, error.code != .cancelled, isRunnable?(slice.id) != false {
             log.notice("Network transfer ended with code \(error.code.rawValue) and background cancellation \(String(describing:error.backgroundTaskCancelledReason),privacy:.public)")
-            if let route = route(for:session) { routes.failed(route) }
+            routes.failed(route)
         }
         if let identifier { work[identifier,default:0] += 1 }
         Task { @MainActor in

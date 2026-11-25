@@ -129,15 +129,10 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func recover() {
         Task { @MainActor in
             await restoreTasks()
-            await resumable.reconcileDownloadSessions()
             for job in jobs where job.asset == nil && !job.isFinished && !job.isStopped && !active.contains(job.id) {
                 start(job.id)
             }
         }
-    }
-
-    func moveDownloadsToBackground() {
-        Task { @MainActor in await resumable.reconcileDownloadSessions() }
     }
 
     @MainActor func refreshQueue() async {
@@ -316,15 +311,33 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         start(id)
     }
 
-    @MainActor func removeDownload(_ id:String) {
-        guard jobs.contains(where:{$0.id == id && $0.canRemoveDownload}),
-              !active.contains(id), !stopping.contains(id),
-              applyQueueChange(jobs.filter{$0.id != id}) else { return }
-        retrying.removeValue(forKey:id)?.cancel()
-        retries.removeValue(forKey:id)
-        readings.removeValue(forKey:id)
-        try? FileManager.default.removeItem(at:resumeFile(id))
-        resumable.discardDownload(id)
+    @MainActor func removeTransfers(_ ids: Set<String>) -> Bool {
+        let removed = jobs.filter { ids.contains($0.id) && $0.hiddenFromQueue != true }
+        guard !removed.isEmpty else { return true }
+        let remaining = jobs.compactMap { job -> DiskJob? in
+            guard ids.contains(job.id) else { return job }
+            guard job.asset != nil else { return nil }
+            var record = job
+            record.hiddenFromQueue = true
+            if !record.isFinished { record.phase = DiskJob.stopped }
+            return record
+        }
+        guard applyQueueChange(remaining) else { return false }
+        for job in removed {
+            let id = job.id
+            retrying.removeValue(forKey:id)?.cancel()
+            retries.removeValue(forKey:id)
+            readings.removeValue(forKey:id)
+            Task { @MainActor in
+                for task in await session.allTasks where task.taskDescription == id { task.cancel() }
+                await resumable.cancel(id)
+                try? FileManager.default.removeItem(at:resumeFile(id))
+                try? FileManager.default.removeItem(at:stage(id))
+                resumable.discard(id)
+                markInactive(id)
+            }
+        }
+        return true
     }
 
     @MainActor private func cancelDownloadTasks(_ id:String) {

@@ -20,10 +20,13 @@ struct VerifyBackupHistory {
         precondition(!switchedOff.evaluate(with: asset(.video, after)), "Turning video backup off stops selection")
 
         let disk = Destination(source: "backup-c", path: "/Видео")
-        let completed = DiskJob(id: "first", name: "existing.mov", destination: disk, asset: "asset-1", phase: "Готово")
+        let completed = DiskJob(id: "first", name: "existing.mov", destination: disk, asset: "asset-1",
+                                phase: "Готово", hiddenFromQueue: true)
         let pending = DiskJob(id: "second", name: "pending.mov", destination: disk, asset: "asset-2")
         let data = try JSONEncoder().encode([completed, pending])
         let reopened = try JSONDecoder().decode([DiskJob].self, from: data)
+        precondition(reopened.filter { $0.hiddenFromQueue != true }.map(\.id) == ["second"],
+                     "Cleaning the queue must hide the completed backup record")
         var history = BackupHistory(jobs: reopened)
         let reenabled = backupAssetPredicate(includeVideo: true, photoCutoff: nil)
         let laterVideos = [

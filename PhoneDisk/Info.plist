@@ -24,6 +24,10 @@
     <string>Домашнее подключение открывает твои папки через Wi-Fi.</string>
     <key>NSBonjourServices</key>
     <array><string>_phonedisk._tcp</string></array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Доступ нужен, чтобы копировать выбранные фото и видео на твой ПК.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>

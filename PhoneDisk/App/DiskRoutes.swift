@@ -9,9 +9,24 @@ struct DiskRoute: Hashable, Codable {
 
     static let internet = DiskRoute(address:nil)
     static let sessionPrefix = (Bundle.main.bundleIdentifier ?? "ru.atma.phonedisk") + ".v2."
+    static let backgroundPort = 18117
 
     var identifier: String { Self.sessionPrefix + (address.map { $0 + "." + String(port) } ?? "internet") }
+    var backgroundIdentifier: String { identifier + ".background" }
     var isLocal: Bool { address != nil }
+
+    func backgroundURL(_ url: URL) -> URL {
+        guard let address, var components = URLComponents(url:url,resolvingAgainstBaseURL:false) else { return url }
+        components.host = address
+        components.port = Self.backgroundPort
+        return components.url ?? url
+    }
+
+    func acceptsBackgroundURL(_ url: URL?) -> Bool {
+        guard let url, url.user == nil, url.password == nil else { return false }
+        let base = backgroundURL(Transfers.base)
+        return url.scheme == base.scheme && url.host == base.host && (url.port ?? 443) == (base.port ?? 443)
+    }
 
     var proxy: [ProxyConfiguration] {
         guard let address, let port = NWEndpoint.Port(rawValue:port), let host = IPv4Address(address) else { return [] }
@@ -31,7 +46,8 @@ struct DiskRoute: Hashable, Codable {
 
     static func restore(_ identifier: String) -> DiskRoute? {
         guard identifier.hasPrefix(sessionPrefix) else { return nil }
-        let value = String(identifier.dropFirst(sessionPrefix.count))
+        var value = String(identifier.dropFirst(sessionPrefix.count))
+        if value.hasSuffix(".background") { value.removeLast(".background".count) }
         if value == "internet" { return .internet }
         guard let boundary = value.lastIndex(of:"."), let port = UInt16(value[value.index(after:boundary)...]) else { return nil }
         return local(String(value[..<boundary]),port:port)

@@ -20,6 +20,7 @@ struct DiskJob: Codable, Identifiable {
     var progress: Double = 0
     var localName: String?
     var remotePath: String?
+    var hiddenFromQueue: Bool?
 
     var isStopped: Bool { phase == Self.stopped }
     var isFinished: Bool { phase == "Готово" }

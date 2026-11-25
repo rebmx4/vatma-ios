@@ -31,10 +31,7 @@ struct PhoneDiskApp: App {
                 }
                 .onChange(of:phase) { _, state in
                     if state == .active { transfers.recover(); Task { try? await transfers.scan() } }
-                    if state == .background {
-                        transfers.moveDownloadsToBackground()
-                        Transfers.schedule()
-                    }
+                    if state == .background { Transfers.schedule() }
                 }
         }
     }
@@ -222,7 +219,9 @@ struct DiskScreen: View {
     @State private var files=false
     @State private var showPhotos=false
     @State private var showQueue=false
-    @State private var transferToRemove:DiskJob?
+    @State private var selectingTransfers = false
+    @State private var selectedTransfers = Set<String>()
+    @State private var transfersToRemove = Set<String>()
     @State private var showDestinations=false
     @State private var pickPhotos=false
     @State private var pickerType="album"
@@ -255,7 +254,7 @@ struct DiskScreen: View {
             if let destination=selection.destination { pick(destination) }
             else { showDestinations=true }
         }
-        .sheet(isPresented:$showQueue) { queue }
+        .sheet(isPresented:$showQueue,onDismiss:clearTransferSelection) { queue }
         .confirmationDialog("Папка назначения",isPresented:$showDestinations,titleVisibility:.visible) {
             Button("Фото и видео · C"){ pick(Destination(source:"photos-c",path:"/")) }
             Button("Видео интервью · D"){ pick(Destination(source:"interviews-d",path:"/")) }
@@ -291,28 +290,19 @@ struct DiskScreen: View {
     }
 
     private var queue:some View {
-        NavigationStack {
-            List(transfers.jobs) { job in
-                VStack(alignment:.leading,spacing:5) {
-                    HStack(alignment:.top,spacing:4) {
-                        VStack(alignment:.leading,spacing:4) {
-                            Text(job.name).font(.body)
-                            Text(transfers.stopping.contains(job.id) ? "Останавливаю…" : job.phase)
-                                .font(.caption).foregroundStyle(.secondary)
+        let jobs = transfers.jobs.filter { $0.hiddenFromQueue != true }
+        let removal = jobs.filter { transfersToRemove.contains($0.id) }
+        return NavigationStack {
+            List(jobs) { job in
+                if selectingTransfers {
+                    selectableTransfer(job)
+                } else {
+                    transferRow(job)
+                        .swipeActions(edge:.trailing,allowsFullSwipe:false) {
+                            Button(role:.destructive) {
+                                transfersToRemove = [job.id]
+                            } label: { Label("Удалить",systemImage:"trash") }
                         }
-                        Spacer(minLength:4)
-                        if job.downloadURL != nil { downloadActions(job) }
-                    }
-                    if let reading = transfers.readings[job.id] { transferDetails(reading) }
-                    if !job.isFinished {
-                        let progress = transfers.readings[job.id].map { $0.total > 0 ? Double($0.confirmed)/Double($0.total) : 0 } ?? job.progress
-                        ProgressView(value:progress)
-                        if job.downloadURL == nil && !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
-                            Button("Продолжить"){ transfers.start(job.id) }.buttonStyle(.borderless)
-                        }
-                    } else if let name=job.localName {
-                        ShareLink(item:Transfers.documents.appendingPathComponent(name))
-                    }
                 }
             }
             .navigationTitle("Передача")
@@ -326,17 +316,95 @@ struct DiskScreen: View {
                     }
                     .accessibilityLabel("Обновить передачи")
                 }
-                ToolbarItem(placement:.topBarTrailing) { Button("Готово"){showQueue=false} }
+                ToolbarItemGroup(placement:.topBarTrailing) {
+                    if selectingTransfers {
+                        Button("Отмена",action:clearTransferSelection)
+                    } else {
+                        Button("Выбрать") { selectingTransfers = true }.disabled(jobs.isEmpty)
+                        Button("Готово") { showQueue = false }
+                    }
+                }
             }
-            .overlay { if transfers.jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
-            .alert("Удалить запись передачи?",isPresented:Binding(
-                get:{ transferToRemove != nil },
-                set:{ if !$0 { transferToRemove=nil } }
-            ),presenting:transferToRemove) { job in
+            .overlay { if jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
+            .safeAreaInset(edge:.bottom,spacing:0) {
+                if selectingTransfers { transferSelectionBar }
+            }
+            .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?",isPresented:Binding(
+                get:{ !transfersToRemove.isEmpty },
+                set:{ if !$0 { transfersToRemove.removeAll() } }
+            ),presenting:removal) { entries in
                 Button("Нет",role:.cancel) {}
-                Button("Удалить",role:.destructive) { transfers.removeDownload(job.id) }
-            } message: { job in
-                Text(job.name)
+                Button("Удалить",role:.destructive) {
+                    if transfers.removeTransfers(Set(entries.map(\.id))) { clearTransferSelection() }
+                }
+            } message: { entries in
+                if entries.count == 1, let job = entries.first { Text(job.name) }
+            }
+        }
+    }
+
+    private func clearTransferSelection() {
+        selectingTransfers = false
+        selectedTransfers.removeAll()
+        transfersToRemove.removeAll()
+    }
+
+    private var transferSelectionBar:some View {
+        HStack {
+            Text("Выбрано \(selectedTransfers.count)").foregroundStyle(.secondary)
+            Spacer()
+            Button(role:.destructive) {
+                transfersToRemove = selectedTransfers
+            } label: { Label("Удалить",systemImage:"trash") }
+            .accessibilityLabel("Удалить выбранные передачи")
+            .disabled(selectedTransfers.isEmpty)
+        }
+        .padding()
+        .background(.bar)
+    }
+
+    private func selectableTransfer(_ job:DiskJob) -> some View {
+        let selected = selectedTransfers.contains(job.id)
+        return Button {
+            if selected { selectedTransfers.remove(job.id) }
+            else { selectedTransfers.insert(job.id) }
+        } label: {
+            HStack {
+                transferRow(job)
+                Spacer()
+                Image(systemName:selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? Color.accentColor : Color(uiColor:.secondaryLabel))
+                    .frame(width:44,height:44)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(job.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func transferRow(_ job:DiskJob) -> some View {
+        VStack(alignment:.leading,spacing:5) {
+            HStack(alignment:.top,spacing:4) {
+                VStack(alignment:.leading,spacing:4) {
+                    Text(job.name).font(.body)
+                    Text(transfers.stopping.contains(job.id) ? "Останавливаю…" : job.phase)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength:4)
+                if !selectingTransfers && job.downloadURL != nil { downloadActions(job) }
+            }
+            if let reading = transfers.readings[job.id] { transferDetails(reading) }
+            if !job.isFinished {
+                let progress = transfers.readings[job.id].map { $0.total > 0 ? Double($0.confirmed)/Double($0.total) : 0 } ?? job.progress
+                ProgressView(value:progress)
+                if !selectingTransfers && job.downloadURL == nil &&
+                    !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
+                    Button("Продолжить") { transfers.start(job.id) }.buttonStyle(.borderless)
+                }
+            } else if !selectingTransfers, let name = job.localName {
+                ShareLink(item:Transfers.documents.appendingPathComponent(name))
             }
         }
     }
@@ -352,7 +420,7 @@ struct DiskScreen: View {
                     downloadButton("Повторить скачивание","arrow.counterclockwise") { transfers.retryDownload(job.id) }
                 }
                 if job.canRemoveDownload {
-                    downloadButton("Удалить запись передачи","trash",role:.destructive) { transferToRemove=job }
+                    downloadButton("Удалить запись передачи","trash",role:.destructive) { transfersToRemove = [job.id] }
                 }
             }
         }

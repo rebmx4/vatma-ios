@@ -39,6 +39,28 @@ final class TransferSmoke: XCTestCase {
         app.buttons["Удалить запись передачи"].tap()
         app.alerts.buttons["Удалить"].tap()
         XCTAssertTrue(app.staticTexts["Передач пока нет"].waitForExistence(timeout:8))
+
+        app.buttons["Готово"].tap()
+        XCTAssertTrue(download.waitForExistence(timeout:10))
+        for _ in 0..<3 { download.tap() }
+        queue.tap()
+        let rows = app.cells.containing(.staticText,identifier:"slow file +.bin")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
+        rows.firstMatch.swipeLeft()
+        app.buttons["Удалить"].tap()
+        app.alerts.buttons["Удалить"].tap()
+
+        app.buttons["Выбрать"].tap()
+        let entries = app.buttons.matching(identifier:"slow file +.bin")
+        let remove = app.buttons["Удалить выбранные передачи"]
+        XCTAssertFalse(remove.isEnabled)
+        XCTAssertEqual(entries.count,2)
+        entries.element(boundBy:0).tap()
+        entries.element(boundBy:1).tap()
+        XCTAssertTrue(remove.isEnabled)
+        remove.tap()
+        app.alerts.buttons["Удалить"].tap()
+        XCTAssertTrue(app.staticTexts["Передач пока нет"].waitForExistence(timeout:8))
     }
 
     func testUploadDownloadAndPersistentQueue() throws {
