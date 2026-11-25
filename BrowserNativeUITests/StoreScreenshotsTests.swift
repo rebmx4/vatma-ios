@@ -39,7 +39,7 @@ final class StoreScreenshotsTests: XCTestCase {
         capture("store-ru-05-appearance")
         closePanel()
 
-        try openWebsite("guide.html", heading: "Как пользоваться ATMA")
+        _ = try openWebsite("guide.html", heading: "Как пользоваться ATMA")
         let addShortcut = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "Добавить ", "rebmx4.github.io")).firstMatch
         let savedShortcut = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label ENDSWITH %@", "rebmx4.github.io", "уже на рабочем столе")).firstMatch
         if !savedShortcut.exists {
@@ -51,12 +51,12 @@ final class StoreScreenshotsTests: XCTestCase {
         let shortcut = button(["Открыть Как пользоваться ATMA · ATMA", "Open Как пользоваться ATMA · ATMA"])
         waitUntilUsable(shortcut, "The saved website shortcut must be present")
         shortcut.tap()
-        XCTAssertTrue(site.staticTexts["Как пользоваться ATMA"].waitForExistence(timeout: 50))
+        _ = try waitForVisibleSite(heading: "Как пользоваться ATMA")
         XCTAssertFalse(button(["Выбрать устройство", "Choose device"]).isHittable)
         waitUntilUsable(home, "Saved websites retain the compact ATMA home button")
         capture("store-ru-02-compact-website")
 
-        try openWebsite("support.html", heading: "Поддержка")
+        let supportSite = try openWebsite("support.html", heading: "Поддержка")
         let tabs = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Открытые вкладки:", "Open tabs:")).firstMatch
         waitUntilUsable(tabs, "Tabs control must remain available")
         tabs.tap()
@@ -64,11 +64,11 @@ final class StoreScreenshotsTests: XCTestCase {
         waitUntilUsable(currentTab, "Tab cards must be rendered before capture")
         capture("store-ru-03-tabs")
         closePanel()
-        let emailLink = site.links["a1238585@bk.ru"]
+        let emailLink = supportSite.links["a1238585@bk.ru"]
         XCTAssertTrue(emailLink.waitForExistence(timeout: 10))
         for _ in 0..<8 {
             if emailLink.isHittable { break }
-            site.swipeUp()
+            supportSite.swipeUp()
         }
         waitUntilUsable(emailLink, "Website contact links must remain usable")
         emailLink.tap()
@@ -79,19 +79,31 @@ final class StoreScreenshotsTests: XCTestCase {
         home.tap()
     }
 
-    private var site: XCUIElement {
-        app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site.")).firstMatch
+    private func waitForVisibleSite(heading: String) throws -> XCUIElement {
+        let pages = app.webViews.matching(NSPredicate(format: "identifier BEGINSWITH %@", "atma.site."))
+        var visibleID: String?
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            visibleID = pages.allElementsBoundByIndex.first { page in
+                page.isHittable && page.staticTexts[heading].exists
+            }?.identifier
+            return visibleID != nil
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 50), .completed, "The visible site must load \(heading)")
+        let id = try XCTUnwrap(visibleID)
+        return pages.matching(identifier: id).firstMatch
     }
 
-    private func openWebsite(_ path: String, heading: String) throws {
+    private func openWebsite(_ path: String, heading: String) throws -> XCUIElement {
         let home = button(["Рабочий стол", "Home"])
         waitUntilUsable(home, "Return to the full browser controls before opening a tab")
         home.tap()
         let newTab = button(["Новая вкладка", "New tab"])
         waitUntilUsable(newTab, "New tab must be available")
         newTab.tap()
-        let address = app.textFields.firstMatch
-        waitUntilUsable(address, "Address must be ready for typing")
+        let address = app.webViews.matching(identifier: "atma.ui").firstMatch.textFields.firstMatch
+        waitUntilUsable(address, "Address must be available to focus")
+        address.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "Tapping the address must show the keyboard")
         let url = baseURL + path
         address.typeText(url)
         let entered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -99,7 +111,7 @@ final class StoreScreenshotsTests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 15), .completed, "Address entry must preserve the exact URL")
         button(["Перейти", "Go"]).tap()
-        XCTAssertTrue(site.staticTexts[heading].waitForExistence(timeout: 50), "Public help page must actually load")
+        return try waitForVisibleSite(heading: heading)
     }
 
     private func waitUntilUsable(_ element: XCUIElement, _ message: String) {

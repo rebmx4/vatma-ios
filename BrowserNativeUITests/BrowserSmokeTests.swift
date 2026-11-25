@@ -101,6 +101,7 @@ final class BrowserSmokeTests: XCTestCase {
         assertKeyboardDismissed()
         let site = siteRenderers.firstMatch
         XCTAssertTrue(site.waitForExistence(timeout: 5), "Navigation must create an identified site renderer")
+        let originalSiteID = site.identifier
         let heading = site.staticTexts[headingText]
         XCTAssertTrue(heading.waitForExistence(timeout: 60), "The independent site renderer must load HTTPS content")
         screenshot("website")
@@ -138,7 +139,19 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(home.isHittable)
         XCTAssertFalse(button(["Выбрать устройство"]).isHittable)
         XCTAssertFalse(button(["Развернуть панель приложения", "Свернуть панель приложения"]).exists)
-        XCTAssertTrue(heading.waitForExistence(timeout: 60))
+        let shortcutSite = siteRenderers.matching(NSPredicate(format: "identifier != %@", originalSiteID)).firstMatch
+        XCTAssertTrue(shortcutSite.waitForExistence(timeout: 10), "A saved shortcut must have its own site renderer")
+        let shortcutHeading = shortcutSite.staticTexts[headingText]
+        let shortcutLoaded = shortcutHeading.waitForExistence(timeout: 60)
+        if !shortcutLoaded {
+            screenshot("shortcut-page-load-failure")
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "shortcut-page-load-failure-hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
+        XCTAssertTrue(shortcutLoaded, "The shortcut's renderer must load the saved page")
+        XCTAssertTrue(shortcutHeading.isHittable, "The shortcut's page must be visible")
         assertChromeAtPhysicalBottom()
         screenshot("web-app-compact")
         address.tap()
