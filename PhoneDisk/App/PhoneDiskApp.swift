@@ -17,6 +17,11 @@ struct PhoneDiskApp: App {
     var body: some Scene {
         WindowGroup {
             DiskScreen(disk:disk,transfers:transfers)
+                .task { DiskRoutes.shared.start(); transfers.recover() }
+                .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
+                    transfers.routeChanged(route)
+                    disk.changeRoute(route)
+                }
                 .onChange(of:phase) { _, state in
                     if state == .active { transfers.recover(); Task { try? await transfers.scan() } }
                     if state == .background { Transfers.schedule() }
@@ -51,6 +56,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func application(_ application:UIApplication,handleEventsForBackgroundURLSession identifier:String,completionHandler:@escaping ()->Void) {
+        if Transfers.shared.handleV2Events(identifier,completionHandler) { return }
         guard identifier==Transfers.identifier else { completionHandler(); return }
         Transfers.shared.handleEvents(completionHandler)
     }
@@ -69,12 +75,14 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     lazy var view:WKWebView = {
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        config.websiteDataStore.proxyConfigurations = DiskRoutes.shared.selected.proxy
         config.allowsInlineMediaPlayback=true
         let script = """
         const deviceSettings = document.getElementById('device-settings');
         if (deviceSettings) deviceSettings.hidden = false;
         document.addEventListener('click', event => {
           const bridge = window.webkit.messageHandlers.phoneDiskNative;
+          if (event.target.closest('#logout')) bridge.postMessage('revoke-device');
           const setting = event.target.closest('#device-settings [data-native-setting]');
           if (setting) {
             bridge.postMessage(setting.dataset.nativeSetting);
@@ -95,9 +103,15 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func reload() { offline=false; view.load(URLRequest(url:Transfers.base)) }
 
+    func changeRoute(_ route: DiskRoute) {
+        WKWebsiteDataStore.default().proxyConfigurations = route.proxy
+        reload()
+    }
+
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host==Transfers.base.host,
-              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme else { return }
+              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme,
+              [0,Transfers.base.port ?? 443].contains(message.frameInfo.securityOrigin.port) else { return }
         if let action=message.body as? String {
             switch action {
             case "enable":
@@ -108,6 +122,8 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
                 Task { @MainActor in Transfers.shared.disableAuto() }
             case "notifications":
                 Transfers.shared.askNotifications()
+            case "revoke-device":
+                Task { @MainActor in await Transfers.shared.revokeDevice() }
             default:
                 break
             }
@@ -164,6 +180,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
         if (error as NSError).code != NSURLErrorCancelled { offline=true }
+        if let error = error as? URLError, error.code != .cancelled { DiskRoutes.shared.failed(DiskRoutes.shared.selected) }
     }
     func webViewWebContentProcessDidTerminate(_ webView:WKWebView) { reload() }
 }
@@ -268,9 +285,13 @@ struct DiskScreen: View {
                 VStack(alignment:.leading,spacing:5) {
                     Text(job.name).font(.body)
                     Text(job.phase).font(.caption).foregroundStyle(.secondary)
+                    if let reading = transfers.readings[job.id] { transferDetails(reading) }
                     if job.phase != "Готово" {
-                        ProgressView(value:job.progress)
-                        Button("Продолжить"){ transfers.start(job.id) }.buttonStyle(.borderless)
+                        let progress = transfers.readings[job.id].map { $0.total > 0 ? Double($0.confirmed)/Double($0.total) : 0 } ?? job.progress
+                        ProgressView(value:progress)
+                        if !["Выгрузка","Скачивание","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
+                            Button("Продолжить"){ transfers.start(job.id) }.buttonStyle(.borderless)
+                        }
                     } else if let name=job.localName {
                         ShareLink(item:Transfers.documents.appendingPathComponent(name))
                     }
@@ -280,5 +301,25 @@ struct DiskScreen: View {
             .toolbar { ToolbarItem(placement:.topBarTrailing){ Button("Готово"){showQueue=false} } }
             .overlay { if transfers.jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
         }
+    }
+
+    private func transferDetails(_ reading: TransferReading) -> some View {
+        let left = max(0,reading.total-reading.confirmed)
+        let percent = reading.total > 0 ? Int(100 * Double(reading.confirmed)/Double(reading.total)) : 0
+        let size = ByteCountFormatter.string(fromByteCount:reading.confirmed,countStyle:.file)
+        let remaining = ByteCountFormatter.string(fromByteCount:left,countStyle:.file)
+        return VStack(alignment:.leading,spacing:4) {
+            Text("\(percent)% · \(size) сохранено · \(remaining) осталось")
+            Text(reading.connection)
+            if reading.bytesPerSecond > 0 && left > 0 {
+                let speed = reading.bytesPerSecond / 1_000_000
+                let seconds = Int(min(86400 * 7, ceil(Double(left) / reading.bytesPerSecond)))
+                let eta = Duration.seconds(seconds).formatted(.units(allowed:[.hours,.minutes,.seconds],width:.abbreviated,maximumUnitCount:2))
+                Text("\(speed.formatted(.number.precision(.fractionLength(2)))) МБ/с · \(eta)")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
     }
 }

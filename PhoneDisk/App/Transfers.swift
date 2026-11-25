@@ -37,6 +37,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         .appendingPathComponent("PhoneDisk",isDirectory:true)
     static let documents = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
     @Published private(set) var jobs: [DiskJob] = []
+    @Published private(set) var readings: [String:TransferReading] = [:]
     @Published var message = ""
     private let queueURL = Transfers.support.appendingPathComponent("queue.json")
     private var active = Set<String>()
@@ -46,6 +47,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var scanning = false
     private var scanAgain = false
     private var backupSettingsRevision = 0
+    private var retrying: [String:Task<Void,Never>] = [:]
+    private var retries: [String:Int] = [:]
     private let defaults = UserDefaults.standard
     private static let automaticTransferLimit = 2
     private static let backupLog = Logger(subsystem: bundleID, category: "Autocopies")
@@ -59,9 +62,22 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return URLSession(configuration:config,delegate:self,delegateQueue:.main)
     }()
 
+    private lazy var resumable: ResumableTransfers = {
+        let engine = ResumableTransfers(directory:Self.support)
+        engine.cookieRequest = { [weak self] url, method in
+            guard let self else { throw DiskFailure.rejected }
+            return try await self.request(url,method:method)
+        }
+        engine.resume = { [weak self] id, error in await self?.resumePart(id,error) }
+        engine.onReading = { [weak self] id, data in self?.readings[id] = data }
+        engine.onChecking = { [weak self] id in self?.update(id){$0.phase="Проверка файла"} }
+        return engine
+    }()
+
     override init() {
         super.init()
         try? FileManager.default.createDirectory(at:Self.support,withIntermediateDirectories:true)
+        try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:Self.support.path)
         var support = Self.support
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
@@ -84,14 +100,28 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func recover() {
-        session.getAllTasks { tasks in
-            DispatchQueue.main.async {
-                self.active.formUnion(tasks.compactMap(\.taskDescription))
-                for job in self.jobs where job.asset == nil && job.phase != "Готово" && !self.active.contains(job.id) {
-                    self.start(job.id)
-                }
+        Task { @MainActor in
+            await restoreTasks()
+            for job in jobs where job.asset == nil && job.phase != "Готово" && !active.contains(job.id) {
+                start(job.id)
             }
         }
+    }
+
+    @MainActor private func restoreTasks() async {
+        let restored: [String] = await withCheckedContinuation { continuation in
+            session.getAllTasks { continuation.resume(returning:$0.compactMap(\.taskDescription)) }
+        }
+        active.formUnion(restored)
+        let pending = await resumable.recover()
+        active.formUnion(pending)
+    }
+
+    func routeChanged(_ route: DiskRoute) { resumable.switchRoute(to:route) }
+    @MainActor func revokeDevice() async { await resumable.revoke() }
+
+    func handleV2Events(_ identifier: String,_ callback: @escaping () -> Void) -> Bool {
+        resumable.handleEvents(identifier,callback)
     }
 
     func handleEvents(_ callback: @escaping () -> Void) {
@@ -144,8 +174,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func checked(_ request:URLRequest) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for:request)
-        guard let response = response as? HTTPURLResponse, Self.sameHost(response.url) else { throw DiskFailure.rejected }
+        let (data, response) = try await DiskRoutes.shared.data(request)
         guard (200..<300).contains(response.statusCode) else { throw DiskFailure.response(response.statusCode) }
         return data
     }
@@ -215,15 +244,32 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func start(_ id:String) {
-        Task { @MainActor in await beginTransfer(id) }
+        Task { @MainActor in
+            retrying.removeValue(forKey:id)?.cancel()
+            await beginTransfer(id)
+        }
     }
 
     @MainActor private func beginTransfer(_ id:String) async {
         guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),job.phase != "Готово" else { return }
         active.insert(id)
         update(id){$0.phase="Подготовка"}
+        let route = DiskRoutes.shared.transferRoute
         do {
             try Task.checkCancellation()
+            if !job.uploaded {
+                let usesV2 = resumable.contains(id)
+                let capability = try await DiskRoutes.shared.capabilities(route)
+                if usesV2 || capability != nil {
+                    guard capability != nil else { throw DiskFailure.response(503) }
+                    update(id){$0.phase=job.destination == nil ? "Скачивание" : "Выгрузка"}
+                    if try await resumable.advance(job,route:route) {
+                        if job.downloadURL != nil { update(id){$0.localName=String(id.prefix(8))+"-"+job.name} }
+                        done(id)
+                    }
+                    return
+                }
+            }
             if let destination=job.destination {
                 try await requireDrive(destination.source)
                 if job.uploaded { try await publish(job,destination); done(id); return }
@@ -255,7 +301,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             active.remove(id)
             update(id){$0.phase="Ожидает"}
         } catch {
-            failed(id,error.localizedDescription)
+            if error is URLError { DiskRoutes.shared.failed(route) }
+            waitForTransfer(id,error)
         }
     }
 
@@ -293,6 +340,13 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private func done(_ id:String) {
         let automatic = jobs.first(where: { $0.id == id })?.asset != nil
         active.remove(id)
+        retrying.removeValue(forKey:id)?.cancel()
+        retries.removeValue(forKey:id)
+        if var reading = readings[id] {
+            reading.confirmed = reading.total
+            reading.bytesPerSecond = 0
+            readings[id] = reading
+        }
         update(id){$0.phase="Готово";$0.progress=1}
         try? FileManager.default.removeItem(at:stage(id))
         try? FileManager.default.removeItem(at:resumeFile(id))
@@ -309,6 +363,39 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         active.remove(id)
         update(id){$0.phase=text}
         notify(success:false)
+    }
+
+    @MainActor private func resumePart(_ id: String, _ error: Error?) async {
+        active.remove(id)
+        guard let job = jobs.first(where:{ $0.id == id }),job.phase != "Готово" else { return }
+        if job.asset != nil && !defaults.bool(forKey:"photo-auto") {
+            update(id){$0.phase="Автокопии приостановлены"}
+            return
+        }
+        if let error { waitForTransfer(id,error); return }
+        retries.removeValue(forKey:id)
+        await beginTransfer(id)
+    }
+
+    @MainActor private func waitForTransfer(_ id: String, _ error: Error) {
+        active.remove(id)
+        if var reading = readings[id] { reading.bytesPerSecond = 0; readings[id] = reading }
+        let number = retries[id,default:0]
+        let errorCode: Int?
+        if case DiskFailure.response(let code) = error { errorCode = code } else { errorCode = nil }
+        let transient = error is URLError || errorCode.map { [401,408,429,502,503,504].contains($0) } == true
+        guard transient, number < 6 else { failed(id,error.localizedDescription); return }
+        retries[id] = number + 1
+        update(id){$0.phase="Восстанавливаю соединение"}
+        Self.schedule()
+        retrying[id]?.cancel()
+        retrying[id] = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for:.seconds(min(30,1 << number))) } catch { return }
+            guard let self else { return }
+            self.retrying.removeValue(forKey:id)
+            guard self.jobs.first(where:{ $0.id == id })?.asset == nil || self.defaults.bool(forKey:"photo-auto") else { return }
+            await self.beginTransfer(id)
+        }
     }
 
     func urlSession(_ session:URLSession,task:URLSessionTask,didSendBodyData bytesSent:Int64,totalBytesSent:Int64,totalBytesExpectedToSend:Int64) {
@@ -427,7 +514,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             }
         }
         let revision=backupSettingsRevision
-        let data=try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/autocopies.json"])))
+        await restoreTasks()
+        let route = DiskRoutes.shared.transferRoute
+        let data: Data
+        if try await DiskRoutes.shared.capabilities(route) != nil {
+            data = try await resumable.backupSettings(route)
+        } else {
+            data = try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/autocopies.json"])))
+        }
         guard let settings=try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw DiskFailure.rejected }
 
         func destination(for type:String, folder:String) -> Destination? {
