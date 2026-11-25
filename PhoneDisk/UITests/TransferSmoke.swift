@@ -14,8 +14,7 @@ final class TransferSmoke: XCTestCase {
         let name = app.staticTexts["slow file +.bin"]
         XCTAssertTrue(name.waitForExistence(timeout:15))
         let stop = app.buttons["Остановить скачивание"]
-        XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:20),
-                      app.staticTexts.allElementsBoundByIndex.map(\.label).description)
+        XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:20))
         if resumable {
             let speed = app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "МБ/с")).firstMatch
             XCTAssertTrue(speed.waitForExistence(timeout:20))

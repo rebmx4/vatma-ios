@@ -222,7 +222,9 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         var request = URLRequest(url:Transfers.address("/api/v2/device"),timeoutInterval:5)
         request.httpMethod="DELETE"
         request.setValue("Bearer " + key.token,forHTTPHeaderField:"Authorization")
-        for session in Array(sessions.values) { session.getAllTasks { $0.forEach { $0.cancel() } } }
+        for session in Array(sessions.values) + Array(foregroundDownloads.values) {
+            session.getAllTasks { $0.forEach { $0.cancel() } }
+        }
         _ = try? await routes.data(request)
     }
 

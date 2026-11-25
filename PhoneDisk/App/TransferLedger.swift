@@ -71,7 +71,16 @@ struct DiskDeviceKey: Codable {
     private static let query: [String:Any] = [kSecClass as String:kSecClassGenericPassword,
         kSecAttrService as String:"ru.atma.phonedisk.v2",kSecAttrAccount as String:"transfers"]
 
+    #if DEBUG && targetEnvironment(simulator)
+    // The unsigned UI test runner uses a disposable token from its loopback server.
+    private static var fixtureKey: DiskDeviceKey?
+    private static var usesFixture: Bool { Transfers.base.host == "127.0.0.1" }
+    #endif
+
     static func load() -> Self? {
+        #if DEBUG && targetEnvironment(simulator)
+        if usesFixture { return fixtureKey }
+        #endif
         var query = Self.query
         query[kSecReturnData as String] = true
         var result: CFTypeRef?
@@ -80,6 +89,9 @@ struct DiskDeviceKey: Codable {
     }
 
     func store() throws {
+        #if DEBUG && targetEnvironment(simulator)
+        if Self.usesFixture { Self.fixtureKey = self; return }
+        #endif
         let data = try JSONEncoder().encode(self)
         let values = [kSecValueData as String:data]
         let result = SecItemUpdate(Self.query as CFDictionary,values as CFDictionary)
@@ -93,6 +105,9 @@ struct DiskDeviceKey: Codable {
 
     static func clear(_ token: String? = nil) {
         if let token, load()?.token != token { return }
+        #if DEBUG && targetEnvironment(simulator)
+        if usesFixture { fixtureKey = nil; return }
+        #endif
         SecItemDelete(query as CFDictionary)
     }
 }
