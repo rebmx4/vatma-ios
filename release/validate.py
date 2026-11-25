@@ -58,7 +58,10 @@ def validate_project(project):
     require(set(settings["ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES"].split()) == ALTERNATES, "Alternate icon sets missing")
     for target, kind in (("BrowserNativeTests", "bundle.unit-test"), ("BrowserNativeUITests", "bundle.ui-testing")):
         row = project["targets"][target]
-        require(row["type"] == kind and row["sources"] == [target], "Wrong test target")
+        sources = [target]
+        if kind == "bundle.ui-testing":
+            sources.append("BrowserNativeTests/BrowserRenderingFixtureServer.swift")
+        require(row["type"] == kind and row["sources"] == sources, "Wrong test target")
         require(row["dependencies"] == [{"target": "ATMA"}], "Wrong test application dependency")
 
 

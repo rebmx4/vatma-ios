@@ -15,9 +15,23 @@ final class BrowserSmokeTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    func testHomeSettingsBlankTabWebsiteAndRelaunch() throws {
-        let websiteURL = "https://httpbingo.org/html"
-        let headingText = "Herman Melville - Moby-Dick"
+    @MainActor
+    func testHomeSettingsBlankTabWebsiteAndRelaunch() async throws {
+        let websiteName = "Тестовый сайт ATMA"
+        let headingText = "Страница сохранённого сайта"
+        let document = """
+        <!doctype html><html lang="ru"><head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>\(websiteName)</title><meta property="og:site_name" content="\(websiteName)">
+        </head><body><h1>\(headingText)</h1></body></html>
+        """
+        let server = try BrowserRenderingFixtureServer(resources: ["/": Data(document.utf8)])
+        defer { server.stop() }
+        let root = try await server.start()
+        try checkBrowser(websiteURL: root.absoluteString, websiteName: websiteName, headingText: headingText)
+    }
+
+    private func checkBrowser(websiteURL: String, websiteName: String, headingText: String) throws {
         let home = button(["Рабочий стол", "Home"])
         let startupBeginning = Date()
         let homeReadyWithinDeadline = home.waitForExistence(timeout: 20)
@@ -103,7 +117,7 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertTrue(site.waitForExistence(timeout: 5), "Navigation must create an identified site renderer")
         let originalSiteID = site.identifier
         let heading = site.staticTexts[headingText]
-        XCTAssertTrue(heading.waitForExistence(timeout: 60), "The independent site renderer must load HTTPS content")
+        XCTAssertTrue(heading.waitForExistence(timeout: 20), "The independent site renderer must load the test page")
         screenshot("website")
         assertReducedToolbarGeometry()
         XCTAssertTrue(address.isHittable, "The compact browser must retain its address field")
@@ -116,14 +130,14 @@ final class BrowserSmokeTests: XCTestCase {
         assertKeyboardDismissed()
         XCTAssertTrue(heading.waitForExistence(timeout: 60))
 
-        let pin = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Добавить httpbingo.org")).firstMatch
+        let pin = button(["Добавить \(websiteName) на рабочий стол", "Add \(websiteName) to desktop"])
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         let pinReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in pin.isEnabled }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [pinReady], timeout: 10), .completed, "Quick-add waits for the current document to finish loading")
         pin.tap()
-        XCTAssertTrue(app.buttons["httpbingo.org уже на рабочем столе"].waitForExistence(timeout: 20))
+        XCTAssertTrue(button(["\(websiteName) уже на рабочем столе", "\(websiteName) is already on the desktop"]).waitForExistence(timeout: 20))
         home.tap()
-        let shortcut = button(["Открыть httpbingo.org"])
+        let shortcut = button(["Открыть \(websiteName)", "Open \(websiteName)"])
         let shortcutReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in shortcut.isHittable }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [shortcutReady], timeout: 10), .completed)
         shortcut.tap()
@@ -140,9 +154,9 @@ final class BrowserSmokeTests: XCTestCase {
         XCTAssertFalse(button(["Выбрать устройство"]).isHittable)
         XCTAssertFalse(button(["Развернуть панель приложения", "Свернуть панель приложения"]).exists)
         let shortcutSite = siteRenderers.matching(NSPredicate(format: "identifier != %@", originalSiteID)).firstMatch
-        XCTAssertTrue(shortcutSite.waitForExistence(timeout: 10), "A saved shortcut must have its own site renderer")
+        let shortcutOpened = shortcutSite.waitForExistence(timeout: 10)
         let shortcutHeading = shortcutSite.staticTexts[headingText]
-        let shortcutLoaded = shortcutHeading.waitForExistence(timeout: 60)
+        let shortcutLoaded = shortcutOpened && shortcutHeading.waitForExistence(timeout: 20)
         if !shortcutLoaded {
             screenshot("shortcut-page-load-failure")
             let hierarchy = XCTAttachment(string: app.debugDescription)
@@ -150,6 +164,7 @@ final class BrowserSmokeTests: XCTestCase {
             hierarchy.lifetime = .keepAlways
             add(hierarchy)
         }
+        XCTAssertTrue(shortcutOpened, "A saved shortcut must have its own site renderer")
         XCTAssertTrue(shortcutLoaded, "The shortcut's renderer must load the saved page")
         XCTAssertTrue(shortcutHeading.isHittable, "The shortcut's page must be visible")
         assertChromeAtPhysicalBottom()

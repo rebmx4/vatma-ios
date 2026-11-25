@@ -82,7 +82,8 @@
       "type": "bundle.ui-testing",
       "platform": "iOS",
       "sources": [
-        "BrowserNativeUITests"
+        "BrowserNativeUITests",
+        "BrowserNativeTests/BrowserRenderingFixtureServer.swift"
       ],
       "dependencies": [
         {
