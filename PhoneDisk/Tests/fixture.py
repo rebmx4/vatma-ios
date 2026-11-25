@@ -1,6 +1,7 @@
 import argparse
 import json
 import ssl
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +15,8 @@ arguments=parser.parse_args()
 output=arguments.output
 staged={}
 downloads=b"PhoneDisk download fixture\n"
+slow_requests = 0
+slow_requests_lock = threading.Lock()
 
 class Fixture(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
@@ -60,8 +63,13 @@ class Fixture(BaseHTTPRequestHandler):
         elif params.get("source")==["photos-c"] and params.get("file")==["/ci-download.txt"]:
             self.reply(200,downloads,"application/octet-stream",Content_Disposition='attachment; filename="ci-download.txt"')
         elif params.get("source")==["photos-c"] and params.get("file")==["/slow file +.bin"]:
+            global slow_requests
+            with slow_requests_lock:
+                slow_requests += 1
+                first = slow_requests == 1
             part = bytes(64 * 1024)
-            parts = 36
+            parts = 150
+            print(f"Starting fixture download attempt {slow_requests}", flush=True)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(len(part) * parts))
@@ -70,7 +78,8 @@ class Fixture(BaseHTTPRequestHandler):
                 for _ in range(parts):
                     self.wfile.write(part)
                     self.wfile.flush()
-                    time.sleep(0.5)
+                    if first:
+                        time.sleep(0.5)
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 pass
         elif params.get("path",[None])[0] in staged:

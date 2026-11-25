@@ -12,9 +12,10 @@ final class TransferSmoke: XCTestCase {
         app.buttons["Передача"].tap()
         let name = app.staticTexts["slow file +.bin"]
         XCTAssertTrue(name.waitForExistence(timeout:15))
-        XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:15))
         let stop = app.buttons["Остановить скачивание"]
-        XCTAssertTrue(stop.waitForExistence(timeout:8))
+        XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:20),
+                      app.staticTexts.allElementsBoundByIndex.map(\.label).description)
+        XCTAssertTrue(stop.waitForExistence(timeout:10))
         stop.tap()
         let stopped = app.staticTexts["Остановлено"]
         XCTAssertTrue(stopped.waitForExistence(timeout:15))

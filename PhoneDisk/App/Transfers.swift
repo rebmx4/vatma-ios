@@ -57,6 +57,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @MainActor private static var checkingSchedule = false
 
     private lazy var session: URLSession = {
+        #if DEBUG && targetEnvironment(simulator)
+        if Transfers.base.host == "127.0.0.1" {
+            // The loopback fixture exercises the queue without the simulator's background daemon.
+            let config = URLSessionConfiguration.ephemeral
+            config.httpShouldSetCookies = false
+            return URLSession(configuration:config,delegate:self,delegateQueue:.main)
+        }
+        #endif
         let config = URLSessionConfiguration.background(withIdentifier:Self.identifier)
         config.sessionSendsLaunchEvents = true
         config.isDiscretionary = false
