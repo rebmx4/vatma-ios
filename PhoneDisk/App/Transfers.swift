@@ -38,9 +38,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let documents = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
     @Published private(set) var jobs: [DiskJob] = []
     @Published private(set) var readings: [String:TransferReading] = [:]
+    @Published private(set) var stopping = Set<String>()
     @Published var message = ""
     private let queueURL = Transfers.support.appendingPathComponent("queue.json")
     private var active = Set<String>()
+    private var cancelling = Set<String>()
     private var completion: (() -> Void)?
     private var eventWork = 0
     private var eventsFinished = false
@@ -69,6 +71,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return try await self.request(url,method:method)
         }
         engine.resume = { [weak self] id, error in await self?.resumePart(id,error) }
+        engine.isRunnable = { [weak self] id in self?.isRunnable(id) == true }
         engine.onReading = { [weak self] id, data in self?.readings[id] = data }
         engine.onChecking = { [weak self] id in self?.update(id){$0.phase="Проверка файла"} }
         return engine
@@ -99,13 +102,33 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         url?.scheme == base.scheme && url?.host == base.host && (url?.port ?? 443) == (base.port ?? 443) && url?.user == nil && url?.password == nil
     }
 
+    static func downloadLocation(_ url: URL) -> Destination? {
+        guard sameHost(url), url.path == "/api/resources/download",
+              var components = URLComponents(url:url,resolvingAgainstBaseURL:false) else { return nil }
+        // Links from older pages used form-encoded spaces. An actual plus sign is encoded as %2B.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of:"+",with:"%20")
+        let query = components.queryItems ?? []
+        guard let source = query.first(where:{$0.name == "source"})?.value,
+              let path = query.first(where:{$0.name == "file"})?.value else { return nil }
+        let location = Destination(source:source,path:path)
+        return valid(location) ? location : nil
+    }
+
+    private func isRunnable(_ id:String) -> Bool {
+        jobs.contains { $0.id == id && !$0.isStopped && !$0.isFinished }
+    }
+
     func recover() {
         Task { @MainActor in
             await restoreTasks()
-            for job in jobs where job.asset == nil && job.phase != "Готово" && !active.contains(job.id) {
+            for job in jobs where job.asset == nil && !job.isFinished && !job.isStopped && !active.contains(job.id) {
                 start(job.id)
             }
         }
+    }
+
+    @MainActor func refreshQueue() async {
+        await restoreTasks()
     }
 
     @MainActor private func restoreTasks() async {
@@ -115,6 +138,9 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         active.formUnion(restored)
         let pending = await resumable.recover()
         active.formUnion(pending)
+        for job in jobs where job.isStopped && active.contains(job.id) {
+            cancelDownloadTasks(job.id)
+        }
     }
 
     func routeChanged(_ route: DiskRoute) { resumable.switchRoute(to:route) }
@@ -143,8 +169,23 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         finishEvents()
     }
 
+    private func writeQueue(_ queue:[DiskJob]) throws {
+        try JSONEncoder().encode(queue).write(to:queueURL,options:.atomic)
+    }
+
     private func save() {
-        if let encoded = try? JSONEncoder().encode(jobs) { try? encoded.write(to:queueURL,options:.atomic) }
+        try? writeQueue(jobs)
+    }
+
+    private func applyQueueChange(_ queue:[DiskJob]) -> Bool {
+        do {
+            try writeQueue(queue)
+            jobs = queue
+            return true
+        } catch {
+            message = "Не удалось сохранить очередь передач."
+            return false
+        }
     }
 
     private func update(_ id: String, _ change: (inout DiskJob) -> Void) {
@@ -233,14 +274,70 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func enqueueDownload(_ url:URL,_ name:String?) {
-        guard Self.sameHost(url), url.path == "/api/resources/download" else { return }
-        let query = URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems ?? []
-        guard let source=query.first(where:{$0.name=="source"})?.value,Self.sources.contains(source) else { return }
-        let suggested = query.first(where:{$0.name=="file"})?.value
+        guard let location = Self.downloadLocation(url) else { return }
+        let suggested = (location.path as NSString).lastPathComponent
         let id = UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
-        jobs.insert(DiskJob(id:id,name:filename(name ?? suggested.map { ($0 as NSString).lastPathComponent } ?? "Файл"),downloadURL:url),at:0)
+        jobs.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url),at:0)
         save()
         start(id)
+    }
+
+    @MainActor func stopDownload(_ id:String) {
+        guard let index = jobs.firstIndex(where:{$0.id == id}), jobs[index].canStopDownload else { return }
+        var queue = jobs
+        queue[index].phase = DiskJob.stopped
+        guard applyQueueChange(queue) else { return }
+        retrying.removeValue(forKey:id)?.cancel()
+        retries.removeValue(forKey:id)
+        readings[id]?.bytesPerSecond = 0
+        cancelDownloadTasks(id)
+    }
+
+    @MainActor func retryDownload(_ id:String) {
+        guard let index = jobs.firstIndex(where:{$0.id == id}), jobs[index].canRetryDownload,
+              !active.contains(id), !stopping.contains(id) else { return }
+        var queue = jobs
+        queue[index].phase = DiskJob.waiting
+        guard applyQueueChange(queue) else { return }
+        retries.removeValue(forKey:id)
+        start(id)
+    }
+
+    @MainActor func removeDownload(_ id:String) {
+        guard jobs.contains(where:{$0.id == id && $0.canRemoveDownload}),
+              !active.contains(id), !stopping.contains(id),
+              applyQueueChange(jobs.filter{$0.id != id}) else { return }
+        retrying.removeValue(forKey:id)?.cancel()
+        retries.removeValue(forKey:id)
+        readings.removeValue(forKey:id)
+        try? FileManager.default.removeItem(at:resumeFile(id))
+        resumable.discardDownload(id)
+    }
+
+    @MainActor private func cancelDownloadTasks(_ id:String) {
+        guard stopping.insert(id).inserted else { return }
+        cancelling.insert(id)
+        Task { @MainActor in
+            for task in await session.allTasks where task.taskDescription == id {
+                guard let download = task as? URLSessionDownloadTask else { continue }
+                let data: Data? = await withCheckedContinuation { continuation in
+                    download.cancel(byProducingResumeData: { continuation.resume(returning:$0) })
+                }
+                if let data { try? data.write(to:resumeFile(id),options:.atomic) }
+            }
+            await resumable.cancel(id)
+            cancelling.remove(id)
+            finishStopping(id)
+        }
+    }
+
+    private func finishStopping(_ id:String) {
+        if !active.contains(id) && !cancelling.contains(id) { stopping.remove(id) }
+    }
+
+    private func markInactive(_ id:String) {
+        active.remove(id)
+        finishStopping(id)
     }
 
     func start(_ id:String) {
@@ -251,7 +348,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func beginTransfer(_ id:String) async {
-        guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),job.phase != "Готово" else { return }
+        guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),!job.isFinished,!job.isStopped else { return }
         active.insert(id)
         update(id){$0.phase="Подготовка"}
         let route = DiskRoutes.shared.transferRoute
@@ -260,10 +357,12 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if !job.uploaded {
                 let usesV2 = resumable.contains(id)
                 let capability = try await DiskRoutes.shared.capabilities(route)
+                guard isRunnable(id) else { throw CancellationError() }
                 if usesV2 || capability != nil {
                     guard capability != nil else { throw DiskFailure.response(503) }
                     update(id){$0.phase=job.destination == nil ? "Скачивание" : "Выгрузка"}
                     if try await resumable.advance(job,route:route) {
+                        guard isRunnable(id) else { throw CancellationError() }
                         if job.downloadURL != nil { update(id){$0.localName=String(id.prefix(8))+"-"+job.name} }
                         done(id)
                     }
@@ -284,11 +383,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 update(id){$0.phase="Выгрузка"}
                 task.resume()
             } else if let url=job.downloadURL {
-                let source=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="source"})?.value
-                guard let source,Self.sources.contains(source) else { throw DiskFailure.rejected }
-                try await requireDrive(source)
+                guard let location = Self.downloadLocation(url) else { throw DiskFailure.rejected }
+                try await requireDrive(location.source)
                 let download=try await request(url)
                 try Task.checkCancellation()
+                guard isRunnable(id) else { throw CancellationError() }
                 let task: URLSessionDownloadTask
                 if let resume=try? Data(contentsOf:resumeFile(id)) {
                     task=session.downloadTask(withResumeData:resume)
@@ -298,10 +397,10 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 task.resume()
             }
         } catch is CancellationError {
-            active.remove(id)
-            update(id){$0.phase="Ожидает"}
+            markInactive(id)
+            if isRunnable(id) { update(id){$0.phase=DiskJob.waiting} }
         } catch {
-            if error is URLError { DiskRoutes.shared.failed(route) }
+            if isRunnable(id), error is URLError { DiskRoutes.shared.failed(route) }
             waitForTransfer(id,error)
         }
     }
@@ -339,7 +438,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     private func done(_ id:String) {
         let automatic = jobs.first(where: { $0.id == id })?.asset != nil
-        active.remove(id)
+        markInactive(id)
         retrying.removeValue(forKey:id)?.cancel()
         retries.removeValue(forKey:id)
         if var reading = readings[id] {
@@ -360,14 +459,15 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func failed(_ id:String,_ text:String) {
-        active.remove(id)
+        markInactive(id)
+        guard isRunnable(id) else { return }
         update(id){$0.phase=text}
         notify(success:false)
     }
 
     @MainActor private func resumePart(_ id: String, _ error: Error?) async {
-        active.remove(id)
-        guard let job = jobs.first(where:{ $0.id == id }),job.phase != "Готово" else { return }
+        markInactive(id)
+        guard let job = jobs.first(where:{ $0.id == id }),!job.isFinished,!job.isStopped else { return }
         if job.asset != nil && !defaults.bool(forKey:"photo-auto") {
             update(id){$0.phase="Автокопии приостановлены"}
             return
@@ -378,7 +478,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func waitForTransfer(_ id: String, _ error: Error) {
-        active.remove(id)
+        markInactive(id)
+        guard isRunnable(id) else { return }
         if var reading = readings[id] { reading.bytesPerSecond = 0; readings[id] = reading }
         let number = retries[id,default:0]
         let errorCode: Int?
@@ -405,13 +506,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session:URLSession,downloadTask:URLSessionDownloadTask,didWriteData bytesWritten:Int64,totalBytesWritten:Int64,totalBytesExpectedToWrite:Int64) {
-        if let id=downloadTask.taskDescription,totalBytesExpectedToWrite>0 {
+        if let id=downloadTask.taskDescription,isRunnable(id),totalBytesExpectedToWrite>0 {
             update(id){$0.progress=Double(totalBytesWritten)/Double(totalBytesExpectedToWrite)}
         }
     }
 
     func urlSession(_ session:URLSession,downloadTask:URLSessionDownloadTask,didFinishDownloadingTo location:URL) {
         guard let id=downloadTask.taskDescription,let job=jobs.first(where:{$0.id==id}),
+              !job.isStopped,!job.isFinished,
               let reply=downloadTask.response as? HTTPURLResponse,(200..<300).contains(reply.statusCode),Self.sameHost(reply.url) else { return }
         let name=String(id.prefix(8))+"-"+job.name
         do {
@@ -422,6 +524,10 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func urlSession(_ session:URLSession,task:URLSessionTask,didCompleteWithError error:Error?) {
         guard let id=task.taskDescription,let job=jobs.first(where:{$0.id==id}) else { return }
+        if job.isStopped {
+            markInactive(id)
+            return
+        }
         if let error {
             if job.downloadURL != nil {
                 if let data=(error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {

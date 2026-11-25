@@ -56,6 +56,12 @@ final class TransferLedger {
             guard bound == SQLITE_OK, sqlite3_step(value) == SQLITE_DONE else { throw DiskFailure.rejected }
         }
     }
+
+    func remove(_ id:String) throws {
+        try statement("DELETE FROM jobs WHERE id=?",id:id) { value in
+            guard sqlite3_step(value) == SQLITE_DONE else { throw DiskFailure.rejected }
+        }
+    }
 }
 
 struct DiskDeviceKey: Codable {

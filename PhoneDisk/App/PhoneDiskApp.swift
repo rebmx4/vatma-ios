@@ -17,7 +17,14 @@ struct PhoneDiskApp: App {
     var body: some Scene {
         WindowGroup {
             DiskScreen(disk:disk,transfers:transfers)
-                .task { DiskRoutes.shared.start(); transfers.recover() }
+                .task {
+                    #if DEBUG && targetEnvironment(simulator)
+                    if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] != "1" { DiskRoutes.shared.start() }
+                    #else
+                    DiskRoutes.shared.start()
+                    #endif
+                    transfers.recover()
+                }
                 .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
                     transfers.routeChanged(route)
                     disk.changeRoute(route)
@@ -212,6 +219,7 @@ struct DiskScreen: View {
     @State private var files=false
     @State private var showPhotos=false
     @State private var showQueue=false
+    @State private var transferToRemove:DiskJob?
     @State private var showDestinations=false
     @State private var pickPhotos=false
     @State private var pickerType="album"
@@ -283,13 +291,20 @@ struct DiskScreen: View {
         NavigationStack {
             List(transfers.jobs) { job in
                 VStack(alignment:.leading,spacing:5) {
-                    Text(job.name).font(.body)
-                    Text(job.phase).font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment:.top,spacing:4) {
+                        VStack(alignment:.leading,spacing:4) {
+                            Text(job.name).font(.body)
+                            Text(transfers.stopping.contains(job.id) ? "Останавливаю…" : job.phase)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength:4)
+                        if job.downloadURL != nil { downloadActions(job) }
+                    }
                     if let reading = transfers.readings[job.id] { transferDetails(reading) }
-                    if job.phase != "Готово" {
+                    if !job.isFinished {
                         let progress = transfers.readings[job.id].map { $0.total > 0 ? Double($0.confirmed)/Double($0.total) : 0 } ?? job.progress
                         ProgressView(value:progress)
-                        if !["Выгрузка","Скачивание","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
+                        if job.downloadURL == nil && !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
                             Button("Продолжить"){ transfers.start(job.id) }.buttonStyle(.borderless)
                         }
                     } else if let name=job.localName {
@@ -298,9 +313,57 @@ struct DiskScreen: View {
                 }
             }
             .navigationTitle("Передача")
-            .toolbar { ToolbarItem(placement:.topBarTrailing){ Button("Готово"){showQueue=false} } }
+            .refreshable { await transfers.refreshQueue() }
+            .toolbar {
+                ToolbarItem(placement:.topBarLeading) {
+                    Button {
+                        Task { await transfers.refreshQueue() }
+                    } label: {
+                        Image(systemName:"arrow.clockwise")
+                    }
+                    .accessibilityLabel("Обновить передачи")
+                }
+                ToolbarItem(placement:.topBarTrailing) { Button("Готово"){showQueue=false} }
+            }
             .overlay { if transfers.jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
+            .alert("Удалить запись передачи?",isPresented:Binding(
+                get:{ transferToRemove != nil },
+                set:{ if !$0 { transferToRemove=nil } }
+            ),presenting:transferToRemove) { job in
+                Button("Нет",role:.cancel) {}
+                Button("Удалить",role:.destructive) { transfers.removeDownload(job.id) }
+            } message: { job in
+                Text(job.name)
+            }
         }
+    }
+
+    private func downloadActions(_ job:DiskJob) -> some View {
+        HStack(spacing:0) {
+            if transfers.stopping.contains(job.id) {
+                ProgressView().frame(width:44,height:44)
+            } else if job.canStopDownload {
+                downloadButton("Остановить скачивание","stop.fill") { transfers.stopDownload(job.id) }
+            } else {
+                if job.canRetryDownload {
+                    downloadButton("Повторить скачивание","arrow.counterclockwise") { transfers.retryDownload(job.id) }
+                }
+                if job.canRemoveDownload {
+                    downloadButton("Удалить запись передачи","trash",role:.destructive) { transferToRemove=job }
+                }
+            }
+        }
+    }
+
+    private func downloadButton(_ label:String,_ icon:String,role:ButtonRole?=nil,action:@escaping () -> Void) -> some View {
+        Button(role:role,action:action) {
+            Image(systemName:icon)
+                .font(.body.weight(.medium))
+                .frame(width:44,height:44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text(label))
     }
 
     private func transferDetails(_ reading: TransferReading) -> some View {

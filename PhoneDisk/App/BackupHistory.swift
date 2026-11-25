@@ -7,16 +7,28 @@ struct Destination: Codable {
 }
 
 struct DiskJob: Codable, Identifiable {
+    static let waiting = "Ожидает"
+    static let stopped = "Остановлено"
+
     var id: String
     var name: String
     var destination: Destination?
     var downloadURL: URL?
     var asset: String?
-    var phase: String = "Ожидает"
+    var phase: String = DiskJob.waiting
     var uploaded = false
     var progress: Double = 0
     var localName: String?
     var remotePath: String?
+
+    var isStopped: Bool { phase == Self.stopped }
+    var isFinished: Bool { phase == "Готово" }
+    var canStopDownload: Bool {
+        downloadURL != nil && localName == nil &&
+            [Self.waiting, "Подготовка", "Скачивание", "Восстанавливаю соединение"].contains(phase)
+    }
+    var canRemoveDownload: Bool { downloadURL != nil && !canStopDownload && phase != "Проверка файла" }
+    var canRetryDownload: Bool { canRemoveDownload && !isFinished }
 }
 
 struct BackupHistory {

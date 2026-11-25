@@ -41,7 +41,12 @@ class Fixture(BaseHTTPRequestHandler):
         url=urlsplit(self.path)
         params=parse_qs(url.query)
         if url.path=="/":
-            html='<meta name="viewport" content="width=device-width"><a href="/api/resources/download?source=photos-c&amp;file=%2Fci-download.txt" download>Скачать пробный файл</a>'
+            html = (
+                '<meta name="viewport" content="width=device-width">'
+                '<a href="/api/resources/download?source=photos-c&amp;file=%2Fci-download.txt">Скачать пробный файл</a>'
+                '<p><a href="/api/resources/download?source=photos-c&amp;file=%2Fslow+file+%2B.bin">Скачать файл для остановки</a></p>'
+                '<button data-tab="transfers">Передача</button>'
+            )
             self.reply(200,html.encode(),"text/html; charset=utf-8",
                        Set_Cookie="fixture=allowed; Path=/; Max-Age=3600; HttpOnly")
             return
@@ -51,6 +56,20 @@ class Fixture(BaseHTTPRequestHandler):
             self.reply(200,json.dumps(info).encode())
         elif params.get("source")==["photos-c"] and params.get("file")==["/ci-download.txt"]:
             self.reply(200,downloads,"application/octet-stream",Content_Disposition='attachment; filename="ci-download.txt"')
+        elif params.get("source")==["photos-c"] and params.get("file")==["/slow file +.bin"]:
+            part = bytes(64 * 1024)
+            parts = 36
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(part) * parts))
+            self.end_headers()
+            try:
+                for _ in range(parts):
+                    self.wfile.write(part)
+                    self.wfile.flush()
+                    time.sleep(0.5)
+            except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                pass
         elif params.get("path",[None])[0] in staged:
             self.reply(200,b'{}')
         else:
