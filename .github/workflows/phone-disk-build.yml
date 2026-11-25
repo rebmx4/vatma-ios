@@ -5,6 +5,8 @@ on:
     branches: [phone-disk/transfers-v2]
     paths:
       - "PhoneDisk/App/**"
+      - "PhoneDisk/Tests/**"
+      - "PhoneDisk/UITests/**"
       - "PhoneDisk/Info.plist"
       - ".github/workflows/phone-disk-build.yml"
       - ".github/phone-disk-build-recipient.pem"
