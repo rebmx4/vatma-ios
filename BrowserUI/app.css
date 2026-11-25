@@ -71,4 +71,12 @@ body:has(#address:focus) .browser-bar,body.address-submit-hold .browser-bar{disp
 body:has(#address:focus) .browser-nav,body:has(#address:focus) .home-indicator,body:has(#address:focus) #pin-site,body.address-submit-hold .browser-nav,body.address-submit-hold .home-indicator,body.address-submit-hold #pin-site{display:none}
 body:has(#address:focus) .address-form,body.address-submit-hold .address-form{width:100%;max-width:580px;height:51px;flex:1;margin:0 auto}
 body:has(#address:focus) .address-entry,body.address-submit-hold .address-entry{height:51px}
+.address-form{position:relative}
+.address-suggestions{display:grid;max-height:min(44vh,192px);overflow-y:auto;overscroll-behavior:contain;border-radius:14px;background:var(--appearance-card);color:var(--ink);box-shadow:0 4px 16px #0003}
+.address-suggestions[hidden]{display:none}
+#address-suggestions{position:absolute;inset:auto 0 calc(100% + 7px);z-index:1}
+.address-suggestion{min-height:42px;min-width:0;padding:7px 12px;text-align:start;background:transparent;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.address-suggestion small{display:block;overflow:hidden;text-overflow:ellipsis;color:var(--appearance-muted)}
+.address-suggestion:is(.selected,:focus-visible,:active){background:var(--appearance-control)}
+.private-session-choice{display:flex;align-items:center;gap:8px;margin:0 0 12px;color:var(--ink)}
 .vault-choices{display:grid;gap:11px;margin:28px auto 0;max-width:300px}.vault-choices button{padding:14px 18px;border-radius:15px;background:#ffffff2b;color:white;font-size:15px}.vault-choices button:disabled{opacity:.5}.vault-biometry-link{margin-top:18px;color:white;text-decoration:underline;background:none}.vault-biometry-optin{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;color:white;font-size:13px}.vault-biometry-optin input{width:18px;height:18px}

@@ -39,6 +39,20 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "appearance": reply(try applyNativeAppearance(body), nil); return
         case "app-icon": try setApplicationIcon(body, reply: reply); return
         case "state": reply(state(), nil); return
+        case "address/editing":
+            guard let editing = body["editing"] as? Bool else { throw BrowserFailure.invalid("Invalid address editing state.") }
+            let id = try string("tabID", body)
+            if editing, id == model.activeTabId { addressEditingTabID = id }
+            else if !editing, id == addressEditingTabID { addressEditingTabID = nil }
+            view.setNeedsLayout()
+            reply(true, nil)
+            return
+        case "ui/ready":
+            let attemptID = try string("attemptID", body)
+            guard let stylesReady = body["stylesReady"] as? Bool else { throw BrowserFailure.invalid("Invalid UI readiness.") }
+            reply(true, nil)
+            uiStartup.receiveReady(attemptID: attemptID, stylesReady: stylesReady)
+            return
         case "message-badges":
             guard let requested = body["providers"] as? [String], requested.count <= 2,
                   requested.allSatisfy({ ["vk", "avito"].contains($0) }) else {
@@ -82,7 +96,11 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             guard body["privateBrowsing"] == nil || body["privateBrowsing"] is Bool else { throw BrowserFailure.invalid("Invalid private mode.") }
             newTab(privateBrowsing: body["privateBrowsing"] as? Bool == true)
         case "tabs/private/close": closePrivateTabs()
-        case "private-device": try changePrivateDevice(try string("profileId", body))
+        case "private-device":
+            guard body["separateSession"] == nil || body["separateSession"] is Bool else {
+                throw BrowserFailure.invalid("Invalid private session choice.")
+            }
+            try changePrivateDevice(try string("profileId", body), separateSession: body["separateSession"] as? Bool == true)
         case "tabs/select": try selectTab(try string("tabId", body))
         case "tabs/close": try closeTab(try string("tabId", body))
         case "preferences": try preferences(body)

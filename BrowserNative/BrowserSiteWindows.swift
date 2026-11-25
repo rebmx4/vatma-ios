@@ -13,6 +13,8 @@ extension BrowserController {
         } else { address = "about:blank" }
         var tab = BrowserTab(profileId: opener.profileId, url: address)
         tab.privateBrowsing = opener.isPrivate
+        tab.privateSessionID = opener.privateSessionID
+        tab.privateDesktopBrowsing = opener.isPrivateDesktop
         tab.webApp = opener.webApp
         tab.appControlsCollapsed = opener.appControlsCollapsed
         model.tabs.append(tab)

@@ -4,6 +4,7 @@ import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, c
 import {renderTabsOverview} from './tabs-view.js';
 import {observeDesktopViewport} from './desktop-viewport.js';
 import {selectAddressOnFirstTap} from './address-selection.js';
+import {addressSuggestions, installAddressSuggestions} from './address-suggestions.js';
 import {previewCookieRequest} from './assets/cookie-rpc.js';
 import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
@@ -324,7 +325,10 @@ function consume(next) {
   if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
     notify(localization.t('Перевод страницы сейчас недоступен.'));
   }
-  if(changedTab)$('address').value=next.mode==='browse'?(next.url||''):'';
+  if(changedTab){
+    $('address').value=next.mode==='browse'?(next.url||''):'';
+    document.dispatchEvent?.(new Event('atma-address-context-change'));
+  }
   else if (document.activeElement !== $('address') && next.mode === 'browse') $('address').value = next.url === `${location.origin}/probe` ? '' : (next.url || '');
   if (panel !== next.panel) {
     panel = next.panel;
@@ -360,7 +364,7 @@ async function pollMessageBadges(){
 }
 async function newBrowserTab(){
  setEditing(false);lockVault();desktopPage=0;
- try{await action('tabs/new');chooseDesktopSurface(null);$('address').value='';$('address').focus({preventScroll:true});}catch{}
+ try{await action('tabs/new');chooseDesktopSurface(null);$('address').value='';}catch{}
 }
 async function newIncognitoTab(){
  setEditing(false);lockVault();
@@ -374,7 +378,7 @@ async function selectBrowserTab(tabId){
  try{await action('tabs/select',{tabId});chooseDesktopSurface(null);if(!state.url)$('address').value='';}catch{}
 }
 function renderTabs(){
- renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
+ renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,previewVersion:state?.tabPreviewVersion,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
 }
 function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
   if(scope==='private') {
@@ -847,8 +851,12 @@ function renderPrivateDevices(){
   root.replaceChildren();
   const search=document.createElement('input');search.id='private-device-filter';search.className='private-device-filter';search.placeholder='Найти устройство';search.setAttribute('aria-label','Найти устройство');
   const list=document.createElement('div');list.className='model-list';list.id='private-devices';
-  const note=document.createElement('p');note.className='sheet-note';note.textContent='Меняются User-Agent, режим сайта и некоторые параметры устройства, видимые JavaScript. Физический экран и движок WebKit не меняются; полный цифровой отпечаток не скрывается. Смена устройства обновит открытую страницу.';
-  root.append(search,list,note);
+  const separate=document.createElement('input');separate.type='checkbox';
+  const session=document.createElement('label');session.className='private-session-choice';
+  session.append(separate,localization.t('Открыть в отдельном сеансе'));
+  const note=document.createElement('p');note.className='sheet-note';
+  note.textContent=localization.t('Отдельный сеанс открывает сайты без входов из других вкладок. Открытая страница остаётся в своей вкладке.');
+  root.append(search,session,list,note);
   const render=()=>{
     list.replaceChildren();
     const needle=search.value.trim().toLocaleLowerCase();
@@ -859,8 +867,8 @@ function renderPrivateDevices(){
       button.innerHTML=`<span class="model-symbol">${icon(profile.family==='Компьютер'?'computer':profile.family==='iPad'?'tablet':'phone')}</span><span class="model-name">${escape(profile.name)}</span>${profile.id===state.profileId?`<span class="model-check">${icon('check')}</span>`:''}`;
       button.addEventListener('click',async()=>{
         if(busy)return;busy=true;button.disabled=true;
-        try{await action('private-device',{profileId:profile.id});await setPanel(null);}
-        catch(error){notify(error.message);}finally{busy=false;}
+        try{await action('private-device',{profileId:profile.id,separateSession:separate.checked});await setPanel(null);}
+        catch(error){notify(error.message);}finally{busy=false;button.disabled=false;}
       });
       list.append(button);
     }
@@ -1123,6 +1131,25 @@ holdSubmitLayout($('address'),$('address-go'),'address-submit-hold');
 holdSubmitLayout($('incognito-address'),$('incognito-form').querySelector('button[type=submit]'),'incognito-submit-hold');
 selectAddressOnFirstTap($('address'), $('address-clear'));
 selectAddressOnFirstTap($('incognito-address'), $('incognito-address-clear'));
+for (const [inputId, listId] of [['address','address-suggestions'],['incognito-address','incognito-suggestions']]) {
+  let editingTabID;
+  const reset = installAddressSuggestions($(inputId), $(listId), {
+    suggest: value => addressSuggestions(value, state, flattenApps(apps).filter(app => app.type !== 'system')),
+    searchLabel: value => localization.language === 'en' ? `Search for “${value}”` : `Искать «${value}»`,
+    select: result => {
+      if (result.kind === 'tab') selectBrowserTab(result.entry.id);
+      else if (result.kind === 'shortcut') launchShortcut(result.entry);
+      else launch(result.query, 'public');
+    },
+    editing: editing => {
+      if (editing) editingTabID = state?.activeTabId;
+      if (editingTabID && window.webkit?.messageHandlers?.atma) {
+        api('address/editing', {tabID:editingTabID, editing}).catch(() => {});
+      }
+    },
+  });
+  document.addEventListener('atma-address-context-change', reset);
+}
 $('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
@@ -1182,17 +1209,36 @@ function syncPageTranslationLanguage() {
   }
 }
 
+async function shellStylesReady() {
+  const styles = [...document.querySelectorAll('link[rel="stylesheet"]')];
+  const loaded = () => styles.length > 0 && styles.every(link => link.sheet?.cssRules.length > 0);
+  if (!loaded() && document.readyState !== 'complete') {
+    await new Promise(resolve => window.addEventListener('load', resolve, {once:true}));
+  }
+  return loaded();
+}
+
 async function start() {
+  const attemptID = query.get('startup');
   applyAppearance();
   useWallpaper(wallpaper);
   if (wallpaper === 'custom') {
-    try { const db = await wallpaperDB(); const request = db.transaction('preferences').objectStore('preferences').get('wallpaper'); request.onsuccess = () => { if (request.result) document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(request.result)}')`; db.close(); }; } catch {}
+    wallpaperDB().then(db => {
+      const request = db.transaction('preferences').objectStore('preferences').get('wallpaper');
+      request.onsuccess = () => {
+        if (wallpaper === 'custom' && request.result) document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(request.result)}')`;
+      };
+      db.close();
+    }).catch(() => {});
   }
   renderApps();
   try {
     const version = stateActionVersion;
     const next = await api('state');
     if (version === stateActionVersion) consume(next);
+    if (attemptID && window.webkit?.messageHandlers?.atma && document.body.dataset.mode) {
+      await api('ui/ready', {attemptID, stylesReady:await shellStylesReady()});
+    }
     await api('preferences', {searchEngine});
     await syncPageTranslationLanguage();
   }

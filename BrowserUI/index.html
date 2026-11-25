@@ -12,8 +12,8 @@
   <link rel="stylesheet" href="/assets/cookies.css">
   <link rel="stylesheet" href="/assets/media.css">
   <link rel="stylesheet" href="/assets/message-badges.css">
-  <script src="/app.js" type="module"></script>
   <link rel="stylesheet" href="/incognito.css">
+  <script src="/app.js" type="module"></script>
 </head>
 <body>
   <div class="wallpaper" aria-hidden="true"></div>
@@ -21,6 +21,7 @@
     <div class="incognito-card"><h1>Инкогнито</h1>
       <p>Вкладки и данные сайтов не сохраняются после завершения приватного сеанса. Сайты всё равно видят ваше соединение.</p>
       <button id="end-incognito" type="button">Завершить сеанс инкогнито</button>
+      <div class="address-suggestions" id="incognito-suggestions" hidden></div>
       <button id="incognito-device" type="button" aria-label="Выбрать устройство для инкогнито"></button>
       <form id="incognito-form" role="search"><input id="incognito-address" type="text" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес в инкогнито" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="address-clear" id="incognito-address-clear" type="button" aria-label="Очистить адрес"><span aria-hidden="true">×</span></button><button type="submit" aria-label="Перейти в инкогнито">→</button></form>
     </div>
@@ -42,6 +43,7 @@
       <input id="address" type="text" placeholder="Приложения, Google или адрес сайта" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Приложения, поисковый запрос или адрес сайта">
       <button class="address-clear" id="address-clear" type="button" aria-label="Очистить адрес"><span aria-hidden="true">×</span></button>
       <button class="address-go" id="address-go" aria-label="Перейти" type="submit"></button></div>
+      <div class="address-suggestions" id="address-suggestions" hidden></div>
     </form>
     <nav class="browser-nav" aria-label="Браузер">
       <button class="nav-button" id="go-back" aria-label="Назад"></button>

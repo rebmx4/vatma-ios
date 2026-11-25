@@ -66,9 +66,12 @@ final class BrowserSmokeTests: XCTestCase {
         let value = address.value as? String ?? ""
         XCTAssertTrue(value.isEmpty || value == address.placeholderValue, "A new tab must have an empty address")
         XCTAssertEqual(siteRenderers.count, 0, "A blank tab must not allocate a site renderer")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Opening a blank tab keeps the keyboard closed")
+        XCTAssertTrue(button(["Рабочий стол", "Home"]).isHittable)
         screenshot("blank-tab")
 
         var go = button(["Перейти", "Go"])
+        try focusAddressIfNeeded()
         assertAddressControlsAboveKeyboard()
         rotate(.landscapeLeft, landscape: true)
         try focusAddressIfNeeded()

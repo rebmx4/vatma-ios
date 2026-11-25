@@ -63,18 +63,19 @@ final class BrowserPreviewCompletionTests: XCTestCase {
         XCTAssertEqual(page.replies.count, 1, "Waiting transitions must share the same capture")
         await fulfillment(of: [returned], timeout: 3)
         XCTAssertEqual(calls, 2)
-        XCTAssertTrue(controller.previewCaptures.isEmpty)
+        XCTAssertFalse(controller.previewCaptures.isEmpty)
         XCTAssertTrue(controller.tabPreviews.isEmpty)
         page.replies[0](image(.red), nil)
         XCTAssertEqual(calls, 2, "A late reply must not repeat navigation")
-        XCTAssertTrue(controller.tabPreviews.isEmpty, "An expired reply must not create a stale preview")
+        XCTAssertNotNil(controller.tabPreviews[controller.model.activeTabId], "A late reply can still supply the current document image")
     }
 
     func testExpiredReplyCannotFinishOrReplaceANewerCapture() async throws {
-        let first = expectation(description: "First capture expires")
+        let first = expectation(description: "First transition finishes")
         controller.captureCurrentPreview { first.fulfill() }
         await fulfillment(of: [first], timeout: 3)
         let id = controller.model.activeTabId
+        controller.invalidatePreview(for: id)
         var newCalls = 0
         controller.captureCurrentPreview { newCalls += 1 }
         let pending = try XCTUnwrap(controller.previewCaptures[id])

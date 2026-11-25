@@ -17,6 +17,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class BrowserController: UIViewController {
     let model: BrowserModel
     let server = LocalUIServer()
+    lazy var uiStartup = BrowserUIStartup(browser: self)
     let blocker = SiteBlocker()
     let downloads = DownloadService()
     lazy var pageTranslation = BrowserPageTranslation(browser: self)
@@ -36,8 +37,11 @@ final class BrowserController: UIViewController {
     var mode = "home"
     var panel: String?
     var nativeError: String?
+    var addressEditingTabID: String?
     var tabPreviews: [String: TabPreview] = [:]
     var previewCaptures: [String: TabPreviewCapture] = [:]
+    var tabPreviewVersion = 0
+    var tabPreviewDocuments: [String: Int] = [:]
     private var lastLayoutDiagnostic = ""
     private var stateSequence = 0
     var lastUIAction = "none"
@@ -117,13 +121,7 @@ final class BrowserController: UIViewController {
             }
             self.publish()
         }
-        server.start { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let url): self.ui.load(URLRequest(url: url))
-            case .failure(let error): self.showStartupFailure(error)
-            }
-        }
+        uiStartup.start()
         if LocalUIServer.diagnosticsEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportPageDiagnostics("15 seconds") }
         }
@@ -167,8 +165,9 @@ final class BrowserController: UIViewController {
         super.viewDidLayoutSubviews()
         let frame = browserViewport.bounds
         let browsing = mode == "browse" && panel == nil
-        ui.frame = browsing ? CGRect(x: frame.minX, y: max(frame.minY, frame.maxY - currentFooterHeight),
-                                     width: frame.width, height: min(currentFooterHeight, frame.height)) : frame
+        let chromeHeight = addressEditingTabID == model.activeTabId ? max(264, currentFooterHeight) : currentFooterHeight
+        ui.frame = browsing ? CGRect(x: frame.minX, y: max(frame.minY, frame.maxY - chromeHeight),
+                                     width: frame.width, height: min(chromeHeight, frame.height)) : frame
         for (id, renderer) in renderers {
             renderer.isHidden = !browsing || id != model.activeTabId
             media.setPageVisible(renderer, visible: !renderer.isHidden || (panel == "media" && id == model.activeTabId))
@@ -223,7 +222,7 @@ final class BrowserController: UIViewController {
     func open(_ input: String, webApp: Bool? = nil) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
         if mode == "home", !model.active.url.isEmpty || currentRenderer != nil {
-            newTab(privateBrowsing: model.active.isPrivate)
+            newTab(privateBrowsing: model.active.isPrivate, profileID: model.active.profileId)
         }
         try open(URLRequest(url: url), webApp: webApp)
     }
@@ -237,11 +236,13 @@ final class BrowserController: UIViewController {
         }
         // End the native WebKit input session before shrinking its view into chrome.
         view.endEditing(true)
+        addressEditingTabID = nil
         model.tabs[model.activeIndex].url = url.absoluteString
         model.tabs[model.activeIndex].error = nil
         if let shortcutId {
             model.tabs[model.activeIndex].shortcutId = shortcutId
             model.tabs[model.activeIndex].shortcutStartURL = url.absoluteString
+            model.tabs[model.activeIndex].privateDesktopBrowsing = shortcutId.hasPrefix("private:")
         }
         mode = "browse"; panel = nil; nativeError = nil
         let renderer = renderer(for: model.active)
@@ -259,10 +260,11 @@ final class BrowserController: UIViewController {
                 return
             }
             // An edited shortcut starts a new page; keep the old tab as a normal tab.
+            model.tabs[index].privateDesktopBrowsing = tab.isPrivateDesktop
             model.tabs[index].shortcutId = nil
             model.tabs[index].shortcutStartURL = nil
         }
-        if model.active.isPrivate || !model.active.url.isEmpty || model.active.shortcutId != nil { newTab() }
+        if model.active.isPrivate || !model.active.url.isEmpty || model.active.shortcutId != nil || currentRenderer != nil { newTab() }
         try open(URLRequest(url: url), webApp: true, shortcutId: shortcutId)
     }
 
@@ -281,21 +283,28 @@ final class BrowserController: UIViewController {
         changed()
     }
 
-    func newTab(privateBrowsing: Bool = false) {
-        var tab = BrowserTab(profileId: BrowserModel.actualProfile)
+    func newTab(privateBrowsing: Bool = false, profileID: String? = nil, sessionID: UUID? = nil) {
+        var tab = BrowserTab(profileId: privateBrowsing ? profileID ?? BrowserModel.actualProfile : BrowserModel.actualProfile)
         tab.privateBrowsing = privateBrowsing
+        if privateBrowsing { tab.privateSessionID = sessionID ?? model.privateSessionID(for: model.active) }
         model.tabs.append(tab); model.activeTabId = tab.id; mode = "home"; panel = nil
         changed()
     }
 
-    func changePrivateDevice(_ id: String) throws {
+    func changePrivateDevice(_ id: String, separateSession: Bool = false) throws {
         guard model.active.isPrivate else { throw BrowserFailure.invalid("Device choice is only available in Incognito.") }
         guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown device choice.") }
+        if separateSession {
+            newTab(privateBrowsing: true, profileID: id, sessionID: UUID())
+            return
+        }
         guard model.active.profileId != id else { return }
-        removeRenderer(for: model.activeTabId)
+        if currentRenderer != nil || !model.active.url.isEmpty {
+            newTab(privateBrowsing: true, profileID: id)
+            return
+        }
         model.tabs[model.activeIndex].profileId = id
-        if mode == "browse", !model.active.url.isEmpty { try selectTab(model.activeTabId) }
-        else { changed() }
+        changed()
     }
 
     func closeTab(_ id: String) throws {
@@ -304,7 +313,8 @@ final class BrowserController: UIViewController {
         windowOpeners = windowOpeners.filter { $0.value != id }
         removeRenderer(for: id)
         model.tabs.remove(at: index)
-        model.discardUnusedPrivateSession()
+        tabPreviewDocuments.removeValue(forKey: id)
+        model.discardUnusedPrivateSessions()
         if model.tabs.isEmpty { newTab() }
         else if model.activeTabId == id {
             let destination = opener.flatMap { candidate in model.tabs.first { $0.id == candidate }?.id }
@@ -357,7 +367,8 @@ final class BrowserController: UIViewController {
                                  "translation": false, "googleAccount": false, "probe": false],
                 "searchEngine": model.preferences.searchEngine, "locale": model.preferences.locale,
                 "timezone": model.preferences.timezone, "profiles": model.profiles,
-                "tabs": model.tabs.map(\.json), "activeTabId": model.activeTabId, "media": media.state]
+                "tabs": tabOverviewState(), "tabPreviewVersion": tabPreviewVersion,
+                "activeTabId": model.activeTabId, "media": media.state]
     }
 
     func publish() {
@@ -382,14 +393,5 @@ final class BrowserController: UIViewController {
         model.tabs[index].loading = loading ?? webView.isLoading
         model.tabs[index].error = error
         model.save(); publish()
-    }
-
-    private func showStartupFailure(_ error: Error) {
-        nativeError = error.localizedDescription
-        let label = UILabel(frame: view.safeAreaLayoutGuide.layoutFrame)
-        label.numberOfLines = 0; label.textAlignment = .center
-        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        label.text = "ATMA UI could not start.\n" + error.localizedDescription
-        ui.isHidden = true; view.addSubview(label)
     }
 }

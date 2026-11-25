@@ -113,7 +113,9 @@ def validate_icons(root):
     require(sha((root / manifest["alternate_source"]).read_bytes()) == manifest["alternate_sha256"], "Alternate source sheet changed; regenerate icons")
     expected_mapping = {f"a1-{i:02d}": f"AppIconA1{i:02d}" for i in range(1, 11)}
     require(manifest["alternate_icons"] == expected_mapping, "Wrong alternate icon mapping")
-    require(len(manifest["files"]) == 198, "Expected complete primary + 10 alternate icon sets")
+    icon_types = {"any": 2, "dark": 6, "tinted": 0}
+    require(set(manifest["appearances"]) == set(icon_types), "Missing app icon appearances")
+    require(len(manifest["files"]) == len(icon_types) * (len(ALTERNATES) + 1), "Expected complete primary + 10 alternate icon sets")
     for relative, digest in manifest["files"].items():
         path = catalogue / relative
         require(path.resolve().is_relative_to(catalogue.resolve()), "Unsafe icon path")
@@ -121,11 +123,20 @@ def validate_icons(root):
     for name in ALTERNATES | {"AppIcon"}:
         folder = catalogue / (name + ".appiconset")
         rows = load_json(folder / "Contents.json")["images"]
-        require(len(rows) == 18, "Incomplete iPhone/iPad icon variants")
+        require(len(rows) == len(icon_types), "Incomplete iPhone/iPad icon variants")
+        appearances = set()
         for row in rows:
-            pixels = int(float(row["size"].split("x")[0]) * int(row["scale"][0]))
-            require(Path(row["filename"]).name == row["filename"], "Unsafe icon variant filename")
-            require(png_header(folder / row["filename"]) == (pixels, pixels, 8, 2), "Icons must be opaque RGB at declared dimensions")
+            appearance = "any"
+            if "appearances" in row:
+                style, = row["appearances"]
+                require(style["appearance"] == "luminosity", "Invalid app icon appearance")
+                appearance = style["value"]
+            require(appearance in icon_types and appearance not in appearances, "Unknown or duplicate app icon appearance")
+            appearances.add(appearance)
+            require(row["idiom"] == "universal" and row["platform"] == "ios" and row["size"] == "1024x1024", "Use single-size iOS app icons")
+            require(row["filename"] == f"icon-{appearance}-1024.png", "Unexpected icon variant filename")
+            require(f"{folder.name}/{row['filename']}" in manifest["files"], "Missing app icon checksum")
+            require(png_header(folder / row["filename"]) == (1024, 1024, 8, icon_types[appearance]), "Wrong PNG dimensions or color type for icon appearance")
 
 
 def validate_plist(info):

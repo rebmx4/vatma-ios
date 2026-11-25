@@ -131,9 +131,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     private func navigationFailed(_ webView: WKWebView, navigation: WKNavigation?, error: Error) {
         let failure = error as NSError
         if webView === ui {
-            LocalUIServer.diagnostic("Navigation failed: \(failure.domain) \(failure.code)")
-            reportPageDiagnostics("Navigation failed")
-            if failure.domain != NSURLErrorDomain || failure.code != NSURLErrorCancelled { nativeError = error.localizedDescription }
+            uiStartup.navigationFailed(navigation, error: failure)
             return
         }
         if !isPrivateRenderer(webView) {
@@ -156,7 +154,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        if webView === ui { webView.reload() }
+        if webView === ui { uiStartup.processDidTerminate() }
         else {
             pageTranslation.invalidate(webView)
             media.invalidate(webView)

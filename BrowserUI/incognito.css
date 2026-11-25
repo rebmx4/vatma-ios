@@ -3,6 +3,8 @@ body[data-surface=incognito]{--appearance-chrome:#fff;background:#fff;color:#202
 body[data-surface=incognito] .wallpaper,body[data-surface=incognito] .home{display:none}
 body[data-surface=incognito] .incognito-start{position:fixed;inset:0 0 var(--bar-height);display:flex;align-items:stretch;justify-content:center;padding:28px 24px 12px;overflow:auto;background:#fff;color:#20242a}
 .incognito-card{width:min(100%,560px);min-height:100%;display:flex;flex-direction:column;align-items:stretch;text-align:center}
+#incognito-suggestions:not([hidden]){margin-top:auto;background:#f6f7f9;color:#20242a;min-height:42px}
+#incognito-suggestions:not([hidden]) + #incognito-device{margin-top:9px}
 .incognito-card h1{margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px}
 #incognito-form{display:flex;align-items:center;gap:8px;padding:5px 7px 5px 18px;border:1px solid #d9dde3;border-radius:26px;background:#f6f7f9;min-height:52px}
 #incognito-address{flex:1;min-width:0;height:42px;border:0;outline:0;background:transparent;color:#20242a;font-size:17px}

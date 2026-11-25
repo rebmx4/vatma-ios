@@ -15,7 +15,10 @@ struct BrowserTab: Codable {
     var shortcutStartURL: String?
     var appControlsCollapsed: Bool?
     var privateBrowsing: Bool?
+    var privateSessionID: UUID?
+    var privateDesktopBrowsing: Bool?
     var isPrivate: Bool { privateBrowsing == true }
+    var isPrivateDesktop: Bool { privateDesktopBrowsing == true || shortcutId?.hasPrefix("private:") == true }
 
     mutating func finishNavigationForDownload() {
         loading = false
@@ -24,7 +27,10 @@ struct BrowserTab: Codable {
 
     var json: [String: Any] {
         ["id": id, "profileId": profileId, "url": url, "title": title,
-         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull(), "webApp": webApp ?? false, "privateBrowsing": isPrivate]
+         "siteName": siteName, "iconUrl": iconUrl, "loading": loading, "error": error as Any? ?? NSNull(),
+         "webApp": webApp ?? false, "privateBrowsing": isPrivate,
+         "privateDesktop": isPrivateDesktop,
+         "privateSessionID": privateSessionID?.uuidString as Any? ?? NSNull()]
     }
 }
 
@@ -48,7 +54,8 @@ final class BrowserModel {
     var preferences: BrowserPreferences
     let profiles: [[String: Any]]
     private var stores: [String: WKWebsiteDataStore] = [:]
-    private var privateStore: WKWebsiteDataStore?
+    private let defaultPrivateSessionID = UUID()
+    private var privateStores: [UUID: WKWebsiteDataStore] = [:]
     private let defaults: UserDefaults
     private let sessionKey = "atma.native.session.v1"
 
@@ -102,14 +109,20 @@ final class BrowserModel {
 
     func store(for tab: BrowserTab) -> WKWebsiteDataStore {
         guard tab.isPrivate else { return store(for: tab.profileId) }
-        if let privateStore { return privateStore }
+        let id = privateSessionID(for: tab)
+        if let store = privateStores[id] { return store }
         let created = WKWebsiteDataStore.nonPersistent()
-        privateStore = created
+        privateStores[id] = created
         return created
     }
 
-    func discardUnusedPrivateSession() {
-        if !tabs.contains(where: { $0.isPrivate }) { privateStore = nil }
+    func privateSessionID(for tab: BrowserTab) -> UUID {
+        tab.privateSessionID ?? defaultPrivateSessionID
+    }
+
+    func discardUnusedPrivateSessions() {
+        let openSessionIDs = Set(tabs.filter(\.isPrivate).map { privateSessionID(for: $0) })
+        privateStores = privateStores.filter { openSessionIDs.contains($0.key) }
     }
 
     func store(for _: String) -> WKWebsiteDataStore {

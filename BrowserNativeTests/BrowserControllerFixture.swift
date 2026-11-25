@@ -34,14 +34,20 @@ final class BrowserControllerFixture {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    func start() async throws -> URL {
+    func start(redirects: [String: String] = [:]) async throws -> URL {
         let resources = Dictionary(uniqueKeysWithValues: ["a", "b", "c"].map { name in
             ("/" + name, Data("<!doctype html><html><head><title>Page-\(name)</title></head><body><h1>Page-\(name)</h1><input type='file' id='upload'><a id='install-app' href='itms-services://?action=download-manifest&amp;url=https://example.com/app.plist'>Install</a></body></html>".utf8))
         })
-        http = try BrowserRenderingFixtureServer(resources: resources)
+        http = try BrowserRenderingFixtureServer(resources: resources, redirects: redirects)
         let root = try await http!.start()
         try await wait("!!document.getElementById('go-home') && !!document.body.dataset.mode", in: controller.ui)
         return root
+    }
+
+    func userAgents(at path: String) -> [String] { http?.userAgents(at: path) ?? [] }
+
+    func uploadProgress() -> BrowserRenderingFixtureServer.Upload {
+        http?.uploadProgress() ?? .init()
     }
 
     func script(_ source: String, in page: WKWebView, arguments: [String: Any] = [:]) async throws -> Any? {

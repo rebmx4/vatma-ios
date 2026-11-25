@@ -1,7 +1,7 @@
 const overviews = new WeakMap();
 
 export function renderTabsOverview(root, options) {
- const {tabs, activeTabId, icon, loadPreviews} = options;
+ const {tabs, activeTabId, icon, loadPreviews, previewVersion} = options;
  let view = overviews.get(root);
  if (!view || view.grid.parentElement !== root) {
   const grid = document.createElement('div');grid.className = 'tabs-grid';grid.id = 'tabs-grid';
@@ -14,7 +14,7 @@ export function renderTabsOverview(root, options) {
  view.options = options;
  // Native dictionaries do not guarantee property order. Compare the visible
  // fields in a fixed order, leaving unrelated playback/loading updates alone.
- const signature = JSON.stringify([activeTabId, tabs.map(tab => [tab.id, tab.url, tab.title, tab.siteName, tab.iconUrl, tab.error, tab.privateBrowsing === true])]);
+ const signature = JSON.stringify([activeTabId, previewVersion, tabs.map(tab => [tab.id, tab.url, tab.previewDocument, tab.title, tab.siteName, tab.error, tab.privateBrowsing === true])]);
  if (signature === view.signature) return;
  view.signature = signature;
  const scroll = root.scrollTop, ids = new Set(tabs.map(tab => tab.id));
@@ -35,21 +35,22 @@ export function renderTabsOverview(root, options) {
    entry = {card, open, preview, title, subtitle, close};view.cards.set(tab.id, entry);
   }
   const isPrivate = tab.privateBrowsing === true;
-  if (entry.url !== tab.url || entry.privateBrowsing !== isPrivate) {
-   entry.url = tab.url;entry.privateBrowsing = isPrivate;entry.src = null;entry.pending = null;entry.fallback = null;entry.preview.replaceChildren();
+  const host = tab.url && !isPrivate ? new URL(tab.url).hostname : '';
+  if (entry.url !== tab.url || entry.document !== tab.previewDocument || entry.privateBrowsing !== isPrivate) {
+   entry.url = tab.url;entry.document = tab.previewDocument;
+   entry.privateBrowsing = isPrivate;entry.src = null;entry.pending = null;entry.fallback = null;entry.preview.replaceChildren();
   }
   entry.preview.classList.toggle('tab-blank-preview', !tab.url);
   if (isPrivate && entry.fallback !== 'private') {entry.preview.innerHTML=icon('incognito');entry.fallback='private';}
-  const fallback = tab.iconUrl || '/assets/atma.png';
-  if (!isPrivate && tab.url && !entry.src && entry.fallback !== fallback) {
+  if (!isPrivate && tab.url && !entry.src && !entry.fallback) {
    const container = document.createElement('div');container.className = 'tab-fallback';
-   const logo = document.createElement('img');logo.src = fallback;logo.alt = '';logo.referrerPolicy = 'no-referrer';
-   logo.addEventListener('error', () => {if (logo.getAttribute('src') !== '/assets/atma.png') logo.src = '/assets/atma.png';});
-   container.append(logo);entry.preview.replaceChildren(container);entry.fallback = fallback;
+   container.setAttribute('aria-hidden', 'true');
+   container.textContent = (host[0] || '•').toUpperCase();
+   entry.preview.replaceChildren(container);entry.fallback = 'site';
   }
-  const name = isPrivate ? 'Инкогнито' : tab.title || tab.siteName || (tab.url ? new URL(tab.url).hostname : 'Новая вкладка');
+  const name = isPrivate ? 'Инкогнито' : tab.title || tab.siteName || host || 'Новая вкладка';
   entry.title.textContent = name;if (tab.url && !isPrivate) entry.title.dataset.noTranslate = '';else delete entry.title.dataset.noTranslate;
-  entry.subtitle.textContent = isPrivate ? 'Приватная вкладка' : tab.error ? 'Не удалось открыть' : tab.url ? new URL(tab.url).hostname : 'Пустая вкладка';
+  entry.subtitle.textContent = isPrivate ? 'Приватная вкладка' : tab.error ? 'Не удалось открыть' : host || 'Пустая вкладка';
   entry.open.setAttribute('aria-label', 'Открыть вкладку: ' + name);
   entry.open.setAttribute('aria-current', String(tab.id === activeTabId));
   entry.close.setAttribute('aria-label', 'Закрыть вкладку: ' + name);

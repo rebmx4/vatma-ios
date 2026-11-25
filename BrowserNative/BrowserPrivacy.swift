@@ -19,12 +19,15 @@ extension BrowserController {
 
     func closePrivateTabs() {
         let ids = Set(model.tabs.filter { $0.isPrivate }.map(\.id))
-        ids.forEach { removeRenderer(for: $0) }
+        ids.forEach { id in
+            removeRenderer(for: id)
+            tabPreviewDocuments.removeValue(forKey: id)
+        }
         model.tabs.removeAll { ids.contains($0.id) }
         windowOpeners = windowOpeners.filter { !ids.contains($0.key) && !ids.contains($0.value) }
         if model.tabs.isEmpty { newTab() }
         else if ids.contains(model.activeTabId) { model.activeTabId = model.tabs[0].id }
-        model.discardUnusedPrivateSession()
+        model.discardUnusedPrivateSessions()
         mode = "home"; panel = nil; nativeError = nil; changed()
     }
 

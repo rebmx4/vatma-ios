@@ -2,6 +2,8 @@ export default {
  'Инкогнито':'Incognito','Приватная вкладка':'Private tab','Поиск или адрес в инкогнито':'Search or address in Incognito','Перейти в инкогнито':'Go in Incognito','Завершить сеанс инкогнито':'End Incognito session',
  'Открыть Инкогнито':'Open Incognito','Устройство инкогнито':'Incognito device','Выбрать устройство для инкогнито':'Choose Incognito device',
  'Найти устройство':'Find a device','Выбор устройства доступен только в инкогнито.':'Device choice is available only in Incognito.',
+ 'Открыть в отдельном сеансе':'Open in a separate session',
+ 'Отдельный сеанс открывает сайты без входов из других вкладок. Открытая страница остаётся в своей вкладке.':'A separate session opens sites without sign-ins from other tabs. The current page stays in its own tab.',
  'Меняются User-Agent и мобильный или настольный режим сайта. Экран и движок WebKit остаются настоящими. Смена устройства обновит открытую страницу.':'The User-Agent and mobile or desktop site mode change. The screen and WebKit engine remain real. Changing device reloads the current page.',
  'Инкогнито недоступно в этом режиме предпросмотра':'Incognito is unavailable in this preview',
  'Вкладки и данные сайтов не сохраняются после завершения приватного сеанса. Сайты всё равно видят ваше соединение.':'Tabs and website data do not remain after the private session ends. Websites still see your connection.',

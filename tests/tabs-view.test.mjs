@@ -67,3 +67,16 @@ test('a tab marked private discards a previously decoded ordinary preview',async
  f.render({tabs:[{...f.options.tabs[0],privateBrowsing:true}]});await settle();
  assert.equal(f.root.querySelector('.tab-shot'),null);assert.equal(f.root.querySelectorAll('img').length,0);
 });
+
+test('a late snapshot updates the card without a change to metadata',async()=>{
+ const f=fixture();
+ f.render({previewVersion:0,loadPreviews:async()=>({previews:{}})});await settle();
+ const card=f.root.querySelector('[data-tab-id]');
+ assert.equal(card.querySelector('.tab-fallback').textContent,'O');
+ f.render({previewVersion:1,loadPreviews:async()=>({previews:{one:'data:image/jpeg;base64,late'}})});await settle();
+ assert.equal(f.root.querySelector('[data-tab-id]'),card);
+ assert.equal(card.querySelector('.tab-shot').src,'data:image/jpeg;base64,late');
+ f.render({tabs:f.options.tabs.map(tab=>tab.id==='one'?{...tab,previewDocument:2}:tab),
+   previewVersion:2,loadPreviews:async()=>({previews:{}})});await settle();
+ assert.equal(card.querySelector('.tab-shot'),null,'A different document may have the same URL');
+});
