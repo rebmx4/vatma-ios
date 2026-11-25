@@ -28,10 +28,11 @@ final class BrowserSmokeTests: XCTestCase {
         let server = try BrowserRenderingFixtureServer(resources: ["/": Data(document.utf8)])
         defer { server.stop() }
         let root = try await server.start()
-        try checkBrowser(websiteURL: root.absoluteString, websiteName: websiteName, headingText: headingText)
+        let siteNames = [websiteName, try XCTUnwrap(root.host)]
+        try checkBrowser(websiteURL: root.absoluteString, siteNames: siteNames, headingText: headingText)
     }
 
-    private func checkBrowser(websiteURL: String, websiteName: String, headingText: String) throws {
+    private func checkBrowser(websiteURL: String, siteNames: [String], headingText: String) throws {
         let home = button(["Рабочий стол", "Home"])
         let startupBeginning = Date()
         let homeReadyWithinDeadline = home.waitForExistence(timeout: 20)
@@ -130,14 +131,14 @@ final class BrowserSmokeTests: XCTestCase {
         assertKeyboardDismissed()
         XCTAssertTrue(heading.waitForExistence(timeout: 60))
 
-        let pin = button(["Добавить \(websiteName) на рабочий стол", "Add \(websiteName) to desktop"])
+        let pin = button(siteNames.map { "Добавить \($0) на рабочий стол" })
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         let pinReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in pin.isEnabled }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [pinReady], timeout: 10), .completed, "Quick-add waits for the current document to finish loading")
         pin.tap()
-        XCTAssertTrue(button(["\(websiteName) уже на рабочем столе", "\(websiteName) is already on the desktop"]).waitForExistence(timeout: 20))
+        XCTAssertTrue(button(siteNames.map { "\($0) уже на рабочем столе" }).waitForExistence(timeout: 20))
         home.tap()
-        let shortcut = button(["Открыть \(websiteName)", "Open \(websiteName)"])
+        let shortcut = button(siteNames.map { "Открыть \($0)" })
         let shortcutReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in shortcut.isHittable }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [shortcutReady], timeout: 10), .completed)
         shortcut.tap()
