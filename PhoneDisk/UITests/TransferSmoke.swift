@@ -2,6 +2,7 @@ import XCTest
 
 final class TransferSmoke: XCTestCase {
     func testStopRetryAndRemoveDownload() {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchEnvironment["PHONE_DISK_FIXTURE"] = "1"
         app.launch()
@@ -11,6 +12,7 @@ final class TransferSmoke: XCTestCase {
         app.buttons["Передача"].tap()
         let name = app.staticTexts["slow file +.bin"]
         XCTAssertTrue(name.waitForExistence(timeout:15))
+        XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:15))
         let stop = app.buttons["Остановить скачивание"]
         XCTAssertTrue(stop.waitForExistence(timeout:8))
         stop.tap()

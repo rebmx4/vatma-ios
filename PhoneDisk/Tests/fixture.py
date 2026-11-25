@@ -50,6 +50,9 @@ class Fixture(BaseHTTPRequestHandler):
             self.reply(200,html.encode(),"text/html; charset=utf-8",
                        Set_Cookie="fixture=allowed; Path=/; Max-Age=3600; HttpOnly")
             return
+        if url.path == "/api/v2/capabilities":
+            self.reply(404)
+            return
         if not self.logged_in(): return
         if params.get("source")==["settings"] and params.get("file")==["/drives.json"]:
             info={"schema":1,"drives":[{"id":"C","available":True,"registered":True,"root":{"source":"photos-c"}}]}
