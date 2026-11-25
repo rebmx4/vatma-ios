@@ -75,16 +75,20 @@ final class BrowserPrivacyUITests: XCTestCase {
         button(["Добавить на рабочий стол", "Add to home"]).tap()
         let shortcut = button(["Открыть Gesture fixture", "Open Gesture fixture"])
         XCTAssertTrue(shortcut.waitForExistence(timeout: 30))
-        let address = app.textFields.matching(NSPredicate(format: "label IN %@", ["Приложения, поисковый запрос или адрес сайта", "Apps, search query or website address"])).firstMatch
-        address.tap(); address.typeText("Gesture fixture")
-        XCTAssertTrue(shortcut.isHittable); shortcut.press(forDuration: 4)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "Saving the shortcut must dismiss the form keyboard")
+        let shortcutReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let frame = shortcut.frame
+            return !frame.isEmpty && ui.frame.contains(frame)
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shortcutReady], timeout: 10), .completed, "New shortcut must be visible on the desktop")
+        shortcut.press(forDuration: 4)
         let remove = button(["Удалить Gesture fixture", "Remove Gesture fixture"])
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         XCTAssertFalse(button(["Сохранить изображение", "Сохранить фото", "Добавить в Фото", "Save Image", "Save to Photos", "Add to Photos"]).exists)
         remove.tap()
         XCTAssertFalse(button(["Сохранить", "Save"]).exists, "The remove control must not open the shortcut editor")
+        XCTAssertTrue(shortcut.waitForNonExistence(timeout: 5), "The remove control must remove the shortcut")
         emptySpace.tap()
-        address.tap(); address.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Gesture fixture".count))
     }
 
     private func button(_ labels: [String]) -> XCUIElement {
