@@ -24,7 +24,7 @@ def packaged_info():
     icons = {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon"},
              "CFBundleAlternateIcons": {name: {"CFBundleIconName": name} for name in verify_ipa.ALTERNATES}}
     return {"CFBundleIdentifier": "ru.atma.browser", "CFBundleName": "ATMA", "CFBundleDisplayName": "ATMA",
-            "CFBundleExecutable": "ATMA", "CFBundleShortVersionString": "1.0.0", "CFBundleVersion": "7",
+            "CFBundleExecutable": "ATMA", "CFBundleShortVersionString": verify_ipa.MARKETING_VERSION, "CFBundleVersion": "7",
             "MinimumOSVersion": "17.0", "UIDeviceFamily": [1, 2],
             "UIBackgroundModes": ["audio"],
             "CFBundleIcons": icons, "CFBundleIcons~ipad": copy.deepcopy(icons),

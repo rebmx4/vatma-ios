@@ -8,13 +8,15 @@ import zipfile
 from app_identity import BUNDLE_ID
 
 ROOT = Path(__file__).resolve().parents[1]
+PROJECT_SETTINGS = json.loads((ROOT / "project.yml").read_text(encoding="utf-8"))["settings"]["base"]
+MARKETING_VERSION = PROJECT_SETTINGS["MARKETING_VERSION"]
 ALTERNATES = {f"AppIconA1{i:02d}" for i in range(1, 11)}
 
 
 def validate_info(info, expected_build):
     expected = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "ATMA",
                 "CFBundleDisplayName": "ATMA", "CFBundleExecutable": "ATMA",
-                "CFBundleShortVersionString": "1.0.0", "CFBundleVersion": str(expected_build)}
+                "CFBundleShortVersionString": MARKETING_VERSION, "CFBundleVersion": str(expected_build)}
     for key, value in expected.items():
         if info.get(key) != value:
             raise ValueError(f"Unexpected application {key}")
@@ -81,7 +83,8 @@ def verify(path, expected_build, root=ROOT):
             raise ValueError("Package contains an unverified or missing browser resource: "
                              f"extra={extra[:8]} missing={missing[:8]}")
         return {"status": "passed", "scope": "IPA structure, identity, icons and bundled source resources",
-                "app": "ATMA.app", "build": str(expected_build), "verified_resource_count": count,
+                "app": "ATMA.app", "version": MARKETING_VERSION, "build": str(expected_build),
+                "verified_resource_count": count,
                 "codesign": "verified separately by macOS CI"}
 
 
