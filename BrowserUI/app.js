@@ -429,7 +429,10 @@ function createItem(app, parentId = null, index = 0, scope='public') {
     tile.innerHTML = brand(app);
     paintShortcutIcon(tile,app,scope);
   }
-  tile.addEventListener('click', () => { if (Date.now() >= suppressClickUntil) activate(app,scope); });
+  // Pointer taps are handled by the gesture even if the grid replaces this button.
+  tile.addEventListener('click', event => {
+    if (event.detail === 0 && Date.now() >= suppressClickUntil) activate(app,scope);
+  });
   item.addEventListener('pointerdown', event => {if(event.target.closest?.('.app-remove'))return;beginGesture(event, app, parentId,scope);});
   item.addEventListener('contextmenu', event => event.preventDefault());
   tile.addEventListener('dragstart', event => event.preventDefault());
@@ -548,7 +551,7 @@ $('apps').addEventListener('pointerup',event=>{
 });
 function beginGesture(event, app, parentId,scope='public') {
   if (event.button !== 0 || gesture) return;
-  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft };
+  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')) };
   if (editing) { event.preventDefault(); capturePointer(current); }
   current.hold = setTimeout(() => {
     if (gesture !== current) return;
@@ -676,8 +679,13 @@ async function endGesture(event, cancelled = false) {
     if (result.folderId) openFolder(result.folderId,current.scope);
   } else {
     gesture=null;
+    const shortTap = current.onTile && Date.now() >= suppressClickUntil
+      && Math.hypot(event.clientX-current.x, event.clientY-current.y)<=7;
     if (current.held || current.wasEditing) suppressClickUntil=Date.now()+350;
-    if (!cancelled && current.wasEditing && !current.held) { const app=findEntry(poolFor(current.scope),current.id)?.entry; if(app) activate(app,current.scope); }
+    if (!cancelled && !current.held && (current.wasEditing || shortTap)) {
+      const app=findEntry(poolFor(current.scope),current.id)?.entry;
+      if(app) activate(app,current.scope);
+    }
   }
 }
 document.addEventListener('pointerup', event=>endGesture(event));
