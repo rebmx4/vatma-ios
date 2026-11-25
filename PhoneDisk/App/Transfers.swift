@@ -129,10 +129,15 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func recover() {
         Task { @MainActor in
             await restoreTasks()
+            await resumable.reconcileDownloadSessions()
             for job in jobs where job.asset == nil && !job.isFinished && !job.isStopped && !active.contains(job.id) {
                 start(job.id)
             }
         }
+    }
+
+    func moveDownloadsToBackground() {
+        Task { @MainActor in await resumable.reconcileDownloadSessions() }
     }
 
     @MainActor func refreshQueue() async {

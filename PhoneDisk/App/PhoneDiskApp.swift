@@ -31,7 +31,10 @@ struct PhoneDiskApp: App {
                 }
                 .onChange(of:phase) { _, state in
                     if state == .active { transfers.recover(); Task { try? await transfers.scan() } }
-                    if state == .background { Transfers.schedule() }
+                    if state == .background {
+                        transfers.moveDownloadsToBackground()
+                        Transfers.schedule()
+                    }
                 }
         }
     }

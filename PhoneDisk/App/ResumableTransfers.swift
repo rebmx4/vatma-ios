@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import OSLog
+import UIKit
 
 struct TransferReading {
     var confirmed: Int64
@@ -32,6 +33,16 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         }
     }
 
+    private struct TaskKey: Hashable {
+        let session: ObjectIdentifier
+        let task: Int
+
+        init(_ session: URLSession, _ task: URLSessionTask) {
+            self.session = ObjectIdentifier(session)
+            self.task = task.taskIdentifier
+        }
+    }
+
     private let directory: URL
     private var openLedger: TransferLedger?
     private var ledger: TransferLedger? {
@@ -41,6 +52,8 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     private let routes = DiskRoutes.shared
     private let log = Logger(subsystem:Bundle.main.bundleIdentifier ?? "ru.atma.phonedisk",category:"Transfers")
     private var sessions: [DiskRoute:URLSession] = [:]
+    private var foregroundDownloads: [DiskRoute:URLSession] = [:]
+    private var handoffs = Set<TaskKey>()
     private var activeIDs = Set<String>()
     private var completions: [String:() -> Void] = [:]
     private var ended = Set<String>()
@@ -81,6 +94,37 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         return session
     }
 
+    @MainActor private func downloadSession(_ route: DiskRoute) -> URLSession {
+        guard UIApplication.shared.applicationState == .active else { return background(route) }
+        if let session = foregroundDownloads[route] { return session }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.proxyConfigurations = route.proxy
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 60
+        let session = URLSession(configuration:configuration,delegate:self,delegateQueue:.main)
+        foregroundDownloads[route] = session
+        return session
+    }
+
+    private func route(for session: URLSession) -> DiskRoute? {
+        if let identifier = session.configuration.identifier { return DiskRoute.restore(identifier) }
+        return foregroundDownloads.first(where:{$0.value === session})?.key
+    }
+
+    @MainActor func reconcileDownloadSessions() async {
+        let inForeground = UIApplication.shared.applicationState == .active
+        let previous = inForeground ? sessions : foregroundDownloads
+        for session in previous.values {
+            for task in await session.allTasks {
+                guard (UIApplication.shared.applicationState == .active) == inForeground else { return }
+                guard task is URLSessionDownloadTask, task.state == .running || task.state == .suspended,
+                      let slice = Slice(task), isRunnable?(slice.id) != false,
+                      handoffs.insert(TaskKey(session,task)).inserted else { continue }
+                task.cancel()
+            }
+        }
+    }
+
     func recover() async -> Set<String> {
         for identifier in UserDefaults.standard.stringArray(forKey:"phone-disk-transfer-routes") ?? [] {
             if let route = DiskRoute.restore(identifier) { _ = background(route) }
@@ -110,13 +154,13 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     func switchRoute(to route: DiskRoute) {
-        for (previous,session) in sessions where previous != route {
+        for (previous,session) in Array(sessions) + Array(foregroundDownloads) where previous != route {
             session.getAllTasks { tasks in tasks.forEach { $0.cancel() } }
         }
     }
 
     @MainActor func cancel(_ id: String) async {
-        for session in Array(sessions.values) {
+        for session in Array(sessions.values) + Array(foregroundDownloads.values) {
             for task in await session.allTasks where Slice(task)?.id == id {
                 task.cancel()
             }
@@ -315,7 +359,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         guard isRunnable?(job.id) != false else { throw CancellationError() }
         request.setValue("bytes=\(receipt.confirmed)-\(min(size,receipt.confirmed + receipt.partSize)-1)",forHTTPHeaderField:"Range")
         request.setValue(etag,forHTTPHeaderField:"If-Range")
-        startTask(background(route).downloadTask(with:request),job.id,receipt.confirmed)
+        startTask(downloadSession(route).downloadTask(with:request),job.id,receipt.confirmed)
         return false
     }
 
@@ -334,7 +378,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     private func speed(_ session: URLSession,_ task: URLSessionTask,_ bytes: Int64) {
         guard let slice = Slice(task), isRunnable?(slice.id) != false,
               let value = speeds[slice.id],let receipt = try? ledger?.read(slice.id),
-              let identifier = session.configuration.identifier,let route = DiskRoute.restore(identifier) else { return }
+              let route = route(for:session) else { return }
         let now = ProcessInfo.processInfo.systemUptime, elapsed = now - value.0
         if elapsed < 0.4 { return }
         let measured = Double(max(0,bytes - value.1)) / elapsed
@@ -350,7 +394,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
                     totalBytesWritten: Int64,totalBytesExpectedToWrite: Int64) { speed(session,downloadTask,totalBytesWritten) }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        guard let identifier = session.configuration.identifier, let route = DiskRoute.restore(identifier),
+        guard let route = route(for:session),
               let response = task.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { return }
         let bytes = max(task.countOfBytesSent,task.countOfBytesReceived)
         routes.record(route,bytes:bytes,duration:metrics.taskInterval.duration)
@@ -379,7 +423,9 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let slice = Slice(task), let identifier = session.configuration.identifier else { return }
+        guard let slice = Slice(task) else { return }
+        let identifier = session.configuration.identifier
+        let handoff = handoffs.remove(TaskKey(session,task)) != nil
         activeIDs.remove(slice.id)
         speeds.removeValue(forKey:slice.id)
         let savedError = downloadErrors.removeValue(forKey:slice.id)
@@ -389,15 +435,18 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
             if reply.statusCode == 401 { DiskDeviceKey.clear(task.originalRequest?.value(forHTTPHeaderField:"Authorization").map { String($0.dropFirst(7)) }) }
             result = DiskFailure.response(reply.statusCode)
         }
-        if let error = error as? URLError, isRunnable?(slice.id) != false {
+        if handoff, (error as? URLError)?.code == .cancelled { result = nil }
+        if let error = error as? URLError, error.code != .cancelled, isRunnable?(slice.id) != false {
             log.notice("Network transfer ended with code \(error.code.rawValue) and background cancellation \(String(describing:error.backgroundTaskCancelledReason),privacy:.public)")
-            if let route = DiskRoute.restore(identifier) { routes.failed(route) }
+            if let route = route(for:session) { routes.failed(route) }
         }
-        work[identifier,default:0] += 1
+        if let identifier { work[identifier,default:0] += 1 }
         Task { @MainActor in
             await resume?(slice.id,result)
-            work[identifier,default:0] -= 1
-            finishEvents(identifier)
+            if let identifier {
+                work[identifier,default:0] -= 1
+                finishEvents(identifier)
+            }
         }
     }
 

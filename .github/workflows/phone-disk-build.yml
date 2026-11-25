@@ -70,7 +70,7 @@ jobs:
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
           xcrun simctl keychain "$device" add-root-cert "$smoke/ca.crt"
-          python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" &
+          python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" --v2-downloads &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
           curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/ > /dev/null
