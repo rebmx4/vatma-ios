@@ -105,11 +105,18 @@ final class TransferSmoke: XCTestCase {
             let contiguous: Bool
             let failedOnce: Bool
         }
-        func snapshot(_ path: String = "parallel-state") async throws -> Snapshot {
-            let url = try XCTUnwrap(URL(string: "https://127.0.0.1:18878/" + path))
-            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
-            let (data, _) = try await URLSession.shared.data(for: request)
-            return try JSONDecoder().decode(Snapshot.self, from: data)
+        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
+                                                    appropriateFor: nil, create: true)
+        let control = documents.appendingPathComponent("PhoneDiskRangeCheck", isDirectory: true)
+        try FileManager.default.createDirectory(at: control, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: control) }
+        try Data().write(to: control.appendingPathComponent("ready"), options: .atomic)
+        func snapshot() throws -> Snapshot {
+            let location = control.appendingPathComponent("state.json")
+            guard FileManager.default.fileExists(atPath: location.path) else {
+                return Snapshot(requested: 0, sent: 0, contiguous: false, failedOnce: false)
+            }
+            return try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: location))
         }
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -117,20 +124,20 @@ final class TransferSmoke: XCTestCase {
         app.launchEnvironment["PHONE_DISK_PARALLEL_FIXTURE"] = "1"
         app.launch()
         let deadline = Date().addingTimeInterval(60)
-        var status = try await snapshot()
+        var status = try snapshot()
         while status.requested == 0 && Date() < deadline {
             try await Task.sleep(for: .milliseconds(300))
-            status = try await snapshot()
+            status = try snapshot()
         }
         XCTAssertGreaterThan(status.requested, 0, app.debugDescription)
         XCTAssertEqual(status.sent, 0)
         XCUIDevice.shared.press(.home)
         XCTAssertNotEqual(app.state, .runningForeground)
-        _ = try await snapshot("parallel-release")
+        try Data().write(to: control.appendingPathComponent("home"), options: .atomic)
         let finish = Date().addingTimeInterval(100)
         repeat {
             try await Task.sleep(for: .milliseconds(350))
-            status = try await snapshot()
+            status = try snapshot()
         } while status.sent < 10 && Date() < finish
         XCTAssertNotEqual(app.state, .runningForeground)
         XCTAssertEqual(status.requested, 10)

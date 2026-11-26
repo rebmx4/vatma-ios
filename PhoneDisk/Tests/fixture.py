@@ -14,7 +14,7 @@ parser.add_argument("output", type=Path)
 parser.add_argument("certificate", type=Path)
 parser.add_argument("key", type=Path)
 parser.add_argument("--v2-downloads", action="store_true")
-parser.add_argument("--parallel-downloads", action="store_true")
+parser.add_argument("--parallel-downloads", type=Path, metavar="SIMULATOR_APP_CONTAINERS")
 arguments=parser.parse_args()
 if arguments.parallel_downloads:
     arguments.v2_downloads = True
@@ -35,6 +35,37 @@ release_ranges = threading.Event()
 requested_ranges = set()
 sent_ranges = set()
 failed_last_range = False
+
+def publish_range_state(containers):
+    # XCTest controls the fixture through its own simulator data container. Only
+    # real file transfers use the simulator network while the app is on Home.
+    while True:
+        ready = next(containers.glob("*/Documents/PhoneDiskRangeCheck/ready"), None)
+        if ready:
+            break
+        time.sleep(0.15)
+    control = ready.parent
+    print("Range fixture connected to the UI test", flush=True)
+    previous = None
+    while ready.exists():
+        if (control / "home").is_file():
+            release_ranges.set()
+        with slow_requests_lock:
+            spans = sorted(sent_ranges)
+            contiguous = bool(spans) and spans[0][0] == 0 and spans[-1][1] == len(range_file) and all(
+                a[1] == b[0] for a, b in zip(spans, spans[1:]))
+            snapshot = {"requested": len(requested_ranges), "sent": len(spans),
+                        "contiguous": contiguous, "failedOnce": failed_last_range}
+        if snapshot != previous:
+            tmp = control / "state.tmp"
+            try:
+                tmp.write_text(json.dumps(snapshot), encoding="utf-8")
+                tmp.replace(control / "state.json")
+            except FileNotFoundError:
+                return
+            print(f"Range fixture state: {snapshot}", flush=True)
+            previous = snapshot
+        time.sleep(0.15)
 
 class Fixture(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
@@ -121,17 +152,6 @@ class Fixture(BaseHTTPRequestHandler):
     def do_GET(self):
         url=urlsplit(self.path)
         params=parse_qs(url.query)
-        if arguments.parallel_downloads and url.path in ("/parallel-state", "/parallel-release"):
-            if url.path == "/parallel-release":
-                release_ranges.set()
-            with slow_requests_lock:
-                spans = sorted(sent_ranges)
-                contiguous = bool(spans) and spans[0][0] == 0 and spans[-1][1] == len(range_file) and all(
-                    a[1] == b[0] for a,b in zip(spans, spans[1:]))
-                snapshot = {"requested": len(requested_ranges), "sent": len(spans),
-                            "contiguous": contiguous, "failedOnce": failed_last_range}
-            self.reply(200,json.dumps(snapshot).encode())
-            return
         if url.path=="/":
             html = (
                 '<meta name="viewport" content="width=device-width">'
@@ -243,5 +263,7 @@ class FixtureServer(ThreadingHTTPServer):
 server=FixtureServer(("127.0.0.1",18878),Fixture)
 tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 tls.load_cert_chain(arguments.certificate,arguments.key)
-server.socket=tls.wrap_socket(server.socket,server_side=True)
+server.socket=tls.wrap_socket(server.socket,server_side=True,do_handshake_on_connect=False)
+if arguments.parallel_downloads:
+    threading.Thread(target=publish_range_state, args=(arguments.parallel_downloads,), daemon=True).start()
 server.serve_forever()
