@@ -247,10 +247,7 @@ final class BrowserRenderingTests: XCTestCase {
     func testManualShortcutRepairsMissingIconAndCollapsesSingletonFolder() async throws {
         let url = try await startFixture(video: false, largeMetadata: true).appendingPathComponent("manifest-only").absoluteString
         try await waitForUI()
-        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
-        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
+        try await openManualShortcutEditor()
         _ = try await script("const form=document.getElementById('app-form'); form.elements.name.value='Manual icon fixture'; form.elements.url.value=url; form.requestSubmit(); return true;", in: controller.ui, arguments: ["url": url])
         let saved = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Manual icon fixture')"
         try await waitFor("\(saved)?.iconUrl?.startsWith('data:image/png;base64,')", in: controller.ui)
@@ -269,10 +266,7 @@ final class BrowserRenderingTests: XCTestCase {
     func testShortcutIconChoicePersistsAndCanReturnToOriginalWebsiteArtwork() async throws {
         let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
         try await waitForUI()
-        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
-        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
+        try await openManualShortcutEditor()
         _ = try await script("const form=document.getElementById('app-form');form.elements.name.value='Custom icon fixture';form.elements.url.value=url;form.querySelector('[value=chat]').checked=true;form.requestSubmit();return true;", in: controller.ui, arguments: ["url": url])
         let saved = "JSON.parse(localStorage.getItem('atma-preview-apps')).find(app=>app.name==='Custom icon fixture')"
         try await waitFor("\(saved)?.iconStyle==='chat' && document.getElementById('overlay').hidden", in: controller.ui)
@@ -307,6 +301,15 @@ final class BrowserRenderingTests: XCTestCase {
         let site = try XCTUnwrap(value as? [String: Any])
         XCTAssertEqual(site["url"] as? String, destination)
         XCTAssertEqual(site["profileId"] as? String, controller.model.active.profileId)
+    }
+
+    private func openManualShortcutEditor() async throws {
+        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('desktop-menu-settings')", in: controller.ui)
+        _ = try await script("document.getElementById('desktop-menu-settings').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
+        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
     }
 
     private func openVideo() async throws -> WKWebView {

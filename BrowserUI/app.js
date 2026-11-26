@@ -1040,9 +1040,11 @@ function renderDesktopMenu() {
     ['История','left',openBrowserHistory],
     [editing?'Завершить редактирование':'Изменить приложения','edit',async()=>{await setPanel(null);setEditing(!editing);}],
     ['Оформление и язык','image',()=>setPanel('appearance')],
-    ['Настройки','dots',()=>setPanel('settings')],
   ];
   for (const [label,glyph,handler] of entries) root.append(settingButton(label,glyph,handler));
+  const settings=settingButton('Настройки','dots',()=>setPanel('settings'));
+  settings.id='desktop-menu-settings';
+  root.append(settings);
 }
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
