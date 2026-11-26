@@ -516,12 +516,33 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func resumePart(_ id: String, _ error: Error?) async {
-        markInactive(id)
-        guard let job = jobs.first(where:{ $0.id == id }),!job.isFinished,!job.isStopped else { return }
-        if job.asset != nil && !defaults.bool(forKey:"photo-auto") {
-            update(id){$0.phase="Автокопии приостановлены"}
+        guard let job = jobs.first(where:{ $0.id == id }), !job.isFinished, !job.isStopped else {
+            markInactive(id)
             return
         }
+        if job.asset != nil, let destination = job.destination {
+            active.insert(id)
+            let route = DiskRoutes.shared.transferRoute
+            do {
+                let enabled = defaults.bool(forKey:"photo-auto")
+                let settings = enabled ? try await readBackupSettings(route) : [:]
+                if !enabled || !backupSettingsAllow(destination,settings:settings) {
+                    let complete = try await resumable.uploadAlreadyFinished(job,route:route)
+                    guard isRunnable(id) else { markInactive(id); return }
+                    if complete { done(id) }
+                    else {
+                        markInactive(id)
+                        update(id){$0.phase="Автокопии приостановлены"}
+                    }
+                    return
+                }
+            } catch {
+                waitForTransfer(id,error)
+                return
+            }
+        }
+        markInactive(id)
+        guard isRunnable(id) else { return }
         if let error { waitForTransfer(id,error); return }
         retries.removeValue(forKey:id)
         await beginTransfer(id)
@@ -548,8 +569,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             do { try await Task.sleep(for:.seconds(min(30,1 << number))) } catch { return }
             guard let self else { return }
             self.retrying.removeValue(forKey:id)
-            guard self.jobs.first(where:{ $0.id == id })?.asset == nil || self.defaults.bool(forKey:"photo-auto") else { return }
-            await self.beginTransfer(id)
+            if self.jobs.first(where:{ $0.id == id })?.asset != nil {
+                await self.resumePart(id,nil)
+            } else {
+                await self.beginTransfer(id)
+            }
         }
     }
 
@@ -679,6 +703,17 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         try? await scan()
     }
 
+    @MainActor private func readBackupSettings(_ route: DiskRoute) async throws -> [String:Any] {
+        let data: Data
+        if try await DiskRoutes.shared.capabilities(route) != nil {
+            data = try await resumable.backupSettings(route)
+        } else {
+            data = try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/autocopies.json"])))
+        }
+        guard let settings = try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw DiskFailure.rejected }
+        return settings
+    }
+
     @MainActor func scan(prepareOriginals:Bool = true) async throws {
         guard defaults.bool(forKey:"photo-auto") else { return }
         let access=PHPhotoLibrary.authorizationStatus(for:.readWrite)
@@ -698,13 +733,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let revision=backupSettingsRevision
         await restoreTasks()
         let route = DiskRoutes.shared.transferRoute
-        let data: Data
-        if try await DiskRoutes.shared.capabilities(route) != nil {
-            data = try await resumable.backupSettings(route)
-        } else {
-            data = try await checked(request(Self.address("/api/resources/download",["source":"settings","file":"/autocopies.json"])))
-        }
-        guard let settings=try JSONSerialization.jsonObject(with:data) as? [String:Any] else { throw DiskFailure.rejected }
+        let settings = try await readBackupSettings(route)
 
         func destination(for type:String, folder:String) -> Destination? {
             guard let preference=settings[type] as? [String:Any], preference["enabled"] as? Bool == true,

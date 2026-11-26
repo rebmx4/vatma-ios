@@ -255,6 +255,13 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         return data
     }
 
+    @MainActor func uploadAlreadyFinished(_ job: DiskJob,route: DiskRoute) async throws -> Bool {
+        guard let receipt = try ledger?.read(job.id), let upload = receipt.upload else { return false }
+        let (data,_) = try await control("/api/v2/uploads/" + upload,"GET",route:route)
+        let manifest = try JSONDecoder().decode(UploadManifest.self,from:data)
+        return manifest.id == upload && manifest.size == receipt.size && manifest.received == receipt.size && manifest.complete
+    }
+
     private static func readFile(_ input: URL, start: Int64 = 0, length: Int64? = nil, output: URL? = nil) throws -> (Int64,String) {
         let reader = try FileHandle(forReadingFrom:input)
         defer { try? reader.close() }

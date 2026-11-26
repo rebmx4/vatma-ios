@@ -63,3 +63,19 @@ func backupAssetPredicate(includeVideo: Bool, photoCutoff: Date?) -> NSPredicate
     }
     return NSCompoundPredicate(orPredicateWithSubpredicates: choices)
 }
+
+
+// Existing jobs stay bound to the original volume. A different current disk
+// only applies to newly discovered assets for that media type.
+func backupSettingsAllow(_ destination: Destination, settings: [String:Any]) -> Bool {
+    let type: String
+    switch destination.path {
+    case "/Фото": type = "photo"
+    case "/Видео": type = "video"
+    default: return false
+    }
+    guard let preference = settings[type] as? [String:Any], preference["enabled"] as? Bool == true,
+          let disk = (preference["disk"] as? String)?.lowercased(), ["c","d","e"].contains(disk)
+    else { return false }
+    return destination.source == "backup-" + disk
+}
