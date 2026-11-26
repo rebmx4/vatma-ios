@@ -15,12 +15,13 @@ final class StoreScreenshotsTests: XCTestCase {
 
     func testCaptureCurrentBrowserForStore() throws {
         let home = button(["Рабочий стол", "Home"])
-        XCTAssertTrue(home.waitForExistence(timeout: 20))
-        home.tap()
+        let desktopMenu = button(["Меню браузера", "Browser menu"])
+        XCTAssertTrue(desktopMenu.waitForExistence(timeout: 20))
         let firstShortcut = button(["Открыть ВКонтакте", "Open ВКонтакте"])
         waitUntilUsable(firstShortcut, "Home must show actual shortcuts before capture")
         capture("store-ru-01-home")
 
+        desktopMenu.tap()
         button(["Настройки", "Settings"]).tap()
         let privacy = button(["Политика конфиденциальности", "Privacy Policy"])
         waitUntilUsable(privacy, "Privacy policy must be reachable from Settings")
@@ -31,6 +32,7 @@ final class StoreScreenshotsTests: XCTestCase {
         capture("store-ru-privacy")
         closePanel()
 
+        desktopMenu.tap()
         button(["Настройки", "Settings"]).tap()
         let appearance = button(["Оформление", "Appearance"])
         waitUntilUsable(appearance, "Appearance settings must be usable")
@@ -63,7 +65,9 @@ final class StoreScreenshotsTests: XCTestCase {
         let currentTab = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Открыть вкладку:", "Open tab:")).firstMatch
         waitUntilUsable(currentTab, "Tab cards must be rendered before capture")
         capture("store-ru-03-tabs")
-        closePanel()
+        let supportTab = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND (label BEGINSWITH %@ OR label BEGINSWITH %@)", "Поддержка", "Открыть вкладку:", "Open tab:")).firstMatch
+        waitUntilUsable(supportTab, "Select the support tab to resume browsing")
+        supportTab.tap()
         let emailLink = supportSite.links["a1238585@bk.ru"]
         XCTAssertTrue(emailLink.waitForExistence(timeout: 10))
         for _ in 0..<8 {
@@ -95,8 +99,10 @@ final class StoreScreenshotsTests: XCTestCase {
 
     private func openWebsite(_ path: String, heading: String) throws -> XCUIElement {
         let home = button(["Рабочий стол", "Home"])
-        waitUntilUsable(home, "Return to the full browser controls before opening a tab")
-        home.tap()
+        if home.isHittable { home.tap() }
+        let desktopMenu = button(["Меню браузера", "Browser menu"])
+        waitUntilUsable(desktopMenu, "Home menu must be available")
+        desktopMenu.tap()
         let newTab = button(["Новая вкладка", "New tab"])
         waitUntilUsable(newTab, "New tab must be available")
         newTab.tap()

@@ -20,7 +20,8 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
     }
 
     private func dispatch(_ action: String, body: [String: Any], reply: @escaping (Any?, String?) -> Void) throws {
-        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close", "private-device"].contains(action), mode == "browse", panel == nil {
+        if ["home", "panel", "tabs/new", "tabs/select", "tabs/close", "tabs/close-many", "tabs/duplicate", "private-device"].contains(action),
+           mode == "browse", panel == nil {
             captureCurrentPreview { [weak self] in
                 guard let self else { reply(nil, "Browser closed."); return }
                 do { try self.perform(action, body: body, reply: reply) }
@@ -94,7 +95,16 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             panel = body["panel"] as? String; changed()
         case "tabs/new":
             guard body["privateBrowsing"] == nil || body["privateBrowsing"] is Bool else { throw BrowserFailure.invalid("Invalid private mode.") }
-            newTab(privateBrowsing: body["privateBrowsing"] as? Bool == true)
+            let privateBrowsing = body["privateBrowsing"] as? Bool == true
+            let sessionID: UUID?
+            if body["sourceTabId"] != nil {
+                let id = try string("sourceTabId", body)
+                guard privateBrowsing, let source = model.tabs.first(where: { $0.id == id && $0.isPrivate }) else {
+                    throw BrowserFailure.invalid("Unknown private tab.")
+                }
+                sessionID = model.privateSessionID(for: source)
+            } else { sessionID = nil }
+            newTab(privateBrowsing: privateBrowsing, sessionID: sessionID)
         case "tabs/private/close": closePrivateTabs()
         case "private-device":
             guard body["separateSession"] == nil || body["separateSession"] is Bool else {
@@ -103,9 +113,35 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             try changePrivateDevice(try string("profileId", body), separateSession: body["separateSession"] as? Bool == true)
         case "tabs/select": try selectTab(try string("tabId", body))
         case "tabs/close": try closeTab(try string("tabId", body))
+        case "tabs/close-many":
+            guard let ids = body["tabIds"] as? [String], !ids.isEmpty,
+                  Set(ids).isSubset(of: Set(model.tabs.map(\.id))) else {
+                throw BrowserFailure.invalid("Unknown tabs.")
+            }
+            try closeTabs(Set(ids))
+        case "tabs/duplicate": try duplicateOverviewTab(try string("tabId", body))
+        case "tabs/history":
+            reply(["entries": overviewHistory().map(\.json)], nil)
+            return
+        case "tabs/history/open":
+            try openOverviewHistory(tabID: try string("tabId", body), url: try string("url", body))
         case "preferences": try preferences(body)
         case "back": currentRenderer?.goBack()
         case "forward": currentRenderer?.goForward()
+        case "share-page":
+            guard mode == "browse", presentedViewController == nil,
+                  let page = currentRenderer, let url = page.url,
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                throw BrowserFailure.invalid("Не удалось поделиться ссылкой")
+            }
+            let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let popover = activity.popoverPresentationController {
+                popover.sourceView = ui
+                popover.sourceRect = CGRect(x: ui.bounds.midX, y: ui.bounds.maxY - 1, width: 1, height: 1)
+            }
+            present(activity, animated: true)
+            reply(true, nil)
+            return
         case "refresh":
             if let currentRenderer { currentRenderer.reload() }
             else if !model.active.url.isEmpty { try selectTab(model.activeTabId) }
@@ -194,7 +230,8 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         captureCurrentPreview { [weak self] in
             guard let self else { reply(nil, "Browser closed."); return }
             let result = self.model.tabs.reduce(into: [String: String]()) { result, tab in
-                guard !tab.isPrivate, let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
+                guard !tab.isPrivate, !tab.isPrivateDesktop,
+                      let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
                       let renderer = self.renderers[tab.id], preview.renderer == ObjectIdentifier(renderer) else { return }
                 result[tab.id] = preview.source
             }

@@ -1,0 +1,88 @@
+/* Shared controls for the bundled ATMA interface. */
+body[data-theme=dark] {
+  --chrome-base:#000; --chrome-text:#f2f2f2; --chrome-muted:#b8b8b8;
+  --chrome-glass:rgba(39,39,39,.84); --chrome-sheet:#292929c9;
+  --chrome-rim:inset 0 1px 3px #ffffff30,inset 0 -1px 3px #ffffff12,0 3px 10px #0004;
+  --chrome-input:var(--chrome-glass); --chrome-input-focus:#333333ed;
+  --chrome-accent:#bcbfff; --chrome-active:#ffffff1f;
+}
+body[data-theme=light] {
+  --chrome-base:#f4f4f4; --chrome-text:#222; --chrome-muted:#555;
+  --chrome-glass:#fafafae0; --chrome-sheet:#f6f6f6d9;
+  --chrome-rim:inset 0 1px 3px #fffe,inset 0 -1px 3px #0001,0 3px 10px #0002;
+  --chrome-input:#3a3a3ec2; --chrome-input-focus:#343438cc;
+  --chrome-accent:#393bb0; --chrome-active:#5358d920;
+}
+body[data-theme][data-surface]:is([data-surface=blank],[data-surface=incognito]),
+body[data-theme][data-surface=incognito] .incognito-start,
+body[data-theme]:not([data-surface=home]) .browser-bar {
+  color:var(--chrome-text); background:var(--chrome-base);
+}
+body[data-theme] .address-entry, body[data-theme] #incognito-form {
+  background:var(--chrome-input); color:#fcfcfd; border:0; border-radius:999px;
+  box-shadow:var(--chrome-rim); -webkit-backdrop-filter:blur(16px) saturate(1.15); backdrop-filter:blur(16px) saturate(1.15);
+}
+body[data-theme] :is(.address-entry,#incognito-form):focus-within { background:var(--chrome-input-focus) }
+body[data-theme] :is(.address-form input,#incognito-address,.search-symbol) { color:#fcfcfd }
+body[data-theme] :is(.address-form input,#incognito-address)::placeholder { color:#f2f2f4c9 }
+body[data-theme] :is(.address-go,#incognito-form button[type=submit]) { color:#fff; background:#ffffff20 }
+body[data-theme] #incognito-form .address-clear { color:inherit; background:transparent }
+body[data-theme] #pin-site { order:1 }
+.browser-nav { grid-template-columns:repeat(6,minmax(0,1fr)) }
+.browser-nav #share-page { grid-column:2 }
+body[data-web-app=true] #share-page { display:grid; width:36px; height:36px }
+.browser-nav [hidden],body[data-web-app=true] .browser-nav [hidden] { display:none!important }
+body:not([data-surface=home]) .browser-nav #settings,
+body[data-web-app=true] .toolbar-message-badge { display:none }
+body[data-theme] .browser-nav :is(.nav-button,#go-home) { color:var(--chrome-text) }
+body[data-theme] .home-indicator { display:none }
+body[data-theme][data-surface=home] { --bar-height:calc(60px + env(safe-area-inset-bottom,0px)) }
+body[data-theme][data-mode=home][data-surface=home] .browser-bar {
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  padding:5px 13px max(5px,env(safe-area-inset-bottom,0px)); background:transparent;
+}
+body[data-surface=home] .browser-bar .address-form { flex:1; min-width:0; margin:0; height:44px }
+body[data-surface=home] .address-entry { height:44px }
+body[data-surface=home] .browser-nav { display:contents }
+body[data-surface=home] .browser-nav > button { display:none }
+body[data-surface=home] #go-home { display:none }
+body[data-surface=home] .browser-nav :is(#tabs-button,#settings,#lock-private:not([hidden])),
+body[data-theme] #incognito-device {
+  display:inline-grid; place-items:center; color:var(--chrome-text); background:var(--chrome-glass);
+  border-radius:999px; box-shadow:var(--chrome-rim); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px);
+}
+body[data-desktop-search] .browser-nav, body[data-surface=home]:has(#address:focus) .browser-nav { display:none }
+body[data-theme] .incognito-mark { display:block; margin:10px auto 12px; width:44px; height:44px; color:var(--chrome-muted) }
+.incognito-mark svg { width:100%; height:100% }
+body[data-theme] .incognito-card h1 { font-size:calc(29px * var(--text-scale,1)); letter-spacing:-.03em }
+body[data-theme] .incognito-card p { max-width:310px; margin:14px auto 0; color:var(--chrome-muted) }
+body[data-theme] #end-incognito { color:var(--chrome-accent); margin-top:12px; min-height:44px }
+body[data-theme] #incognito-device { display:inline-flex; min-height:44px; padding:8px 16px }
+body[data-theme][data-mode=home]:is([data-surface=blank],[data-surface=incognito]) .browser-bar { background:var(--chrome-base) }
+body[data-theme] .overlay:not(.pin-overlay):not(.folder-overlay):not(.tabs-overlay) .sheet,
+body[data-theme] .settings-picker {
+  border:0; border-radius:29px; background:var(--chrome-sheet); color:var(--chrome-text);
+  box-shadow:var(--chrome-rim); -webkit-backdrop-filter:blur(28px) saturate(1.12); backdrop-filter:blur(28px) saturate(1.12);
+}
+body[data-theme] .overlay[data-panel=private-device] .sheet { max-width:400px; max-height:min(70dvh,550px); margin:12px auto }
+body[data-theme] .overlay:not(.pin-overlay):not(.folder-overlay):not(.tabs-overlay) .scrim {
+  background:#0004; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+}
+body[data-theme] .overlay[data-panel=private-device] .sheet { width:calc(100% - 24px) }
+body[data-theme] .overlay[data-panel=private-device] .sheet-header h1 { font-size:calc(17px * var(--text-scale,1)) }
+body[data-theme] .overlay[data-panel=desktop-menu] .sheet {
+  width:min(290px,calc(100% - 24px)); margin:12px 12px max(12px,env(safe-area-inset-bottom)) auto;
+}
+body[data-theme] .overlay[data-panel=desktop-menu] .setting-row { border:0; border-radius:14px; background:transparent; min-height:44px }
+body[data-theme] .overlay[data-panel=desktop-menu] .setting-row:active { background:var(--chrome-active) }
+body[data-theme] #private-device-filter { border-radius:999px; color:var(--chrome-text); background:var(--chrome-glass) }
+body[data-theme] .overlay[data-panel=private-device] :is(.model-list,.model-row) { background:transparent; color:var(--chrome-text); border:0 }
+body[data-theme] .overlay[data-panel=private-device] .model-row.selected { background:var(--chrome-active); border-radius:14px }
+body[data-theme] .overlay[data-panel=private-device] .model-check { color:var(--chrome-accent) }
+@media (max-height:400px) {
+  body[data-surface=incognito]:has(#incognito-address:focus) .incognito-mark { display:none }
+}
+@media (prefers-reduced-transparency:reduce) {
+  body[data-theme=dark] { --chrome-glass:#272727; --chrome-sheet:#292929; --chrome-input:#272727 }
+  body[data-theme=light] { --chrome-glass:#fafafa; --chrome-sheet:#f6f6f6; --chrome-input:#4b4b4e }
+}

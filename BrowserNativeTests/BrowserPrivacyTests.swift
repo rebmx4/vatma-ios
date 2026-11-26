@@ -19,16 +19,22 @@ final class BrowserPrivacyTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = BrowserModel(defaults: defaults)
         let regular = BrowserTab(profileId: BrowserModel.actualProfile, url: "https://ordinary.example/")
-        let hidden = try privateTab()
+        var hidden = try privateTab()
+        hidden.profileId = "windows-chrome"
+        let privateSession = model.privateSessionID(for: hidden)
+        model.setPrivateProfileID(hidden.profileId, for: privateSession)
         model.tabs = [regular, hidden]; model.activeTabId = hidden.id
         model.save()
         let saved = try XCTUnwrap(defaults.data(forKey: "atma.native.session.v1"))
         let text = try XCTUnwrap(String(data: saved, encoding: .utf8))
         XCTAssertFalse(text.contains("private.example"), "Private addresses must not be written to session storage")
         XCTAssertFalse(text.contains(hidden.id), "The active private tab ID must not leak into persistent state")
+        XCTAssertFalse(text.contains(hidden.profileId))
+        XCTAssertFalse(text.contains(privateSession.uuidString))
         let restored = BrowserModel(defaults: defaults)
         XCTAssertEqual(restored.tabs.map(\.id), [regular.id])
         XCTAssertEqual(restored.activeTabId, regular.id)
+        XCTAssertEqual(restored.privateProfileID(for: privateSession), BrowserModel.actualProfile)
     }
 
     func testPrivateOnlySessionRestoresOneOrdinaryBlankTab() throws {

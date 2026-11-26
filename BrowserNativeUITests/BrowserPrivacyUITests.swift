@@ -9,10 +9,10 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app.launchArguments = ["-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU", "--atma-ui-diagnostics"]
         app.launch()
-        XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 60))
+        XCTAssertTrue(button(["Меню браузера", "Browser menu"]).waitForExistence(timeout: 60))
     }
 
-    func testIncognitoDesktopIconOpensWhiteSearchScreen() throws {
+    func testIncognitoDesktopIconOpensPrivateSearchScreen() throws {
         let incognito = button(["Открыть Инкогнито", "Open Incognito"])
         XCTAssertTrue(incognito.waitForExistence(timeout: 10)); incognito.tap()
         let input = app.textFields.matching(NSPredicate(format: "label IN %@", ["Поиск или адрес в инкогнито", "Search or address in Incognito"])).firstMatch
@@ -65,6 +65,7 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertTrue(ordinaryRemove.waitForExistence(timeout: 5))
         emptySpace.tap()
         XCTAssertTrue(ordinaryRemove.waitForNonExistence(timeout: 5))
+        button(["Меню браузера", "Browser menu"]).tap()
         button(["Настройки", "Settings"]).tap()
         let add = button(["Добавить веб-приложение", "Add web app"])
         XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()

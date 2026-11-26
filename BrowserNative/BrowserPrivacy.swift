@@ -17,6 +17,24 @@ extension BrowserController {
         mode = "home"; panel = nil; changed()
     }
 
+    func changePrivateDevice(_ id: String, separateSession: Bool = false) throws {
+        guard model.active.isPrivate else { throw BrowserFailure.invalid("Device choice is only available in Incognito.") }
+        guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown device choice.") }
+        let sessionID = separateSession ? UUID() : model.privateSessionID(for: model.active)
+        model.setPrivateProfileID(id, for: sessionID)
+        if separateSession {
+            newTab(privateBrowsing: true, sessionID: sessionID)
+            return
+        }
+        guard model.active.profileId != id else { return }
+        if currentRenderer != nil || !model.active.url.isEmpty {
+            newTab(privateBrowsing: true, sessionID: sessionID)
+            return
+        }
+        model.tabs[model.activeIndex].profileId = id
+        changed()
+    }
+
     func closePrivateTabs() {
         let ids = Set(model.tabs.filter { $0.isPrivate }.map(\.id))
         ids.forEach { id in

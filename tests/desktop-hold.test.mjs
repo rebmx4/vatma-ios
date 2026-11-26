@@ -7,7 +7,7 @@ function tileFixture({editing=true}={}){
  class Element{constructor(){this.dataset={};this.events=new Map();this.children=[];this.style={setProperty(){}};this.classList={toggle(){}};}setAttribute(){}addEventListener(name,handler){this.events.set(name,handler);}append(...children){this.children.push(...children);}}
  const app={id:'custom-image',name:'Saved website',type:'website'}, opened=[];
  const page={Element,document:{createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing,suppressClickUntil:0,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),
-  $:()=>({scrollLeft:0}),isFolder:()=>false,appLabel:app=>app.name,brand:()=>'',paintShortcutIcon(){},icon:()=>'',setTimeout:()=>1,navigator:{},shortcutMessageCount:()=>0,messageCounts:{},
+  $:()=>({scrollLeft:0}),isFolder:()=>false,usesTranslatedShortcutLabel:()=>false,appLabel:app=>app.name,brand:()=>'',paintShortcutIcon(){},icon:()=>'',setTimeout:()=>1,navigator:{},shortcutMessageCount:()=>0,messageCounts:{},
   poolFor:()=>[app],findEntry:(apps,id)=>({entry:apps.find(app=>app.id===id)}),activate:app=>opened.push(app.id),
   clearTimeout(){},clearHover(){},removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4})};
  vm.createContext(page);

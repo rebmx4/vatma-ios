@@ -33,20 +33,19 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         XCTAssertTrue(after?["local"] is NSNull)
     }
 
-    func testPrivateStartIsWhiteAndHomeReturnsToTheOrdinaryDesktop() async throws {
+    func testPrivateStartFollowsThemeAndHomeReturnsToTheOrdinaryDesktop() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         _ = try await fixture.start()
         _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
         try await fixture.wait("document.body.dataset.surface==='incognito'", in: fixture.controller.ui)
         let start = try await fixture.script("return {white:getComputedStyle(document.body).backgroundColor,title:document.querySelector('.incognito-card h1').textContent,input:!!document.getElementById('incognito-address'),device:!!document.getElementById('incognito-device')};", in: fixture.controller.ui) as? [String: Any]
-        XCTAssertEqual(start?["white"] as? String, "rgb(255, 255, 255)")
         XCTAssertEqual(start?["title"] as? String, "Инкогнито")
         XCTAssertEqual(start?["input"] as? Bool, true)
         XCTAssertEqual(start?["device"] as? Bool, true)
         for theme in ["dark", "light"] {
             let colors = try await fixture.script("document.body.dataset.theme=theme;document.body.dataset.wallpaper='solid';return {bar:getComputedStyle(document.getElementById('browser-bar')).backgroundColor,button:getComputedStyle(document.getElementById('tabs-button')).color};", in: fixture.controller.ui, arguments: ["theme": theme]) as? [String: Any]
-            XCTAssertEqual(colors?["bar"] as? String, "rgb(255, 255, 255)", theme + " private toolbar must stay white")
-            XCTAssertEqual(colors?["button"] as? String, "rgb(37, 43, 52)", theme + " private toolbar buttons must remain visible")
+            XCTAssertEqual(colors?["bar"] as? String, theme == "dark" ? "rgb(0, 0, 0)" : "rgb(244, 244, 244)")
+            XCTAssertEqual(colors?["button"] as? String, theme == "dark" ? "rgb(242, 242, 242)" : "rgb(34, 34, 34)")
         }
         _ = try await fixture.rpc("home")
         XCTAssertEqual(fixture.controller.state()["privateBrowsing"] as? Bool, false)
@@ -176,6 +175,94 @@ final class BrowserPrivateNavigationTests: XCTestCase {
                        (ordinaryIdentity?["dpr"] as? NSNumber)?.doubleValue)
     }
 
+    func testManualPrivateTabsUseTheLastExplicitDeviceChoiceInTheirSession() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        let root = try await fixture.start()
+        let controller = fixture.controller
+        let profile = try XCTUnwrap(controller.model.profile("windows-chrome"))
+        let userAgent = try XCTUnwrap(profile["userAgent"] as? String)
+        let privateTab = ["privateBrowsing": true]
+
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        _ = try await fixture.rpc("private-device", body: ["profileId": "windows-chrome"])
+        let firstID = controller.model.activeTabId
+        let sessionID = try XCTUnwrap(controller.model.active.privateSessionID)
+        let first = try await fixture.open(root)
+
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(controller.model.active.profileId, "windows-chrome")
+        XCTAssertEqual(controller.model.active.privateSessionID, sessionID)
+        let second = try await fixture.open(root, path: "b")
+        XCTAssertEqual(second.customUserAgent, userAgent)
+        XCTAssertEqual(second.configuration.defaultWebpagePreferences.preferredContentMode, .desktop)
+        XCTAssertTrue(second.configuration.websiteDataStore === first.configuration.websiteDataStore)
+
+        let secondID = controller.model.activeTabId
+        _ = try await fixture.rpc("private-device", body: ["profileId": BrowserModel.actualProfile])
+        XCTAssertNotEqual(controller.model.activeTabId, secondID)
+        XCTAssertTrue(controller.renderers[secondID] === second)
+        XCTAssertEqual(second.customUserAgent, userAgent)
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": firstID])
+        XCTAssertTrue(controller.currentRenderer === first)
+        XCTAssertEqual(controller.model.active.profileId, "windows-chrome")
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(controller.model.active.profileId, BrowserModel.actualProfile)
+        XCTAssertEqual(controller.model.active.privateSessionID, sessionID)
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": firstID])
+        _ = try await fixture.rpc("private-device", body: ["profileId": "windows-chrome"])
+        XCTAssertTrue(controller.currentRenderer === first)
+        _ = try await fixture.rpc("tabs/new")
+        XCTAssertFalse(controller.model.active.isPrivate)
+        XCTAssertNil(controller.model.active.privateSessionID)
+        XCTAssertEqual(controller.model.active.profileId, BrowserModel.actualProfile)
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(controller.model.active.profileId, "windows-chrome")
+        XCTAssertEqual(controller.model.active.privateSessionID, sessionID)
+    }
+
+    func testSeparatePrivateSessionsKeepTheirOwnChoiceAndDiscardItWhenClosed() async throws {
+        let fixture = try BrowserControllerFixture(); defer { fixture.close() }
+        _ = try await fixture.start()
+        let model = fixture.controller.model
+        let ordinaryID = model.activeTabId
+        let privateTab = ["privateBrowsing": true]
+
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        _ = try await fixture.rpc("private-device", body: ["profileId": "windows-chrome"])
+        let mainID = model.activeTabId
+        let mainSession = try XCTUnwrap(model.active.privateSessionID)
+
+        _ = try await fixture.rpc("private-device", body: ["profileId": "iphone-se", "separateSession": true])
+        let separateID = model.activeTabId
+        let separateSession = try XCTUnwrap(model.active.privateSessionID)
+        XCTAssertNotEqual(mainSession, separateSession)
+        XCTAssertEqual(model.active.profileId, "iphone-se")
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(model.active.privateSessionID, separateSession)
+        XCTAssertEqual(model.active.profileId, "iphone-se")
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": ordinaryID])
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        let siblingID = model.activeTabId
+        XCTAssertEqual(model.active.privateSessionID, mainSession)
+        XCTAssertEqual(model.active.profileId, "windows-chrome")
+        _ = try await fixture.rpc("tabs/close", body: ["tabId": siblingID])
+        _ = try await fixture.rpc("tabs/close", body: ["tabId": mainID])
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": ordinaryID])
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(model.active.profileId, BrowserModel.actualProfile)
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": separateID])
+        _ = try await fixture.rpc("tabs/new", body: privateTab)
+        XCTAssertEqual(model.active.privateSessionID, separateSession)
+        XCTAssertEqual(model.active.profileId, "iphone-se")
+
+        _ = try await fixture.rpc("tabs/private/close")
+        XCTAssertEqual(model.privateProfileID(for: separateSession), BrowserModel.actualProfile)
+    }
+
     func testRealHistoryAndCompactHomeGlyphFollowNavigation() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         let root = try await fixture.start()
@@ -210,15 +297,30 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         try await fixture.wait("document.getElementById('address').value.endsWith('#next') && !document.getElementById('go-back').disabled && document.getElementById('go-forward').disabled", in: fixture.controller.ui)
     }
 
-    func testPrivatePopupInheritsTheTemporaryWebsiteSession() async throws {
+    func testPrivatePopupInheritsItsOpenerProfileAndTemporaryWebsiteSession() async throws {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         let root = try await fixture.start()
+        let controller = fixture.controller
         _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
-        let page = try await fixture.open(root)
-        let popup = try fixture.controller.createSiteWindow(from: page, configuration: page.configuration, url: nil)
-        let created = try XCTUnwrap(fixture.controller.model.tabs.last)
-        XCTAssertEqual(created.json["privateBrowsing"] as? Bool, true)
+        _ = try await fixture.rpc("private-device", body: ["profileId": "windows-chrome"])
+        let openerSession = try XCTUnwrap(controller.model.active.privateSessionID)
+        let opener = try await fixture.open(root)
+
+        _ = try await fixture.rpc("private-device", body: ["profileId": BrowserModel.actualProfile])
+        _ = try await fixture.rpc("private-device", body: ["profileId": "iphone-se", "separateSession": true])
+        XCTAssertNotEqual(controller.model.active.privateSessionID, openerSession)
+        let popup = try controller.createSiteWindow(from: opener, configuration: opener.configuration, url: nil)
+        let created = try XCTUnwrap(controller.model.tabs.last)
+        XCTAssertTrue(created.isPrivate)
+        XCTAssertEqual(created.profileId, "windows-chrome")
+        XCTAssertEqual(created.privateSessionID, openerSession)
+        XCTAssertEqual(popup.customUserAgent, opener.customUserAgent)
         XCTAssertFalse(popup.configuration.websiteDataStore.isPersistent)
-        XCTAssertTrue(popup.configuration.websiteDataStore === page.configuration.websiteDataStore)
+        XCTAssertTrue(popup.configuration.websiteDataStore === opener.configuration.websiteDataStore)
+
+        _ = try await fixture.rpc("tabs/select", body: ["tabId": created.id])
+        _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
+        XCTAssertEqual(controller.model.active.privateSessionID, openerSession)
+        XCTAssertEqual(controller.model.active.profileId, BrowserModel.actualProfile)
     }
 }

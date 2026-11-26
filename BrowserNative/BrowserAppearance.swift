@@ -15,7 +15,6 @@ enum BrowserAppearancePolicy {
 
 extension BrowserController {
     var nativeStatusBarStyle: UIStatusBarStyle {
-        if isPrivateStart { return .darkContent }
         switch nativeTheme {
         case "dark": return .lightContent
         case "light": return .darkContent
@@ -34,14 +33,13 @@ extension BrowserController {
     }
 
     func refreshNativeBackdrop() {
-        let background: UIColor
-        if isPrivateStart { background = .white }
-        else {
-            background = UIColor { traits in
-                traits.userInterfaceStyle == .dark
-                    ? UIColor(red: 16.0 / 255.0, green: 16.0 / 255.0, blue: 16.0 / 255.0, alpha: 1)
-                    : UIColor(red: 241.0 / 255.0, green: 240.0 / 255.0, blue: 237.0 / 255.0, alpha: 1)
-            }
+        let tabOverview = panel == "tabs"
+        let desktop = mode == "home" && !isPrivateStart
+        let background = UIColor { traits in
+            if traits.userInterfaceStyle == .dark { return .black }
+            if tabOverview { return UIColor(white: 202.0 / 255.0, alpha: 1) }
+            if desktop { return UIColor(red: 238.0 / 255.0, green: 242.0 / 255.0, blue: 246.0 / 255.0, alpha: 1) }
+            return UIColor(white: 244.0 / 255.0, alpha: 1)
         }
         view.backgroundColor = background
         ui?.backgroundColor = background

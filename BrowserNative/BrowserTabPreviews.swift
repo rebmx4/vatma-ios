@@ -39,7 +39,8 @@ extension BrowserController {
 
     func captureCurrentPreview(completion: @escaping () -> Void) {
         let id = model.activeTabId
-        guard !model.active.isPrivate, mode == "browse", panel == nil, let page = currentRenderer, !page.isHidden,
+        guard !model.active.isPrivate, !model.active.isPrivateDesktop, mode == "browse", panel == nil,
+              let page = currentRenderer, !page.isHidden,
               page.window != nil, page.bounds.width > 0, page.bounds.height > 0, let url = page.url else {
             completion(); return
         }
@@ -63,7 +64,7 @@ extension BrowserController {
         page.takeSnapshot(with: config) { [weak self, weak page] image, _ in
             guard let self, self.previewCaptures[id] === pending else { return }
             if let page, self.renderers[id] === page, page.url == url,
-               self.model.tabs.contains(where: { $0.id == id && !$0.isPrivate && $0.url == url.absoluteString }),
+               self.model.tabs.contains(where: { $0.id == id && !$0.isPrivate && !$0.isPrivateDesktop && $0.url == url.absoluteString }),
                let image, image.size.width > 0, image.size.height > 0 {
                 let width = min(280, image.size.width)
                 let size = CGSize(width: width, height: max(1, image.size.height * width / max(1, image.size.width)))

@@ -25,7 +25,7 @@ test('back, forward, reload and Home remain usable without the device chooser',a
 });
 test('settings, save site, tabs and panel dismissal retain their button actions',async()=>{
  const f=setup();for(const id of ['settings','pin-site','tabs-button','new-tab-button','scrim','sheet-close'])await f.click(id);
- assert.ok(f.effects.some(e=>e[0]==='pin'));assert.deepEqual(f.effects.filter(e=>e[0]==='panel'),[['panel','settings'],['panel','tabs'],['panel',null],['panel',null]]);
+ assert.ok(f.effects.some(e=>e[0]==='pin'));assert.deepEqual(f.effects.filter(e=>e[0]==='panel'),[['panel','desktop-menu'],['panel','tabs'],['panel',null],['panel',null]]);
  f.context.state.tabs=[];await f.click('tabs-button');assert.equal(f.effects.filter(e=>e[0]==='new-tab').length,2);
 });
 test('touching the Incognito device chooser while the keyboard is open opens it once before the click moves',()=>{

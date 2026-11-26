@@ -1,6 +1,6 @@
 body[data-theme=light]{--ink:#282622;--muted:#656158;--appearance-surface:#f1f0ed;--appearance-card:#faf9f6;--appearance-control:#e9e7e2;--appearance-line:#d5d1c8;--appearance-muted:#656158;--appearance-select:#eae3d3;--appearance-accent:#745d25;--appearance-accent-ink:#fff;--appearance-chrome:#f1f0ed;color-scheme:light}
 body[data-theme=dark]{--ink:#e5e2dc;--muted:#aaa79f;--appearance-surface:#101010;--appearance-card:#191919;--appearance-control:#242424;--appearance-line:#393939;--appearance-muted:#aaa79f;--appearance-select:#343024;--appearance-accent:#cdb77a;--appearance-accent-ink:#101010;--appearance-chrome:#101010;color-scheme:dark}
-body[data-theme] .overlay:not(.pin-overlay):not(.folder-overlay) .sheet,body[data-theme] .settings-picker{background:var(--appearance-surface);color:var(--ink)}
+body[data-theme] .overlay:not(.pin-overlay):not(.folder-overlay):not(.tabs-overlay) .sheet,body[data-theme] .settings-picker{background:var(--appearance-surface);color:var(--ink)}
 body[data-theme] :is(.setting-card,.setting-row,.model-list,.model-row,.file-list,.file-row,.file-text,.field input,.picker-options button){background:var(--appearance-card);color:var(--ink);border-color:var(--appearance-line)}
 body[data-theme] :is(.model-search,.family-tabs button,.secondary-button,.sheet-close){background:var(--appearance-control);color:var(--appearance-muted)}
 body[data-theme] :is(.setting-choice,.sheet-note,.field,.file-meta,.files-empty,.files-location,.file-details small){color:var(--appearance-muted)}
@@ -51,7 +51,7 @@ body[data-theme] .browser-bar{background:var(--appearance-chrome)}
 body[data-theme][data-wallpaper=solid][data-mode=home] .browser-bar{background:var(--appearance-chrome)}
 body[data-theme] :is(.nav-button,.step-device){color:var(--ink)}
 body[data-theme] .home-indicator{background:var(--appearance-muted)}
-body[data-theme] :is(.tabs-new,.primary-button,.icon-option-tick){background:var(--appearance-accent);color:var(--appearance-accent-ink)}
+body[data-theme] :is(.primary-button,.icon-option-tick){background:var(--appearance-accent);color:var(--appearance-accent-ink)}
 body[data-theme] .setting-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--appearance-accent)}
 body[data-theme][data-wallpaper=solid] .wallpaper:after{display:none}
 body[data-theme][data-wallpaper=solid] :is(.private-cover,.empty){color:var(--ink)}

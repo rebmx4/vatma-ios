@@ -1,0 +1,407 @@
+body {
+  --desktop-backdrop: #000;
+  --desktop-label: #f2f2f2;
+  --desktop-icon-face: #181818;
+  --desktop-contrast: #f2f2f2;
+  --desktop-surface: #292929c9;
+  --desktop-surface-opaque: #292929;
+  --desktop-search-glass: #25262ac2;
+  --desktop-search-veil: #08080880;
+  --desktop-glass-shine: #ffffff26;
+  --desktop-glass-shadow: #0005;
+  --desktop-icon-size: clamp(48px, 17vw, 74px);
+  --desktop-focus: #b8bdff;
+}
+
+body[data-theme=light] {
+  --desktop-backdrop: #eef2f6;
+  --desktop-label: #222;
+  --desktop-icon-face: #f7f7f7;
+  --desktop-contrast: #222;
+  --desktop-surface: #ffffff9c;
+  --desktop-surface-opaque: #f4f4f4;
+  --desktop-search-glass: #ffffffb8;
+  --desktop-search-veil: #eef2f686;
+  --desktop-glass-shine: #fff;
+  --desktop-glass-shadow: #263c541c;
+  --desktop-focus: #393bb0;
+}
+
+body[data-surface=home][data-theme][data-wallpaper=solid] .wallpaper {
+  background-color: var(--desktop-backdrop);
+}
+
+.wallpaper-choice[data-wallpaper=solid] {
+  background-color: var(--desktop-backdrop);
+}
+
+.wallpaper-choice[data-wallpaper=solid] span {
+  color: var(--desktop-label);
+  text-shadow: none;
+}
+
+.home {
+  position: relative;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 17px 0;
+  gap: 10px;
+  margin-inline: auto;
+  max-width: 1000px;
+}
+
+.home .desktop-pages {
+  touch-action: pan-x pan-y;
+}
+
+.home .desktop-page {
+  grid-template-rows: repeat(var(--desktop-page-rows, 5), minmax(calc(60px + 17px * var(--text-scale, 1)), 1fr));
+  grid-auto-flow: row;
+  align-content: normal;
+  gap: 7px;
+  padding: 5px 0;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+
+.home .desktop-page::-webkit-scrollbar {
+  display: none;
+}
+
+.home .desktop-page .app-item,
+.desktop-dock .app-item,
+.desktop-suggestions-grid .app-item {
+  align-self: stretch;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 1px;
+}
+
+:is(.home, .drag-ghost) .app-tile {
+  width: min(91%, var(--desktop-icon-size));
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 24%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--desktop-icon-face);
+  box-shadow: inset 0 1px 2px var(--desktop-glass-shine), 0 4px 10px var(--desktop-glass-shadow);
+  -webkit-touch-callout: none;
+}
+
+.drag-ghost {
+  justify-content: center;
+}
+
+body[data-theme=light] :is(.home, .drag-ghost) .app-tile {
+  border-radius: 27%;
+}
+
+:is(.home, .drag-ghost) .app-name {
+  font-size: clamp(calc(11px * var(--text-scale, 1)), calc(3.2vw * var(--text-scale, 1)), calc(13px * var(--text-scale, 1)));
+  line-height: 1.2;
+}
+
+body[data-theme][data-wallpaper=solid] :is(.home, .drag-ghost) .app-name {
+  color: var(--desktop-label);
+}
+
+:is(.home, .drag-ghost) .app-tile.folder-tile {
+  background: color-mix(in srgb, var(--desktop-label) 12%, var(--desktop-icon-face));
+  border-color: var(--desktop-glass-shine);
+}
+
+.app-tile .shortcut-brand-icon {
+  object-fit: contain;
+  width: 80%;
+  height: 80%;
+  margin: auto;
+  display: block;
+}
+
+.app-item:is([data-app=vk], [data-app=dzen], [data-app=mail], [data-app=rutube]) .app-tile:has(.shortcut-brand-icon) .shortcut-brand-icon {
+  width: 100%;
+  height: 100%;
+}
+
+.app-item[data-app=mail] .app-tile:has(.shortcut-brand-icon) {
+  background: #07f;
+}
+
+.app-item[data-app=mail] .app-tile:has(.shortcut-brand-icon) .shortcut-brand-icon {
+  width: 70%;
+  height: 70%;
+}
+
+.app-item[data-app=dzen] .app-tile:has(.shortcut-brand-icon) {
+  background: #202022;
+}
+
+.app-item:is([data-app=vtb], [data-app=tbank]) .app-tile:has(.shortcut-brand-icon) {
+  background: #f7f9ff;
+}
+
+body[data-theme=light] .app-item[data-app=youtube] .app-tile:has(.shortcut-brand-icon) {
+  background: #fff;
+}
+
+.desktop-system-mark {
+  color: var(--desktop-contrast);
+}
+
+.app-tile > .desktop-system-mark {
+  width: 69%;
+  height: 69%;
+}
+
+.app-tile > .desktop-artwork-mark {
+  width: 86%;
+  height: 86%;
+}
+
+.home .desktop-slot {
+  height: 100%;
+  place-items: center;
+}
+
+.home .desktop-slot::before {
+  width: min(91%, var(--desktop-icon-size));
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 24%;
+}
+
+.home .desktop-slot.drop-cell::before {
+  background: color-mix(in srgb, var(--desktop-focus) 19%, transparent);
+  box-shadow: inset 0 0 0 2px var(--desktop-focus);
+}
+
+.home .app-item.drop-target .app-tile {
+  box-shadow: inset 0 0 0 2px var(--desktop-focus);
+}
+
+.home .app-item.combine-ready .app-tile {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--desktop-focus) 50%, transparent);
+}
+
+.desktop-controls {
+  position: relative;
+  flex: none;
+}
+
+.desktop-controls .page-dots {
+  height: 36px;
+  margin: 0;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  justify-content: safe center;
+}
+
+body[data-theme] .desktop-controls .page-dots button,
+body[data-theme] .desktop-controls .page-dots button.active {
+  height: 36px;
+  width: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  transform: none;
+  background: none;
+}
+
+.desktop-controls .page-dots button:not(.private-dot)::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: .45;
+}
+
+.desktop-controls .page-dots button.active::before {
+  width: 16px;
+  opacity: 1;
+}
+
+.desktop-controls .private-dot svg {
+  opacity: .6;
+}
+
+.desktop-controls .private-dot.active svg {
+  opacity: 1;
+}
+
+body[data-wallpaper=solid] .desktop-controls {
+  color: var(--desktop-label);
+}
+
+.desktop-edit-done {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 34px;
+  border-radius: 999px;
+  background: var(--desktop-surface);
+  color: var(--desktop-contrast);
+  box-shadow: inset 0 1px 3px var(--desktop-glass-shine), 0 3px 11px var(--desktop-glass-shadow);
+}
+
+.desktop-dock, .desktop-suggestions-grid {
+  border-radius: 29px;
+  box-shadow: inset 0 1px 3px var(--desktop-glass-shine), inset 0 -2px 6px #ffffff18, 0 9px 22px var(--desktop-glass-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.desktop-dock {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  padding: 8px 5px;
+  background: var(--desktop-surface);
+}
+
+.desktop-dock::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(158deg, var(--desktop-glass-shine), transparent 27%, transparent 76%, #ffffff10);
+  opacity: .62;
+}
+
+.desktop-dock-grid, .desktop-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.desktop-dock-grid > * {
+  min-height: calc(58px + 19px * var(--text-scale, 1));
+}
+
+.desktop-dock .app-tile {
+  width: min(88%, var(--desktop-icon-size), 72px);
+}
+
+.desktop-search-dismiss {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0;
+  background: var(--desktop-search-veil);
+  -webkit-backdrop-filter: blur(25px) saturate(1.18);
+  backdrop-filter: blur(25px) saturate(1.18);
+}
+
+.desktop-search-dismiss:active:not(:disabled) {
+  filter: none;
+}
+
+body[data-desktop-search] .desktop-dock {
+  visibility: hidden;
+}
+
+body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
+  filter: blur(13px);
+}
+
+.desktop-focus-dock {
+  position: absolute;
+  z-index: 3;
+  inset: calc(12px + env(safe-area-inset-top, 0px)) 17px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: none;
+  color: var(--desktop-contrast);
+}
+
+.desktop-suggestion-header {
+  display: flex;
+  min-height: 33px;
+  padding: 0 7px 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.desktop-suggestion-toggle {
+  min-height: 36px;
+  padding: 0 4px;
+  background: transparent;
+  color: inherit;
+  font-weight: 650;
+  pointer-events: auto;
+}
+
+.desktop-suggestions-grid {
+  padding: 10px 8px;
+  background: var(--desktop-search-glass);
+  pointer-events: auto;
+}
+
+.desktop-suggestions-grid .app-tile {
+  width: min(88%, var(--desktop-icon-size), 66px);
+  touch-action: manipulation;
+}
+
+.desktop-focus-dock .app-name {
+  color: var(--desktop-contrast);
+  text-shadow: none;
+}
+
+@media (min-width: 700px) {
+  .home {
+    padding-inline: 45px;
+  }
+
+  .desktop-dock, .desktop-focus-dock {
+    width: min(100%, 650px);
+    margin-inline: auto;
+  }
+}
+
+@media (max-height: 590px) {
+  body {
+    --desktop-icon-size: clamp(41px, 12vw, 58px);
+  }
+
+  .home {
+    gap: 4px;
+  }
+
+  .home .desktop-page {
+    grid-template-rows: repeat(var(--desktop-page-rows, 5), minmax(calc(57px + 13px * var(--text-scale, 1)), 1fr));
+  }
+
+  .desktop-controls .page-dots, body[data-theme] .desktop-controls .page-dots button {
+    height: 28px;
+  }
+
+  .desktop-dock-grid > * {
+    min-height: 60px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
+    filter: none;
+  }
+
+  .desktop-dock, .desktop-suggestions-grid, .desktop-edit-done {
+    background: var(--desktop-surface-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .desktop-search-dismiss {
+    background: var(--desktop-backdrop);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

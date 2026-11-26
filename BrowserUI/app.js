@@ -1,7 +1,7 @@
 import {APPEARANCE_KEY,ICON_CHOICES,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
-import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry } from './workspace-model.js';
+import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry } from './workspace-model.js';
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
-import {renderTabsOverview} from './tabs-view.js';
+import {renderTabsOverview,showTabsHistory} from './tabs-view.js';
 import {observeDesktopViewport} from './desktop-viewport.js';
 import {selectAddressOnFirstTap} from './address-selection.js';
 import {addressSuggestions, installAddressSuggestions} from './address-suggestions.js';
@@ -16,7 +16,8 @@ import {SHORTCUT_ICON_CHOICES,normalizeShortcutIconStyle,shortcutIconArtwork} fr
 import {messageProvider,messagesEnabled,enabledMessageProviders,shortcutMessageCount,badgeLabel} from './assets/message-badges.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
-const appLabel=app=>app.type==='system'?localization.t(app.name):app.name;
+const usesTranslatedShortcutLabel=app=>app.type==='system'||!app.custom&&DEFAULT_APPS.some(entry=>entry.id===app.id&&entry.name===app.name&&entry.url===app.url);
+const appLabel=app=>usesTranslatedShortcutLabel(app)?localization.t(app.name):app.name;
 const query = new URLSearchParams(location.search);
 const context = query.get('context');
 const token = query.get('token');
@@ -36,17 +37,20 @@ const paths = {
   computer: '<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M8 21h8m-4-5v5"/>',
   tablet: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M11 19h2"/>',
   check: '<path d="m5 12 4.5 4.5L19 7"/>',
+  share: '<path d="M12 15V2m-4 4 4-4 4 4M8 9H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/>',
   refresh: '<path d="M20 7v5h-5m5-1a8 8 0 1 0-2.3 7"/>',
   dots: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18m0-18c5 5 5 13 0 18"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.4"/>',
   play: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="m10 9 5 3-5 3Z" fill="currentColor"/>',
-  incognito: '<path d="M3 10h18M6 10l2-7h8l2 7M5 20c1-5 13-5 14 0"/><circle cx="8" cy="14" r="2.5"/><circle cx="16" cy="14" r="2.5"/><path d="M10.5 14h3"/>',
+  incognito: '<path d="M2 10h20M5.5 10l2.1-6h8.8l2.1 6"/><circle cx="7.4" cy="16.4" r="3.4"/><circle cx="16.6" cy="16.4" r="3.4"/><path d="M10.8 16h2.4"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
+$('share-page').innerHTML=icon('share');
+$('incognito-mark').innerHTML=icon('incognito');
 $('go-home').innerHTML=`<span class="home-glyph">${icon('home')}</span>`;
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
 
@@ -79,16 +83,21 @@ function withoutRetiredDefaults(entries){
   });
 }
 let apps;
-try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')) || DEFAULT_APPS; } catch { apps = DEFAULT_APPS; }
-if(!Array.isArray(apps))apps=DEFAULT_APPS;
+try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')); } catch {}
+const desktopLayoutKey='atma-preview-desktop-layout';
+const usesLegacyDesktopRows=Array.isArray(apps)&&localStorage.getItem(desktopLayoutKey)!=='five-rows';
+if(!Array.isArray(apps)){
+  const dockIds=['vk','dzen','youtube','mail'];
+  apps=DEFAULT_APPS.map(app=>dockIds.includes(app.id)?{...app,dockSlot:dockIds.indexOf(app.id)}:{...app});
+  try{localStorage.setItem(desktopLayoutKey,'five-rows');}catch{}
+}
 apps=collapseSingletonFolders(withoutRetiredDefaults(apps));
 for(const system of SYSTEM_APPS)if(!flattenApps(apps).some(app=>app.id===system.id)){
   apps=freezeSlots(freezeSlots(apps,4),6);apps.push({...system});
 }
 try{localStorage.setItem('atma-preview-apps',JSON.stringify(apps));}catch{}
-let state, profiles = [], panel = null, editing = false, busy = false, toastTimer;
+let state, profiles = [], panel = null, editing = false, busy = false;
 let messageCounts={},messagePollBusy=false,messagePollTimer;
-let pendingMessagePrompt=null;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
@@ -109,7 +118,7 @@ let desktopTabId=null;try{desktopTabId=sessionStorage.getItem(desktopSurfaceKey)
 const poolFor=scope=>scope==='private'?vaultApps:apps;
 const currentScope=()=>$('apps').children[desktopPage]?.dataset.scope==='private'?'private':'public';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-let wallpaper = localStorage.getItem('atma-preview-wallpaper') || 'landscape';
+let wallpaper = localStorage.getItem('atma-preview-wallpaper') || 'solid';
 let searchEngine = localStorage.getItem('atma-preview-search') || 'google';
 
 const brandLogoSource=document.querySelector('.wordmark img').getAttribute('src');
@@ -121,16 +130,16 @@ function applyAppearance() {
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
   renderToolbarMessageBadge();
-  if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;notify(error.message);});}
+  if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;reportError(error.message);});}
 }
 async function changeAppearance(patch) {
   let next=normalizeAppearance({...appearance,...patch});
   if(window.webkit?.messageHandlers?.atma&&patch.icon){
     if(changingIcon)return;changingIcon=true;for(const button of document.querySelectorAll('[data-icon-choice]'))button.disabled=true;
-    try{await api('app-icon',{icon:next.icon});}catch(error){notify(error.message);if(panel==='app-icon')renderAppIconPicker();return;}finally{changingIcon=false;for(const button of document.querySelectorAll('[data-icon-choice]'))button.disabled=false;}
+    try{await api('app-icon',{icon:next.icon});}catch(error){reportError(error.message);if(panel==='app-icon')renderAppIconPicker();return;}finally{changingIcon=false;for(const button of document.querySelectorAll('[data-icon-choice]'))button.disabled=false;}
   }
   const previous=appearance;next=normalizeAppearance({...appearance,...patch});
-  try{localStorage.setItem(APPEARANCE_KEY,JSON.stringify(next));}catch{notify('Не удалось сохранить оформление');return;}
+  try{localStorage.setItem(APPEARANCE_KEY,JSON.stringify(next));}catch{reportError('Не удалось сохранить оформление');return;}
   appearance=next;applyAppearance();
   if(previous.icon!==next.icon){renderApps();if(panel==='folder')renderFolder();}
   updateAppearanceControls();if(panel==='app-icon')renderAppIconPicker();
@@ -158,6 +167,13 @@ function renderAppearance() {
   const theme=document.createElement('section');theme.className='appearance-section';
   theme.innerHTML=`<h2 class="appearance-title">Тема</h2><div class="theme-control" id="theme-control"><span class="theme-thumb" aria-hidden="true"></span>${[['auto','Авто'],['light','Светлая'],['dark','Тёмная']].map(([value,label])=>`<label><input type="radio" name="atma-interface-theme" id="theme-${value}" value="${value}" aria-label="${value==='auto'?'Автоматическая тема':label+' тема'}"><span>${label}</span></label>`).join('')}</div><p class="theme-description" id="theme-description"></p>`;
   root.append(theme);for(const input of theme.querySelectorAll('input'))input.addEventListener('change',()=>changeAppearance({theme:input.value}));
+  const languageRow=document.createElement('label');
+  languageRow.className='setting-row';
+  languageRow.innerHTML='<span>Язык интерфейса</span><select aria-label="Язык интерфейса"><option value="ru">Русский</option><option value="en">English</option></select>';
+  const language=languageRow.querySelector('select');
+  language.value=localization.language;
+  language.addEventListener('change',()=>{localization.set(language.value);syncPageTranslationLanguage();});
+  root.append(languageRow);
   const text=document.createElement('section');text.className='appearance-section';
   text.innerHTML='<div class="text-size-card"><label for="text-size" class="text-size-heading"><span>Размер текста</span><output id="text-size-value" for="text-size"></output></label><div class="text-size-slider"><span class="small-a" aria-hidden="true">А</span><input id="text-size" type="range" min="85" max="130" step="5" value="100" aria-label="Размер текста интерфейса"><span class="large-a" aria-hidden="true">А</span></div></div>';
   root.append(text);$('text-size').addEventListener('input',event=>changeAppearance({textSize:Number(event.target.value)}));
@@ -181,10 +197,13 @@ function renderAppIconPicker() {
 function brand(app) {
   if(app.id==='atma-private-desktop')return `<svg viewBox="0 0 62 62" aria-hidden="true"><rect width="62" height="62" rx="15" fill="#183747"/><rect x="19" y="29" width="24" height="20" rx="4" fill="none" stroke="white" stroke-width="3"/><path d="M24 29v-7a7 7 0 0 1 14 0v7m-7 8v5" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>`;
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
+  if(app.id==='atma-incognito')return `<svg class="desktop-system-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18M6 11l2-6h8l2 6"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/><path d="M11 16h2"/></svg>`;
   if(app.type!=='system'){const customArtwork=shortcutIconArtwork(app.iconStyle);if(customArtwork)return customArtwork;}
+  if(!app.custom&&!app.iconUrl&&app.url&&DEFAULT_APPS.some(entry=>entry.id===app.id&&entry.url===app.url)){
+    return `<img class="shortcut-brand-icon" src="/assets/desktop-icons/${app.id}.png" alt="" draggable="false">`;
+  }
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
-    'atma-incognito':'<g fill="none" stroke="#242831" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 25h42M17 25l5-15h18l5 15M14 54c2-13 32-13 34 0"/><circle cx="23" cy="35" r="6"/><circle cx="39" cy="35" r="6"/><path d="M29 35h4"/></g>',
     'atma-files':'<path d="M8 20a4 4 0 0 1 4-4h12l5 5h21a4 4 0 0 1 4 4v23a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4Z" fill="#79c3ff"/><rect x="8" y="24" width="46" height="28" rx="4" fill="#0787f8"/><path d="M12 24h38" stroke="#409fff" stroke-width="1.5"/>',
     'atma-cookies':'<circle cx="31" cy="31" r="23" fill="#c58c53"/><path d="M47 12a10 10 0 0 0 5 14 23 23 0 0 1-19 28A23 23 0 1 1 47 12Z" fill="#dba66c"/><g fill="#765039"><circle cx="20" cy="20" r="3"/><circle cx="35" cy="20" r="2.5"/><circle cx="26" cy="35" r="3"/><circle cx="40" cy="39" r="2.5"/><circle cx="17" cy="43" r="2"/></g>',
     vk: '<path fill="white" d="M10 20h7c1 10 5 14 7 14V20h7v8c3 0 8-4 9-8h7c-2 7-8 10-9 11 4 1 9 5 11 11h-8c-2-5-6-8-10-8v8h-4C16 42 10 35 10 20Z"/>',
@@ -200,6 +219,7 @@ function brand(app) {
     wb: '<text x="31" y="40" text-anchor="middle" fill="white" font-size="26" font-family="Arial" font-weight="650" letter-spacing="-2">WB</text>',
     wiki: '<text x="31" y="46" text-anchor="middle" fill="#111" font-size="46" font-family="Georgia">W</text>',
   }[app.id] || `<text x="31" y="43" text-anchor="middle" fill="white" font-size="34" font-family="Arial">${escape(app.name.slice(0,1).toUpperCase())}</text>`;
+  if(app.id==='atma-cookies')return `<svg class="desktop-artwork-mark" viewBox="0 0 62 62" aria-hidden="true">${content}</svg>`;
   return `<svg viewBox="0 0 62 62" aria-hidden="true"><rect width="62" height="62" rx="15" fill="${/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(app.color || '') ? app.color : '#337b96'}"/>${content}</svg>`;
 }
 
@@ -227,14 +247,15 @@ async function api(action, body) {
   if (!response.ok) throw new Error(result.error || 'Не удалось выполнить действие');
   return result;
 }
-function notify(message) {
-  clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false;
-  toastTimer = setTimeout(() => $('toast').hidden = true, 4000);
+function reportError(message) {
+  const status = $(panel ? 'sheet-error' : 'action-error');
+  status.textContent = localization.t(message);
+  status.hidden = !message;
 }
 async function action(name, data = {}) {
   const version=++stateActionVersion;
   try { const result = await api(name, data); if(version===stateActionVersion)consume(result); return result; }
-  catch (error) { notify(error.message); throw error; }
+  catch (error) { reportError(error.message); throw error; }
 }
 const shortcutIcons=createWebsiteIconLoader((kind,url)=>api('site-resource',{kind,url}));
 window.addEventListener('online',()=>{shortcutIcons.retryFailed();renderApps();});
@@ -277,14 +298,12 @@ async function saveCurrentSite() {
   try{
     const site=await api('current-site'),url=normalizedSiteUrl(site.url);
     if(!url)throw new Error('Не удалось получить адрес сайта');
-    if(savedSite(url)){notify('Этот сайт уже на рабочем столе');return;}
+    if(savedSite(url))return;
     const iconUrl=await resolveShortcutIcon(site);
     const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true,messageNotifications:false};
     const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
     try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
-    if(messageProvider(url)){pendingMessagePrompt=entry.id;await setPanel('message-prompt');}
-    else notify('Добавлено на рабочий стол');
-  }catch(error){notify(error.message);}
+  }catch(error){reportError(error.message);}
   finally{pinSiteBusy=false;updateQuickAdd();}
 }
 function updateTabSurface(){
@@ -292,7 +311,7 @@ function updateTabSurface(){
   const blank=state?.mode==='home'&&tab&&!tab.url&&desktopTabId!==tab.id;
   const privateStart=state?.mode==='home'&&state.privateBrowsing===true&&tab&&!tab.url;
   document.body.dataset.surface=privateStart?'incognito':blank?'blank':state?.mode==='browse'?'site':'home';
-  $('address').placeholder=blank?'Поиск или адрес сайта':'Приложения, Google или адрес сайта';
+  $('address').placeholder='Поиск или адрес сайта';
 }
 function chooseDesktopSurface(tabId){
   desktopTabId=tabId||null;
@@ -320,10 +339,13 @@ function consume(next) {
   updateTabSurface();
   $('go-back').disabled = next.mode !== 'browse' || next.canGoBack !== true;
   $('go-forward').disabled = next.mode !== 'browse' || next.canGoForward !== true;
+  $('go-forward').hidden = next.canGoForward !== true;
+  $('share-page').hidden = next.canGoForward === true;
+  $('share-page').disabled = next.mode !== 'browse' || !next.url;
   $('refresh').disabled = next.mode !== 'browse';
   $('show-original').hidden = next.mode !== 'browse' || next.translationStatus !== 'translated';
   if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
-    notify(localization.t('Перевод страницы сейчас недоступен.'));
+    reportError(localization.t('Перевод страницы сейчас недоступен.'));
   }
   if(changedTab){
     $('address').value=next.mode==='browse'?(next.url||''):'';
@@ -366,19 +388,48 @@ async function newBrowserTab(){
  setEditing(false);lockVault();desktopPage=0;
  try{await action('tabs/new');chooseDesktopSurface(null);$('address').value='';}catch{}
 }
-async function newIncognitoTab(){
+async function newIncognitoTab({sourceTabId}={}){
  setEditing(false);lockVault();
  try{
-  await action('tabs/new',{privateBrowsing:true});
+  await action('tabs/new',{privateBrowsing:true,...(sourceTabId?{sourceTabId}:{})});
   if(!state?.privateBrowsing)throw new Error('Инкогнито недоступно в этом режиме предпросмотра');
   chooseDesktopSurface(null);$('incognito-address').value='';
- }catch(error){notify(error.message);}
+ }catch(error){reportError(error.message);}
 }
 async function selectBrowserTab(tabId){
  try{await action('tabs/select',{tabId});chooseDesktopSurface(null);if(!state.url)$('address').value='';}catch{}
 }
 function renderTabs(){
- renderTabsOverview($('sheet-content'),{tabs:state?.tabs||[],activeTabId:state?.activeTabId,previewVersion:state?.tabPreviewVersion,icon,onSelect:selectBrowserTab,onClose:id=>action('tabs/close',{tabId:id}).catch(()=>{}),onNew:newBrowserTab,loadPreviews:()=>api('tab-previews')});
+ const native=Boolean(window.webkit?.messageHandlers?.atma),tabs=state?.tabs||[];
+ if(Number.isFinite(state?.safeAreaBottom))$('sheet').style.setProperty('--tabs-native-bottom',Math.max(0,state.safeAreaBottom)+'px');
+ renderTabsOverview($('sheet-content'),{
+  tabs,activeTabId:state?.activeTabId,previewVersion:state?.tabPreviewVersion,profiles,deviceName:state?.deviceName,
+  icon,t:localization.t,language:localization.language,
+  onSelect:selectBrowserTab,
+  onClose:id=>action('tabs/close',{tabId:id}),
+  onCloseMany:native?tabIds=>action('tabs/close-many',{tabIds}):null,
+  onDuplicate:native?tabId=>action('tabs/duplicate',{tabId}):null,
+  onNew:privateGroup=>{
+   if(!privateGroup)return newBrowserTab();
+   const privateTabs=tabs.filter(tab=>tab.privateBrowsing===true);
+   const source=privateTabs.find(tab=>tab.id===state?.activeTabId)||privateTabs.at(-1);
+   return newIncognitoTab({sourceTabId:source?.id});
+  },
+  onHome:()=>$('go-home').click(),
+  onSettings:()=>setPanel('settings'),
+  onError:reportError,
+  loadPreviews:()=>api('tab-previews'),
+  loadIcon:native?async url=>(await api('site-resource',{kind:'image',url})).dataUrl:null,
+  loadHistory:native?()=>api('tabs/history'):null,
+  onOpenHistory:async ({tabId,url})=>{
+   await action('tabs/history/open',{tabId,url});
+   chooseDesktopSurface(null);
+  },
+ });
+}
+async function openBrowserHistory(){
+ await setPanel('tabs');
+ if(panel==='tabs')showTabsHistory($('sheet-content'));
 }
 function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
   if(scope==='private') {
@@ -387,7 +438,7 @@ function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
     vaultWrite=vaultWrite.catch(()=>{}).then(async()=>{
       const next=await sealVault(key,items,record);localStorage.setItem('atma-preview-vault',JSON.stringify(next));vaultRecord=next;
     });
-    vaultWrite.catch(()=>notify('Не удалось сохранить закрытую страницу'));
+    vaultWrite.catch(()=>reportError('Не удалось сохранить закрытую страницу'));
   } else {
     if(layoutChanged){alignmentSnapshot=null;localStorage.removeItem(ALIGNMENT_SNAPSHOT_KEY);}
     localStorage.setItem('atma-preview-apps', JSON.stringify(apps));
@@ -400,6 +451,7 @@ function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
 function updatePool(scope,items) { if(scope==='private')vaultApps=items;else apps=items;return saveApps(scope); }
 function setEditing(value) {
   editing = value; document.body.classList.toggle('editing', value);
+  $('edit-apps').hidden = !value;
   $('edit-apps').innerHTML = value ? 'Готово' : icon('edit');
   $('edit-apps').setAttribute('aria-label', value ? 'Завершить редактирование' : 'Редактировать приложения');
   renderApps(); if (panel === 'folder') renderFolder();
@@ -413,12 +465,12 @@ function animatePositions(container, previous) {
       item.animate([{ transform:`translate(${before.x-after.x}px,${before.y-after.y}px)` }, { transform:'translate(0,0)' }], { duration:260, easing:'cubic-bezier(.2,.8,.2,1)' });
   }
 }
-function createItem(app, parentId = null, index = 0, scope='public') {
+function createItem(app, parentId = null, index = 0, scope='public', quickAccess=false) {
   const item = document.createElement('div'); item.className = 'app-item'; item.dataset.app = app.id;
   item.dataset.scope=scope;
   if (parentId) item.dataset.folder = parentId;
   item.style.setProperty('--jiggle-delay', `${-(index % 7) * 67}ms`);
-  item.classList.toggle('dragging', Boolean(gesture?.active && gesture.id === app.id));
+  item.classList.toggle('dragging', Boolean(gesture?.active && gesture.id === app.id && gesture.scope === scope));
   const tile = document.createElement('button'); tile.className = 'app-tile';
   tile.setAttribute('aria-label', `Открыть ${appLabel(app)}`);
   if (isFolder(app)) {
@@ -431,16 +483,21 @@ function createItem(app, parentId = null, index = 0, scope='public') {
   }
   // Pointer taps are handled by the gesture even if the grid replaces this button.
   tile.addEventListener('click', event => {
-    if (event.detail === 0 && Date.now() >= suppressClickUntil) activate(app,scope);
+    if (quickAccess) closeDesktopSearch();
+    if (quickAccess || event.detail === 0 && Date.now() >= suppressClickUntil) activate(app,scope);
   });
-  item.addEventListener('pointerdown', event => {if(event.target.closest?.('.app-remove'))return;beginGesture(event, app, parentId,scope);});
+  if(quickAccess)item.addEventListener('click',event=>{
+    if(event.target.closest('.app-tile'))return;
+    closeDesktopSearch();activate(app,scope);
+  });
+  else item.addEventListener('pointerdown', event => {if(event.target.closest?.('.app-remove'))return;beginGesture(event, app, parentId,scope);});
   item.addEventListener('contextmenu', event => event.preventDefault());
   tile.addEventListener('dragstart', event => event.preventDefault());
-  const label = document.createElement('span'); label.className = 'app-name'; label.textContent = app.name;if(app.type!=='system')label.dataset.noTranslate='';
+  const label = document.createElement('span'); label.className = 'app-name'; label.textContent = app.name;if(!usesTranslatedShortcutLabel(app))label.dataset.noTranslate='';
   item.append(tile, label);
   const unread=shortcutMessageCount(app,scope,messageCounts);
   if(unread>0){const badge=document.createElement('span');badge.className='message-badge';badge.textContent=badgeLabel(unread);badge.setAttribute('aria-hidden','true');item.append(badge);tile.setAttribute('aria-label',`${tile.getAttribute('aria-label')}, ${unread} непрочитанных`);}
-  if (editing&&app.type!=='system') {
+  if (editing&&!quickAccess&&app.type!=='system') {
     const remove = document.createElement('button'); remove.className = 'app-remove'; remove.innerHTML=icon('minus');
     remove.setAttribute('aria-label', isFolder(app) ? `Расформировать ${app.name}` : `Удалить ${app.name}`);
     remove.addEventListener('click', () => updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),app.id))); item.append(remove);
@@ -455,11 +512,9 @@ function activate(app,scope='public') {
 }
 function renderApps() {
   $('lock-private').hidden=!vaultKey;
-  if(state?.mode==='browse'||document.body.dataset.surface==='blank')return;
+  if(state?.mode==='browse'||['blank','incognito'].includes(document.body.dataset.surface))return;
+  if(document.body.hasAttribute('data-desktop-search'))renderDesktopQuickAccess();
   if(document.body.dataset.runtime==='ios'&&state&&Math.abs(innerHeight-state.height)>1)return;
-  const filter = state?.mode === 'browse' ? '' : $('address').value.trim().toLocaleLowerCase();
-  const matches = app => app.name.toLocaleLowerCase().includes(filter) || appLabel(app).toLocaleLowerCase().includes(filter) || app.url?.toLocaleLowerCase().includes(filter);
-  const visible = !filter ? apps : apps.flatMap(app => matches(app) ? [app] : isFolder(app) ? app.children.filter(matches) : []);
   const previous = positions($('apps'));
   $('apps').replaceChildren();
   $('apps').classList.toggle('editing', editing);
@@ -469,54 +524,132 @@ function renderApps() {
     privateShortcut.slots={...privateShortcut.slots,[columns]:capacity};
     localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
   }
-  const arranged=filter?visible.map((entry,slot)=>({entry,slot})):arrangeEntries(visible,columns);
-  const pageCount=filter?Math.max(1,Math.ceil(visible.length/capacity)):Math.max(publicPages,Math.ceil((Math.max(-1,...arranged.map(p=>p.slot))+1)/capacity));
-  if(!filter)publicPages=pageCount;
-  for(let page=0;page<pageCount;page++) {
-    const grid=document.createElement('div');grid.className='app-grid desktop-page';grid.dataset.page=page;grid.dataset.scope='public';
-    grid.style.gridTemplateRows=`repeat(${rows},${innerWidth>=700?98:86}px)`;
-    for(let cell=0;cell<capacity;cell++) {
-      const slot=page*capacity+cell, positioned=arranged.find(p=>p.slot===slot);
-      const item=positioned?createItem(positioned.entry,null,slot):document.createElement('div');
-      if(!positioned){item.className='desktop-slot';item.setAttribute('aria-hidden','true');}
-      item.dataset.slot=slot;item.style.gridColumn=String(cell%columns+1);item.style.gridRow=String(Math.floor(cell/columns)+1);grid.append(item);
-    }
-    $('apps').append(grid);
-  }
+  const arranged=arrangeEntries(apps,columns);
+  const pageCount=Math.max(publicPages,Math.ceil((Math.max(-1,...arranged.map(p=>p.slot))+1)/capacity));
+  publicPages=pageCount;
+  renderDesktopPages(arranged,'public',pageCount,0,columns,rows);
   privatePageStart=pageCount;
   const privateLayout=arrangeEntries(vaultApps,columns);
   privatePageCount=vaultKey?Math.max(1,Math.ceil((Math.max(-1,...privateLayout.map(p=>p.slot))+1)/capacity)):0;
-  for(let page=0;page<privatePageCount;page++) {
-    const grid=document.createElement('div');grid.className='app-grid desktop-page private-page';grid.dataset.scope='private';grid.dataset.page=page+pageCount;
-    grid.style.gridTemplateRows=`repeat(${rows},${innerWidth>=700?98:86}px)`;
-    for(let cell=0;cell<capacity;cell++) {
-      const slot=page*capacity+cell,positioned=privateLayout.find(p=>p.slot===slot);
-      const item=positioned?createItem(positioned.entry,null,slot,'private'):document.createElement('div');
-      if(!positioned){item.className='desktop-slot';item.setAttribute('aria-hidden','true');}
-      item.dataset.slot=slot;item.dataset.scope='private';item.style.gridColumn=String(cell%columns+1);item.style.gridRow=String(Math.floor(cell/columns)+1);grid.append(item);
-    }
-    $('apps').append(grid);
-  }
-  $('apps').scrollLeft=Math.min(desktopPage,pageCount+privatePageCount-1)*$('apps').clientWidth;
+  renderDesktopPages(privateLayout,'private',privatePageCount,pageCount,columns,rows);
+  desktopPage=Math.max(0,Math.min(desktopPage,pageCount+privatePageCount-1));
+  $('apps').scrollLeft=desktopPage*$('apps').clientWidth;
   $('desktop-dots').replaceChildren();
   for(let page=0;page<pageCount+privatePageCount;page++) {
     const dot=document.createElement('button');dot.setAttribute('aria-label',page>=pageCount?'Закрытая страница':`Страница ${page+1}`);
     if(page>=pageCount){dot.classList.add('private-dot');dot.innerHTML=icon('lock');}
-    dot.classList.toggle('active',page===desktopPage);dot.addEventListener('click',()=>showDesktopPage(page));$('desktop-dots').append(dot);
+    dot.addEventListener('click',()=>showDesktopPage(page));$('desktop-dots').append(dot);
   }
-  $('empty').hidden = visible.length > 0;
+  updateDesktopPageIndicators();
+  renderDesktopDock(currentScope());
   animatePositions($('apps'), previous);
+}
+function desktopCell(app,slot,scope) {
+  const item=app?createItem(app,null,slot,scope):document.createElement('div');
+  if(!app){item.className='desktop-slot';item.setAttribute('aria-hidden','true');}
+  item.dataset.slot=slot;
+  item.dataset.scope=scope;
+  return item;
+}
+function renderDesktopPages(layout,scope,count,offset,columns,rows) {
+  const bySlot=new Map(layout.map(({entry,slot})=>[slot,entry])),capacity=columns*rows;
+  for(let page=0;page<count;page++){
+    const grid=document.createElement('div');grid.className=scope==='private'?'app-grid desktop-page private-page':'app-grid desktop-page';
+    grid.dataset.page=page+offset;grid.dataset.scope=scope;
+    grid.style.setProperty('--desktop-page-rows',String(rows));
+    for(let cell=0;cell<capacity;cell++){
+      const slot=page*capacity+cell;
+      grid.append(desktopCell(bySlot.get(slot),slot,scope));
+    }
+    $('apps').append(grid);
+  }
+}
+function renderDesktopDock(scope) {
+  const dock=$('desktop-dock'), grid=$('desktop-dock-grid'), previous=positions(grid);
+  dock.dataset.scope=scope;
+  grid.replaceChildren(...arrangeDock(poolFor(scope)).map((app,slot)=>desktopCell(app,slot,scope)));
+  animatePositions(grid,previous);
 }
 observeDesktopViewport($('apps'),()=>{if(!gesture)renderApps();});
 function gridMetrics() {
-  const columns=innerWidth>=700?6:4, cell=innerWidth>=700?98:86, gap=innerWidth>=700?32:20;
-  return{columns,rows:Math.max(1,Math.floor(($('apps').clientHeight-14+gap)/(cell+gap)))};
+  const tablet=innerWidth>=700,columns=tablet?6:4;
+  if(!usesLegacyDesktopRows)return{columns,rows:5};
+  // Existing slot indices were assigned using the old viewport-dependent page length.
+  const footer=Number.isFinite(state?.footerHeight)?Math.min(innerHeight,state.footerHeight):128;
+  const oldTop=Math.max(12,parseFloat(getComputedStyle($('apps').parentElement).paddingTop)-12||0);
+  const gap=tablet?32:20,cell=tablet?98:86,dotsMargin=tablet?16:12;
+  const height=innerHeight-footer-oldTop-8-dotsMargin-14;
+  return{columns,rows:Math.max(1,Math.floor((height-14+gap)/(cell+gap)))};
 }
 function showDesktopPage(page) { $('apps').scrollTo({left:page*$('apps').clientWidth,behavior:reducedMotion.matches?'instant':'smooth'}); }
-$('apps').addEventListener('scroll',()=>{
-  const page=Math.round($('apps').scrollLeft/$('apps').clientWidth);desktopPage=page;
-  [...$('desktop-dots').children].forEach((dot,index)=>{dot.classList.toggle('active',index===page);dot.setAttribute('aria-current',index===page?'page':'false');});
+function updateDesktopPageIndicators() {
+  [...$('apps').children].forEach((page,index)=>{page.inert=index!==desktopPage;});
+  [...$('desktop-dots').children].forEach((dot,index)=>{
+    dot.classList.toggle('active',index===desktopPage);
+    dot.setAttribute('aria-current',index===desktopPage?'page':'false');
+  });
+}
+$('apps').addEventListener('scroll',event=>{
+  if(event.target!==$('apps')||!$('apps').clientWidth)return;
+  const next=Math.round($('apps').scrollLeft/$('apps').clientWidth);
+  if(next!==desktopPage){
+    desktopPage=next;updateDesktopPageIndicators();
+    const scope=currentScope();
+    if($('desktop-dock').dataset.scope!==scope)renderDesktopDock(scope);
+  }
   clearTimeout(pageLockTimer);pageLockTimer=setTimeout(()=>{if(vaultKey&&currentScope()==='public'&&Date.now()>autoLockAfter)lockVault();},220);
+});
+let quickAccessExpanded=false;
+const desktopSearchTarget=element=>element instanceof Element&&Boolean(element.closest('#address-form,#desktop-focus-dock'));
+function renderDesktopQuickAccess() {
+  const scope=vaultKey?currentScope():'public', entries=poolFor(scope);
+  const grid=arrangeEntries(entries,gridMetrics().columns).sort((first,second)=>first.slot-second.slot);
+  const ordered=[...arrangeDock(entries).filter(Boolean),...grid.map(position=>position.entry)];
+  const needle=$('address').value.trim().toLocaleLowerCase();
+  const matches=app=>[app.name,appLabel(app),app.url].some(value=>value?.toLocaleLowerCase().includes(needle));
+  const suggested=(needle?ordered.flatMap(app=>matches(app)?[app]:isFolder(app)?app.children.filter(matches):[]):ordered).slice(0,8);
+  const host=$('desktop-focus-dock'), toggle=$('desktop-suggestion-toggle');
+  host.dataset.scope=scope;
+  host.hidden=suggested.length===0;
+  toggle.hidden=suggested.length<=4;
+  toggle.textContent=quickAccessExpanded?'Свернуть':'Развернуть';
+  toggle.setAttribute('aria-expanded',String(quickAccessExpanded));
+  $('desktop-suggested-apps').replaceChildren(...suggested.slice(0,quickAccessExpanded?8:4).map((app,index)=>createItem(app,null,index,scope,true)));
+}
+function syncDesktopSearch(target=document.activeElement) {
+  const body=document.body, wasActive=body.hasAttribute('data-desktop-search');
+  const active=body.dataset.surface==='home'&&(target===$('address')||wasActive&&desktopSearchTarget(target));
+  if(active===wasActive)return;
+  body.toggleAttribute('data-desktop-search',active);
+  $('apps').inert=$('desktop-dots').inert=active;
+  $('desktop-dock').inert=active;
+  $('desktop-search-dismiss').hidden=!active;
+  $('desktop-focus-dock').hidden=!active;
+  quickAccessExpanded=false;
+  if(active){
+    if(editing)setEditing(false);
+    else renderDesktopQuickAccess();
+  }else {
+    delete $('desktop-focus-dock').dataset.scope;
+    $('desktop-suggested-apps').replaceChildren();
+  }
+}
+function closeDesktopSearch() {
+  const active=document.activeElement;
+  if(desktopSearchTarget(active))active.blur();
+  syncDesktopSearch(null);
+}
+$('desktop-search-dismiss').addEventListener('pointerdown',event=>event.preventDefault());
+$('desktop-search-dismiss').addEventListener('click',closeDesktopSearch);
+$('desktop-focus-dock').addEventListener('pointerdown',event=>{
+  if(document.activeElement===$('address')&&event.target.closest('button,.app-item'))event.preventDefault();
+});
+$('desktop-suggestion-toggle').addEventListener('click',()=>{quickAccessExpanded=!quickAccessExpanded;renderDesktopQuickAccess();});
+document.addEventListener('focusin',event=>syncDesktopSearch(event.target));
+document.addEventListener('focusout',event=>{if(desktopSearchTarget(event.target))syncDesktopSearch(event.relatedTarget);});
+new MutationObserver(()=>syncDesktopSearch()).observe(document.body,{attributes:true,attributeFilter:['data-surface']});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!panel&&document.body.hasAttribute('data-desktop-search'))closeDesktopSearch();
 });
 let blankPointer=null,lastBlankTap=null;
 function toggleDesktopAlignment(){
@@ -525,13 +658,13 @@ function toggleDesktopAlignment(){
     apps=freezeSlots(apps,columns);
     for(const app of apps){
       const slot=alignmentSnapshot.positions[app.id];
-      if(Number.isInteger(slot)&&slot>=0&&slot<10000)app.slots[columns]=slot;
+      if(Number.isInteger(slot)&&slot>=0&&slot<10000)app.slots={...app.slots,[columns]:slot};
     }
     alignmentSnapshot=null;localStorage.removeItem(ALIGNMENT_SNAPSHOT_KEY);
   }else{
     const original=freezeSlots(apps,columns),shifted=shiftEntriesToOppositeEdge(original,columns,capacity);
     if(!shifted.changed)return;
-    alignmentSnapshot={columns,positions:Object.fromEntries(original.map(app=>[app.id,app.slots[columns]]))};
+    alignmentSnapshot={columns,positions:Object.fromEntries(original.map(app=>[app.id,app.slots?.[columns]]))};
     apps=shifted.items;localStorage.setItem(ALIGNMENT_SNAPSHOT_KEY,JSON.stringify(alignmentSnapshot));
   }
   localStorage.setItem('atma-preview-apps',JSON.stringify(apps));renderApps();
@@ -551,7 +684,7 @@ $('apps').addEventListener('pointerup',event=>{
 });
 function beginGesture(event, app, parentId,scope='public') {
   if (event.button !== 0 || gesture) return;
-  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')) };
+  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')), fromDock:Boolean(event.target.closest('.desktop-dock')) };
   if (editing) { event.preventDefault(); capturePointer(current); }
   current.hold = setTimeout(() => {
     if (gesture !== current) return;
@@ -561,7 +694,7 @@ function beginGesture(event, app, parentId,scope='public') {
 }
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
 function clearHover() {
-  if (gesture) { clearTimeout(gesture.hoverTimer); gesture.targetId = null; gesture.targetSlot = null; gesture.hoverKey = null; gesture.combine = false; }
+  if (gesture) { clearTimeout(gesture.hoverTimer); gesture.targetId = null; gesture.targetSlot = null; gesture.targetDockSlot = null; gesture.hoverKey = null; gesture.combine = false; }
   document.querySelectorAll('.drop-target,.combine-ready,.drop-cell').forEach(item=>item.classList.remove('drop-target','combine-ready','drop-cell'));
 }
 document.addEventListener('pointermove', event => {
@@ -571,12 +704,13 @@ document.addEventListener('pointermove', event => {
   if (!current.active && distance > 7) {
     if (!editing) {
       clearTimeout(current.hold);
-      if(!panel&&Math.abs(event.clientX-current.x)>Math.abs(event.clientY-current.y)){current.swipe=true;capturePointer(current);event.preventDefault();}
+      if(!panel&&!current.fromDock&&Math.abs(event.clientX-current.x)>Math.abs(event.clientY-current.y)){current.swipe=true;capturePointer(current);event.preventDefault();}
       else gesture=null;
       return;
     }
     current.active = true; clearTimeout(current.hold); suppressClickUntil = Date.now()+1000;
-    const original = [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===current.id);
+    const original = [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===current.id&&item.dataset.scope===current.scope);
+    if(!original){gesture=null;return;}
     const rect = original.getBoundingClientRect();
     current.ghost = original.cloneNode(true); current.ghost.classList.add('drag-ghost');
     current.ghost.querySelector('.app-remove')?.remove(); current.ghost.style.width = `${rect.width}px`;
@@ -588,7 +722,8 @@ document.addEventListener('pointermove', event => {
   current.ghost.style.left = `${event.clientX-current.offsetX}px`; current.ghost.style.top = `${event.clientY-current.offsetY}px`;
   current.lastX=event.clientX;current.lastY=event.clientY;
   if(!panel) {
-    const r=$('apps').getBoundingClientRect(),direction=event.clientX<r.left+25?-1:event.clientX>r.right-25?1:0;
+    const r=$('apps').getBoundingClientRect();
+    const direction=event.clientY>=r.top&&event.clientY<=r.bottom?(event.clientX<r.left+25?-1:event.clientX>r.right-25?1:0):0;
     if(direction!==current.pageDirection){clearTimeout(current.pageTimer);current.pageDirection=direction;
       if(direction)current.pageTimer=setTimeout(()=>{let next=desktopPage+direction;
         if(current.scope==='private'){if(next<privatePageStart||next>=privatePageStart+privatePageCount)return;}
@@ -613,6 +748,12 @@ function updateDropTarget(x,y,current) {
       x=Math.max(bounds.left+1,Math.min(x,bounds.right-1));
   }
   const hit=document.elementsFromPoint(x,y);
+  const dockTarget=hit.map(item=>item.closest('.desktop-dock [data-slot]')).find(item=>item?.dataset.scope===current.scope);
+  if(dockTarget&&!panel){
+    const slot=Number(dockTarget.dataset.slot);
+    if(current.targetDockSlot===slot)return;
+    clearHover();current.targetDockSlot=slot;dockTarget.classList.add(dockTarget.classList.contains('desktop-slot')?'drop-cell':'drop-target');return;
+  }
   const empty=hit.map(item=>item.closest('.desktop-slot')).find(item=>item&&(item.dataset.scope||'public')===current.scope);
   if(empty&&!panel){const slot=Number(empty.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;empty.classList.add('drop-cell');return;}
   const target = hit.map(item=>item.closest('.app-item')).find(item=>item && item.dataset.app !== current.id&&item.dataset.scope===current.scope);
@@ -642,7 +783,7 @@ function updateDropTarget(x,y,current) {
   current.hoverTimer = setTimeout(() => {
     if (gesture !== current || current.targetId !== targetId) return;
     if (canCombine) { current.combine = true; target.classList.add('combine-ready'); }
-    else {
+    else if(!current.fromDock) {
       const result = panel==='folder'?dropEntry(poolFor(current.scope),current.id,targetId,{destinationFolderId:openFolderId}):placeEntry(poolFor(current.scope),current.id,Number(target.dataset.slot),gridMetrics().columns);
       if (result.changed) { current.reorderedTargetId=targetId; updatePool(current.scope,result.items); }
     }
@@ -654,15 +795,16 @@ async function endGesture(event, cancelled = false) {
   // Recheck after scrolling even when the pointer stayed still at the edge.
   if(current.active&&!cancelled)updateDropTarget(event.clientX,event.clientY,current);
   clearTimeout(current.hoverTimer);
-  const targetId = current.targetId, combine = current.combine, targetSlot=current.targetSlot;
+  const targetId = current.targetId, combine = current.combine, targetSlot=current.targetSlot, targetDockSlot=current.targetDockSlot;
   clearHover();
   try { document.body.releasePointerCapture(current.pointerId); } catch {}
   if(current.swipe){gesture=null;suppressClickUntil=Date.now()+350;showDesktopPage(Math.round($('apps').scrollLeft/$('apps').clientWidth));return;}
   if (current.active) {
     let result={changed:false};
     if(!cancelled) {
-      if(targetSlot!==null&&targetSlot!==undefined)result=placeEntry(poolFor(current.scope),current.id,targetSlot,gridMetrics().columns);
-      else if(!(!combine&&targetId&&current.reorderedTargetId===targetId)) {
+      if(Number.isInteger(targetDockSlot))result=placeDockEntry(poolFor(current.scope),current.id,targetDockSlot,gridMetrics().columns);
+      else if(Number.isInteger(targetSlot))result=placeEntry(poolFor(current.scope),current.id,targetSlot,gridMetrics().columns);
+      else if((targetId||panel==='folder')&&!(!combine&&targetId&&current.reorderedTargetId===targetId)) {
         if(!panel&&targetId&&!combine) {
           const columns=gridMetrics().columns;
           const slot=arrangeEntries(poolFor(current.scope),columns).find(({entry})=>entry.id===targetId)?.slot;
@@ -672,7 +814,7 @@ async function endGesture(event, cancelled = false) {
     }
     const ghost = current.ghost; gesture = null; suppressClickUntil=Date.now()+350;
     if (result.changed) { updatePool(current.scope,result.items); } else { renderApps(); if(panel==='folder') renderFolder(); }
-    const destination = [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===(result.folderId || current.id));
+    const destination = [...document.querySelectorAll('.app-item:not(.drag-ghost)')].find(item=>item.dataset.app===(result.folderId || current.id)&&item.dataset.scope===current.scope);
     const rect = destination?.getBoundingClientRect(), before = ghost.getBoundingClientRect();
     if (rect && !reducedMotion.matches) await ghost.animate([{transform:'scale(1.1)'},{transform:`translate(${rect.x-before.x}px,${rect.y-before.y}px) scale(${result.folderId? .3:1})`,opacity:result.folderId?.2:1}],{duration:230,easing:'cubic-bezier(.2,.8,.2,1)'}).finished.catch(()=>{});
     ghost.remove();
@@ -692,7 +834,7 @@ document.addEventListener('pointerup', event=>endGesture(event));
 document.addEventListener('pointercancel', event=>endGesture(event,true));
 async function openFolder(id,scope='public') { openFolderId=id;folderScope=scope;await setPanel('folder'); }
 function folderOrigin() {
-  const item = [...$('apps').querySelectorAll('.app-item')].find(item=>item.dataset.app===openFolderId);
+  const item = [...document.querySelectorAll('#apps .app-item,#desktop-dock .app-item')].find(item=>item.dataset.app===openFolderId&&item.dataset.scope===folderScope);
   return item?.querySelector('.app-tile').getBoundingClientRect();
 }
 function animateFolder(opening) {
@@ -741,6 +883,9 @@ async function setPanel(name, options = {}) {
   try { await action('panel', { panel: name }); } catch {}
 }
 function renderPanel() {
+  const error = $('sheet-error');
+  error.hidden = true;
+  error.textContent = '';
   disposeMediaPanel?.();disposeMediaPanel=null;
   $('sheet-content').classList.remove('cookie-browser');
   if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
@@ -748,24 +893,26 @@ function renderPanel() {
   $('overlay').classList.toggle('folder-overlay',panel==='folder');
   $('overlay').classList.toggle('pin-overlay',panel==='pin');
   $('overlay').classList.toggle('tabs-overlay',panel==='tabs');
+  $('overlay').dataset.panel = panel || '';
   document.body.classList.toggle('folder-open',panel==='folder');
   $('overlay').hidden = !panel;
   $('sheet-content').replaceChildren();
   if (!panel) return;
-  const titles = {tabs:'Вкладки', settings: 'Настройки', cookies:'Куки', 'private-device':'Устройство инкогнито', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', 'message-prompt':'Сообщения', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
+  const titles = {tabs:'Вкладки', settings: 'Настройки', cookies:'Куки', 'private-device':'Устройство инкогнито', wallpaper: 'Обои', appearance:'Оформление', 'app-icon':'Иконка приложения', add: 'Новое веб-приложение', edit: 'Веб-приложение', privacy:'Политика конфиденциальности',support:'Поддержка',about: window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре' };
   $('sheet-title').textContent = titles[panel] || 'ATMA';
+  if(panel==='desktop-menu')$('sheet-title').textContent='Меню браузера';
   if(panel==='media')$('sheet-title').textContent='Медиаплеер';
   if(panel==='pin')renderPIN();
   else if (panel === 'folder') { renderFolder(); if(!wasFolder) requestAnimationFrame(()=>animateFolder(true)); }
   else if (panel === 'settings') renderSettings();
-  else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{notify('Не удалось открыть страницу');}}});
-  else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,notify,t:localization.t,openTab:async tabId=>{await action('tabs/select',{tabId});}});
+  else if (panel === 'desktop-menu') renderDesktopMenu();
+  else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{reportError('Не удалось открыть страницу');}}});
+  else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,t:localization.t,openTab:async tabId=>{await action('tabs/select',{tabId});}});
   else if(panel==='appearance')renderAppearance();
   else if(panel==='app-icon')renderAppIconPicker();
   else if(panel==='tabs')renderTabs();
-  else if(panel==='message-prompt')renderMessagePrompt();
   else if(panel==='private-device')renderPrivateDevices();
-  else if(panel==='cookies')renderCookieBrowser($('sheet-content'),{api,onBack:()=>setPanel(null),notify,t:localization.t,backLabel:'Рабочий стол'});
+  else if(panel==='cookies')renderCookieBrowser($('sheet-content'),{api,onBack:()=>setPanel(null),reportError,t:localization.t,backLabel:'Рабочий стол'});
   else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
   else if (panel === 'add') {editorScope=currentScope();renderAppForm();}
@@ -783,7 +930,7 @@ async function renderFiles(){
   $('sheet-content').innerHTML=`<div class="files-location"><span>На ATMA</span>${icon('right')}<strong>Загрузки</strong></div><div id="file-list" class="file-list"><p class="files-empty">Загрузка…</p></div><div class="files-tools"><label class="model-search">${icon('search')}<input id="file-search" placeholder="Поиск файлов" aria-label="Поиск файлов"></label><button id="files-refresh" aria-label="Обновить список файлов">${icon('refresh')}</button></div>`;
   $('files-refresh').addEventListener('click',renderFiles);
   const cookieFolder=document.createElement('button');cookieFolder.className='cookies-folder';cookieFolder.id='open-cookies';cookieFolder.innerHTML=`${icon('globe')}<span><strong>Cookie сайтов</strong><small>Просмотр и выборочное удаление</small></span>${icon('right')}`;
-  cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,notify}));$('file-list').before(cookieFolder);
+  cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,reportError}));$('file-list').before(cookieFolder);
   try{
     const {files}=await api('files');if(panel!=='files'||!$('file-list'))return;
     function list(){
@@ -796,7 +943,7 @@ async function renderFiles(){
       }
     }
     $('file-search').addEventListener('input',list);list();
-  }catch(error){if(panel==='files')notify(error.message);}
+  }catch(error){if(panel==='files')reportError(error.message);}
 }
 async function showFile(id){
   try{
@@ -812,7 +959,7 @@ async function showFile(id){
       if(file.kind==='image')element.alt=file.name;else element.title=file.name;
       $('file-preview').append(element);
     }else{$('file-preview').textContent=file.note;}
-  }catch(error){notify(error.message);}
+  }catch(error){reportError(error.message);}
 }
 function settingsPickers(container) {
   for(const select of container.querySelectorAll('select')) {
@@ -876,12 +1023,26 @@ function renderPrivateDevices(){
       button.addEventListener('click',async()=>{
         if(busy)return;busy=true;button.disabled=true;
         try{await action('private-device',{profileId:profile.id,separateSession:separate.checked});await setPanel(null);}
-        catch(error){notify(error.message);}finally{busy=false;button.disabled=false;}
+        catch(error){reportError(error.message);}finally{busy=false;button.disabled=false;}
       });
       list.append(button);
     }
   };
   search.addEventListener('input',render);render();
+}
+function renderDesktopMenu() {
+  const root=$('sheet-content');
+  const entries=[
+    ['Вкладки','globe',()=>setPanel('tabs')],
+    ['Новая вкладка','plus',newBrowserTab],
+    ['Открыть Инкогнито','incognito',newIncognitoTab],
+    ['Куки и данные сайтов','lock',()=>setPanel('cookies')],
+    ['История','left',openBrowserHistory],
+    [editing?'Завершить редактирование':'Изменить приложения','edit',async()=>{await setPanel(null);setEditing(!editing);}],
+    ['Оформление и язык','image',()=>setPanel('appearance')],
+    ['Настройки','dots',()=>setPanel('settings')],
+  ];
+  for (const [label,glyph,handler] of entries) root.append(settingButton(label,glyph,handler));
 }
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
@@ -912,6 +1073,7 @@ function renderSettings() {
   $('interface-language').value=localization.language;
   $('interface-language').addEventListener('change', event => {
     localization.set(event.target.value);
+    renderApps();
     syncPageTranslationLanguage();
   });
   $('site-language').value = ['ru-RU','en-US'].includes(state?.locale)?state.locale:'ru-RU';
@@ -935,28 +1097,21 @@ function renderWallpapers() {
   $('sheet-content').replaceChildren();
   const list = document.createElement('div'); list.className = 'wallpapers';
   for (const [name, label] of [['solid', 'Однотонный'], ['landscape', 'Каньон'], ['north', 'Север'], ['night', 'Ночь']]) {
-    const button = document.createElement('button'); button.className = 'wallpaper-choice'; button.classList.toggle('selected', wallpaper === name); button.style.backgroundImage = name==='solid'?'none':`url('/assets/${name}.svg')`;if(name==='solid')button.style.backgroundColor='var(--appearance-surface)'; button.innerHTML = `<span>${label}</span>`; button.addEventListener('click', () => useWallpaper(name)); list.append(button);
+    const button = document.createElement('button'); button.className = 'wallpaper-choice'; button.classList.toggle('selected', wallpaper === name); button.dataset.wallpaper=name;button.style.backgroundImage = name==='solid'?'none':`url('/assets/${name}.svg')`; button.innerHTML = `<span>${label}</span>`; button.addEventListener('click', () => useWallpaper(name)); list.append(button);
   }
   $('sheet-content').append(appearanceBack('Оформление','appearance'),list, settingButton('Выбрать фото', 'image', () => $('wallpaper-file').click()));
 }
 function wallpaperDB() { return new Promise((resolve, reject) => { const request = indexedDB.open('atma-preview-ui', 1); request.onupgradeneeded = () => request.result.createObjectStore('preferences'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
 $('wallpaper-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
-  if (!file.type.startsWith('image/')) return notify('Выберите изображение');
+  if (!file.type.startsWith('image/')) return reportError('Выберите изображение');
   try {
     const db = await wallpaperDB(); const transaction = db.transaction('preferences', 'readwrite');
     transaction.objectStore('preferences').put(file, 'wallpaper');
     await new Promise((resolve, reject) => { transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error); }); db.close();
     document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(file)}')`; useWallpaper('custom'); await setPanel(null);
-  } catch { notify('Не удалось сохранить обои'); }
+  } catch { reportError('Не удалось сохранить обои'); }
 });
-function renderMessagePrompt(){
-  const entry=findEntry(apps,pendingMessagePrompt)?.entry;
-  if(!entry){setPanel(null);return;}
-  $('sheet-content').innerHTML=`<p class="sheet-note">Показывать счётчик сообщений для ${escape(entry.name)}? Он работает, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</p><button class="primary-button" id="enable-message-count" type="button">Включить</button><button class="secondary-button" id="skip-message-count" type="button">Не сейчас</button>`;
-  $('enable-message-count').addEventListener('click',async()=>{entry.messageNotifications=true;pendingMessagePrompt=null;await saveApps('public',{layoutChanged:false});await setPanel(null);});
-  $('skip-message-count').addEventListener('click',async()=>{pendingMessagePrompt=null;await setPanel(null);});
-}
 function renderAppForm(app) {
   const editorPanel=panel,version=++appEditorVersion;
   const selectedIcon=normalizeShortcutIconStyle(app?.iconStyle);
@@ -968,10 +1123,10 @@ function renderAppForm(app) {
   const updateMessageChoice=()=>{const raw=urlInput.value.trim(),value=/^[a-z][\w+.-]*:/i.test(raw)?raw:`https://${raw}`;const supported=Boolean(messageProvider(value));$('message-choice').hidden=!supported;messageToggle.disabled=!supported;};
   urlInput.addEventListener('input',updateMessageChoice);updateMessageChoice();
   $('app-form').addEventListener('submit', async event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget); let url;
+    event.preventDefault(); reportError(''); const form = new FormData(event.currentTarget); let url;
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
-    catch { return notify('Введите корректный адрес http или https'); }
-    const name=String(form.get('name')).trim();if(!name)return notify('Введите название приложения');
+    catch { return reportError('Введите корректный адрес http или https'); }
+    const name=String(form.get('name')).trim();if(!name)return reportError('Введите название приложения');
     const submit=event.currentTarget.querySelector?.('[type="submit"]');
     if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
     const scope=editorScope,key=vaultKey;
@@ -983,11 +1138,11 @@ function renderAppForm(app) {
     if (!entry.name) return;
     const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){notify(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
+    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
   });
   if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
     if(editorScope==='private') {
-      apps.push({...structuredClone(app),slots:{}});await saveApps();vaultApps=removeEntry(vaultApps,app.id);await saveApps('private');await setPanel(null);showDesktopPage(0);
+      apps.push(detachFromLayout(app));await saveApps();vaultApps=removeEntry(vaultApps,app.id);await saveApps('private');await setPanel(null);showDesktopPage(0);
     } else {pendingVaultMove=app.id;if(vaultKey)await finishVaultUnlock();else requestVault();}
   }));
 }
@@ -1056,11 +1211,11 @@ async function submitPIN() {
         const vaultId=crypto.randomUUID(),secret=await pinVaultSecret(pin,vaultRecord);
         try{await api('vault/biometry/enroll',{vaultId,secret});if(epoch!==pinEpoch)return;
           vaultRecord={...vaultRecord,vaultId,biometric:true};localStorage.setItem('atma-preview-vault',JSON.stringify(vaultRecord));
-        }catch(error){notify(error.message);}
+        }catch(error){reportError(error.message);}
       }
     }
     localStorage.removeItem('atma-preview-vault-throttle');pinDigits='';firstPin=null;await finishVaultUnlock();
-  } catch(error){if(epoch===pinEpoch){pinDigits='';notify(error.message);}}
+  } catch(error){if(epoch===pinEpoch){pinDigits='';reportError(error.message);}}
   finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
 }
 async function createBiometricVault(){
@@ -1072,7 +1227,7 @@ async function createBiometricVault(){
     const created=await createVaultWithSecret(secret,[],vaultId);if(epoch!==pinEpoch)return;
     localStorage.setItem('atma-preview-vault',JSON.stringify(created.record));
     vaultRecord=created.record;vaultKey=created.key;vaultApps=[];await finishVaultUnlock();
-  }catch(error){if(epoch===pinEpoch)notify(error.message);}
+  }catch(error){if(epoch===pinEpoch)reportError(error.message);}
   finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
 }
 async function unlockWithBiometry(){
@@ -1084,21 +1239,35 @@ async function unlockWithBiometry(){
     vaultKey=opened.key;vaultApps=collapseSingletonFolders(opened.items);pinDigits='';firstPin=null;
     if(vaultApps.length!==opened.items.length)await saveApps('private',{render:false});
     localStorage.removeItem('atma-preview-vault-throttle');await finishVaultUnlock();
-  }catch(error){if(epoch===pinEpoch)notify(error.message);}
+  }catch(error){if(epoch===pinEpoch)reportError(error.message);}
   finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
 }
 async function finishVaultUnlock() {
   if(pendingVaultMove) {
     const found=findEntry(apps,pendingVaultMove);
-    if(found){vaultApps.push({...structuredClone(found.entry),slots:{}});await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),pendingVaultMove);await saveApps();}
+    if(found){vaultApps.push(detachFromLayout(found.entry));await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),pendingVaultMove);await saveApps();}
     pendingVaultMove=null;
   }
   autoLockAfter=Date.now()+700;desktopPage=privatePageStart;await setPanel(null,{keepVaultAction:true});renderApps();resetVaultIdle();
   if(pendingVaultAdd){pendingVaultAdd=false;editorScope='private';await setPanel('add');}
 }
+function detachFromLayout(app) {
+  const entry=structuredClone(app);
+  delete entry.dockSlot;
+  entry.slots={};
+  return entry;
+}
 function lockVault() {
   if(!vaultKey)return;
   vaultKey=null;vaultApps=[];clearTimeout(vaultIdleTimer);
+  for(const page of $('apps').querySelectorAll('.private-page'))page.remove();
+  if($('desktop-dock').dataset.scope==='private')renderDesktopDock('public');
+  if($('desktop-focus-dock').dataset.scope==='private'){
+    $('desktop-suggested-apps').replaceChildren();
+    closeDesktopSearch();
+    $('address').value='';
+    $('address').dispatchEvent(new Event('input',{bubbles:true}));
+  }
   if(gesture?.scope==='private'){clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);gesture.ghost?.remove();gesture=null;}
   if((panel==='folder'&&folderScope==='private')||(panel==='edit'&&editorScope==='private')||(panel==='add'&&editorScope==='private'))setPanel(null,{immediate:true});
   renderApps();
@@ -1160,8 +1329,8 @@ for (const [inputId, listId] of [['address','address-suggestions'],['incognito-a
 }
 $('incognito-form').addEventListener('submit',event=>{event.preventDefault();const value=$('incognito-address').value.trim();if(!value)return;$('incognito-address').blur();$('incognito-address').value='';launch(value,'public',{webApp:false});});
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
-$('address').addEventListener('input', () => { if (document.body.dataset.surface === 'home') renderApps(); });
-$('settings').addEventListener('click', () => setPanel('settings'));
+$('address').addEventListener('input', () => { if (document.body.hasAttribute('data-desktop-search')) renderDesktopQuickAccess(); });
+$('settings').addEventListener('click', () => setPanel(document.body.dataset.surface==='home'?'desktop-menu':'settings'));
 $('pin-site').addEventListener('click',saveCurrentSite);
 $('tabs-button').addEventListener('click',()=>{setEditing(false);lockVault();if(state?.tabs?.length)setPanel('tabs');else newBrowserTab();});
 $('new-tab-button').addEventListener('click',newBrowserTab);
@@ -1201,6 +1370,15 @@ $('incognito-device').addEventListener('click',event=>{
 });
 $('go-back').addEventListener('click', () => action('back').catch(() => {}));
 $('go-forward').addEventListener('click', () => action('forward').catch(() => {}));
+$('share-page').addEventListener('click', async () => {
+  const url=normalizedSiteUrl(state?.url);
+  if (!url || state.mode!=='browse' || state.canGoForward) return;
+  try {
+    if (window.webkit?.messageHandlers?.atma) await api('share-page');
+    else if (navigator.share) await navigator.share({url});
+    else await navigator.clipboard.writeText(url);
+  } catch (error) { if (error.name!=='AbortError') reportError('Не удалось поделиться ссылкой'); }
+});
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));
 $('show-original').addEventListener('click', () => action('translation/toggle').catch(() => {}));
 $('scrim').addEventListener('click', () => setPanel(null)); $('sheet-close').addEventListener('click', () => setPanel(null));
@@ -1250,7 +1428,7 @@ async function start() {
     await api('preferences', {searchEngine});
     await syncPageTranslationLanguage();
   }
-  catch (error) { notify(error.message); }
+  catch (error) { reportError(error.message); }
   setInterval(async () => { const version=stateActionVersion;try { const next=await api('state');if(version===stateActionVersion)consume(next); } catch {} }, 1000);
   setInterval(pollMessageBadges,30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleMessageBadgePoll();});

@@ -10,7 +10,7 @@ const TYPE_NAMES={
   WKWebsiteDataTypeFetchCache:'Кеш сайта',
 };
 
-export async function renderCookieBrowser(root,{api,onBack,notify,t=value=>value,backLabel='Рабочий стол'}){
+export async function renderCookieBrowser(root,{api,onBack,reportError,t=value=>value,backLabel='Рабочий стол'}){
   const make=(tag,className,text)=>{
     const node=document.createElement(tag);
     if(className)node.className=className;
@@ -108,14 +108,14 @@ export async function renderCookieBrowser(root,{api,onBack,notify,t=value=>value
     profile.textContent=siteResult.preview?t('Данные сайтов доступны в приложении на iPhone'):`${t('Сайтов')}: ${records.length} · ${t('Cookie')}: ${cookies.length}`;render();
   }
   async function removeCookies(selection){
-    if(busy)return;busy=true;updateControls();
-    try{await api('cookies/delete',selection);selected.clear();await refresh();notify(t('Cookie удалены'));}
-    catch(error){notify(error.message);}finally{busy=false;if(current())resetConfirmation();}
+    if(busy)return;busy=true;reportError('');updateControls();
+    try{await api('cookies/delete',selection);selected.clear();await refresh();}
+    catch(error){if(current())reportError(error.message);}finally{busy=false;if(current())resetConfirmation();}
   }
   async function removeSites(selection){
-    if(busy)return;busy=true;updateControls();
-    try{await api('site-data/delete',selection);selected.clear();await refresh();notify(t('Данные сайтов удалены'));}
-    catch(error){notify(error.message);}finally{busy=false;if(current())resetConfirmation();}
+    if(busy)return;busy=true;reportError('');updateControls();
+    try{await api('site-data/delete',selection);selected.clear();await refresh();}
+    catch(error){if(current())reportError(error.message);}finally{busy=false;if(current())resetConfirmation();}
   }
   function switchTab(value){active=value;resetConfirmation();render();}
   siteTab.addEventListener('click',()=>switchTab('sites'));

@@ -3,22 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <meta name="theme-color" content="#163842">
+  <meta name="theme-color" content="#000000">
   <title>ATMA — рабочий стол</title>
   <link rel="icon" href="/assets/atma.png?v=romb-b2529185">
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/appearance.css">
+  <link rel="stylesheet" href="/desktop.css">
   <link rel="stylesheet" href="/tabs.css">
   <link rel="stylesheet" href="/assets/cookies.css">
   <link rel="stylesheet" href="/assets/media.css">
   <link rel="stylesheet" href="/assets/message-badges.css">
   <link rel="stylesheet" href="/incognito.css">
+  <link rel="stylesheet" href="/browser-chrome.css">
   <script src="/app.js" type="module"></script>
 </head>
 <body>
   <div class="wallpaper" aria-hidden="true"></div>
   <main class="incognito-start" aria-label="Инкогнито">
-    <div class="incognito-card"><h1>Инкогнито</h1>
+    <div class="incognito-card"><span class="incognito-mark" id="incognito-mark" aria-hidden="true"></span><h1>Инкогнито</h1>
       <p>Вкладки и данные сайтов не сохраняются после завершения приватного сеанса. Сайты всё равно видят ваше соединение.</p>
       <button id="end-incognito" type="button">Завершить сеанс инкогнито</button>
       <div class="address-suggestions" id="incognito-suggestions" hidden></div>
@@ -29,11 +31,20 @@
   <main class="home">
     <header class="home-header" hidden>
       <div class="wordmark"><img src="/assets/atma.png?v=romb-b2529185" alt=""><span>ATMA</span></div>
-      <div class="home-actions"><button class="icon-button glass" id="edit-apps" aria-label="Редактировать приложения" title="Редактировать приложения"></button></div>
     </header>
     <section class="desktop-pages" id="apps" aria-label="Страницы рабочего стола"></section>
-    <p class="empty" id="empty" hidden>Приложений с таким названием нет.<br>Нажмите «Перейти» для поиска в интернете.</p>
-    <div class="page-dots" id="desktop-dots" aria-label="Выбрать страницу"></div>
+    <div class="desktop-controls">
+      <nav class="page-dots" id="desktop-dots" aria-label="Выбрать страницу"></nav>
+      <button class="desktop-edit-done" id="edit-apps" type="button" hidden></button>
+    </div>
+    <section class="desktop-dock" id="desktop-dock" aria-label="Закреплённые сайты">
+      <div class="desktop-dock-grid" id="desktop-dock-grid"></div>
+    </section>
+    <button class="desktop-search-dismiss" id="desktop-search-dismiss" aria-label="Закрыть поиск" type="button" tabindex="-1" hidden></button>
+    <section class="desktop-focus-dock" id="desktop-focus-dock" aria-label="Быстрый доступ" hidden>
+      <header class="desktop-suggestion-header"><span>Быстрый доступ</span><button class="desktop-suggestion-toggle" id="desktop-suggestion-toggle" type="button" aria-controls="desktop-suggested-apps" aria-expanded="false" hidden>Развернуть</button></header>
+      <div class="desktop-suggestions-grid" id="desktop-suggested-apps"></div>
+    </section>
   </main>
   <footer class="browser-bar" id="browser-bar">
     <form class="address-form" id="address-form" role="search">
@@ -48,12 +59,13 @@
     <nav class="browser-nav" aria-label="Браузер">
       <button class="nav-button" id="go-back" aria-label="Назад"></button>
       <button class="nav-button" id="go-forward" aria-label="Вперёд"></button>
+      <button class="nav-button" id="share-page" aria-label="Поделиться" hidden></button>
       <button class="nav-button" id="refresh" aria-label="Обновить страницу"></button>
       <button class="nav-button" id="lock-private" aria-label="Заблокировать закрытую страницу" hidden></button>
       <button class="home-button" id="go-home" aria-label="Рабочий стол"></button>
       <button class="nav-button" id="tabs-button" aria-label="Новая вкладка"></button>
       <button class="nav-button" id="new-tab-button" aria-label="Новая вкладка"></button>
-      <button class="nav-button" id="settings" aria-label="Настройки"></button>
+      <button class="nav-button" id="settings" aria-label="Меню браузера"></button>
     </nav>
     <div class="home-indicator" aria-hidden="true"></div>
   </footer>
@@ -62,10 +74,11 @@
     <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <div class="sheet-handle" aria-hidden="true"></div>
       <header class="sheet-header"><h1 id="sheet-title"></h1><button class="sheet-close" id="sheet-close" aria-label="Закрыть"></button></header>
+      <p class="sheet-error" id="sheet-error" role="status" hidden></p>
       <div class="sheet-content" id="sheet-content"></div>
     </section>
   </div>
-  <div class="toast" id="toast" role="status" hidden></div>
+  <p class="sr-only" id="action-error" role="status"></p>
   <input type="file" id="wallpaper-file" accept="image/*" hidden>
 </body>
 </html>

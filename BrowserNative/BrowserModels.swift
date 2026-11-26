@@ -56,6 +56,7 @@ final class BrowserModel {
     private var stores: [String: WKWebsiteDataStore] = [:]
     private let defaultPrivateSessionID = UUID()
     private var privateStores: [UUID: WKWebsiteDataStore] = [:]
+    private var privateSessionProfileIDs: [UUID: String] = [:]
     private let defaults: UserDefaults
     private let sessionKey = "atma.native.session.v1"
 
@@ -120,9 +121,18 @@ final class BrowserModel {
         tab.privateSessionID ?? defaultPrivateSessionID
     }
 
+    func privateProfileID(for sessionID: UUID) -> String {
+        privateSessionProfileIDs[sessionID] ?? Self.actualProfile
+    }
+
+    func setPrivateProfileID(_ profileID: String, for sessionID: UUID) {
+        privateSessionProfileIDs[sessionID] = profileID
+    }
+
     func discardUnusedPrivateSessions() {
         let openSessionIDs = Set(tabs.filter(\.isPrivate).map { privateSessionID(for: $0) })
         privateStores = privateStores.filter { openSessionIDs.contains($0.key) }
+        privateSessionProfileIDs = privateSessionProfileIDs.filter { openSessionIDs.contains($0.key) }
     }
 
     func store(for _: String) -> WKWebsiteDataStore {

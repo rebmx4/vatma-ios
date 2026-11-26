@@ -11,7 +11,7 @@ test('three wrong PINs throttle further PIN attempts and offer enrolled biometri
   const context={pinEpoch:1,pinDigits:'123456',pinBusy:false,firstPin:null,
     vaultRecord:{biometric:true},biometricStatus:{available:true},renderPIN(){},
     localStorage:{getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},
-    openVault:async()=>{attempted++;throw new Error('bad key');},notify:message=>notices.push(message),
+    openVault:async()=>{attempted++;throw new Error('bad key');},reportError:message=>notices.push(message),
     panel:'pin',Date,Math};
   vm.createContext(context);vm.runInContext(source.slice(start,end),context);
   for(let i=0;i<4;i++){context.pinDigits='123456';await context.submitPIN();}

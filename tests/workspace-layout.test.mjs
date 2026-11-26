@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {dropEntry,placeEntry,removeEntry,shiftEntriesToOppositeEdge} from '../BrowserUI/workspace-model.js';
+import {arrangeDock,arrangeEntries,dropEntry,placeDockEntry,placeEntry,removeEntry,shiftEntriesToOppositeEdge} from '../BrowserUI/workspace-model.js';
 
 const shortcut=(id,slot)=>({id,name:id,slots:{4:slot}});
 const folder=()=>({id:'folder',type:'folder',name:'Папка',slots:{4:4},children:[shortcut('a',0),shortcut('b',1)]});
@@ -69,4 +69,35 @@ test('moving or deleting a folder child also dissolves a singleton folder',()=>{
   const removed=removeEntry([folder()],'a');
   assert.deepEqual(removed.map(item=>item.id),['b']);
   assert.equal(removed[0].slots[4],4);
+});
+
+test('moving between the grid and dock swaps only the two occupied slots',()=>{
+  const before=[shortcut('keep',1),shortcut('grid',7),{...shortcut('dock',1),dockSlot:2}];
+  const pinned=placeDockEntry(before,'grid',2,4).items;
+  assert.deepEqual(arrangeDock(pinned).map(item=>item?.id),[undefined,undefined,'grid',undefined]);
+  assert.deepEqual(arrangeEntries(pinned,4).map(({entry,slot})=>[entry.id,slot]),[['keep',1],['dock',7]]);
+  const returned=placeEntry(pinned,'grid',7,4).items;
+  assert.equal(arrangeDock(returned)[2].id,'dock');
+  assert.equal(arrangeEntries(returned,4).find(({entry})=>entry.id==='grid').slot,7);
+  assert.equal(before[1].dockSlot,undefined);
+});
+
+test('a legacy desktop retains its slots and docking keeps double-tap alignment scoped to the grid',()=>{
+  const legacy=[shortcut('a',1),shortcut('b',10),shortcut('c',23)];
+  assert.deepEqual(arrangeDock(legacy),[null,null,null,null]);
+  const pinned=placeDockEntry(legacy,'b',0,4).items;
+  const moved=shiftEntriesToOppositeEdge(pinned,4,20).items;
+  assert.equal(arrangeDock(moved)[0].id,'b');
+  assert.equal(moved.find(item=>item.id==='b').slots[4],10);
+  assert.deepEqual(arrangeEntries(pinned).map(({slot})=>slot),[1,23]);
+});
+
+test('extracting a docked folder child does not lose the folder or the swapped shortcut',()=>{
+  const entries=[{...folder(),dockSlot:0},{...shortcut('dock',1),dockSlot:2},shortcut('keep',0)];
+  const result=placeDockEntry(entries,'a',2).items;
+  assert.deepEqual(arrangeDock(result).map(item=>item?.id),['b',undefined,'a',undefined]);
+  assert.deepEqual(arrangeEntries(result).map(({entry,slot})=>[entry.id,slot]),[['dock',1],['keep',0]]);
+  const ungrouped=removeEntry(entries,'folder');
+  assert.equal(arrangeDock(ungrouped)[0].id,'a');
+  assert.ok(arrangeEntries(ungrouped).some(({entry})=>entry.id==='b'));
 });

@@ -1,4 +1,4 @@
-export function renderMediaPlayer(root,{api,notify,openTab,t=value=>value}){
+export function renderMediaPlayer(root,{api,openTab,t=value=>value}){
  const glyph=path=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
  const play=glyph('<path d="m9 5 11 7-11 7Z" fill="currentColor"/>');
  const pause=glyph('<path d="M9 5v14m6-14v14" stroke-width="4"/>');
@@ -46,7 +46,7 @@ export function renderMediaPlayer(root,{api,notify,openTab,t=value=>value}){
  $('#media-rewind').onclick=()=>run('media/command',{type:'skip',seconds:-10});
  $('#media-forward').onclick=()=>run('media/command',{type:'skip',seconds:10});
  $('#media-pip').onclick=()=>run('media/command',{type:'pip'});
- $('#media-return').onclick=()=>value.ownerTabId&&openTab(value.ownerTabId).catch(error=>notify(error.message));
+ $('#media-return').onclick=()=>value.ownerTabId&&openTab(value.ownerTabId).catch(()=>{});
  $('#media-background').onchange=()=>run('media/background',{enabled:$('#media-background').checked});
  $('#media-seek').onpointerdown=()=>{dragging=true;};
  $('#media-seek').oninput=()=>{$('#media-position').textContent=clock(Number($('#media-seek').value));};

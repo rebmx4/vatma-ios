@@ -222,7 +222,7 @@ final class BrowserController: UIViewController {
     func open(_ input: String, webApp: Bool? = nil) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
         if mode == "home", !model.active.url.isEmpty || currentRenderer != nil {
-            newTab(privateBrowsing: model.active.isPrivate, profileID: model.active.profileId)
+            newTab(privateBrowsing: model.active.isPrivate)
         }
         try open(URLRequest(url: url), webApp: webApp)
     }
@@ -268,9 +268,10 @@ final class BrowserController: UIViewController {
         try open(URLRequest(url: url), webApp: true, shortcutId: shortcutId)
     }
 
-    func selectTab(_ id: String) throws {
+    func selectTab(_ id: String, keepOverview: Bool = false) throws {
         guard model.tabs.contains(where: { $0.id == id }) else { throw BrowserFailure.invalid("Unknown tab.") }
-        model.activeTabId = id; panel = nil
+        model.activeTabId = id
+        if !keepOverview { panel = nil }
         let tab = model.active
         mode = tab.url.isEmpty ? "home" : "browse"
         if !tab.url.isEmpty, renderers[id] == nil {
@@ -283,44 +284,15 @@ final class BrowserController: UIViewController {
         changed()
     }
 
-    func newTab(privateBrowsing: Bool = false, profileID: String? = nil, sessionID: UUID? = nil) {
-        var tab = BrowserTab(profileId: privateBrowsing ? profileID ?? BrowserModel.actualProfile : BrowserModel.actualProfile)
+    func newTab(privateBrowsing: Bool = false, sessionID: UUID? = nil) {
+        var tab = BrowserTab(profileId: BrowserModel.actualProfile)
         tab.privateBrowsing = privateBrowsing
-        if privateBrowsing { tab.privateSessionID = sessionID ?? model.privateSessionID(for: model.active) }
+        if privateBrowsing {
+            let sessionID = sessionID ?? model.privateSessionID(for: model.active)
+            tab.privateSessionID = sessionID
+            tab.profileId = model.privateProfileID(for: sessionID)
+        }
         model.tabs.append(tab); model.activeTabId = tab.id; mode = "home"; panel = nil
-        changed()
-    }
-
-    func changePrivateDevice(_ id: String, separateSession: Bool = false) throws {
-        guard model.active.isPrivate else { throw BrowserFailure.invalid("Device choice is only available in Incognito.") }
-        guard model.profile(id) != nil else { throw BrowserFailure.invalid("Unknown device choice.") }
-        if separateSession {
-            newTab(privateBrowsing: true, profileID: id, sessionID: UUID())
-            return
-        }
-        guard model.active.profileId != id else { return }
-        if currentRenderer != nil || !model.active.url.isEmpty {
-            newTab(privateBrowsing: true, profileID: id)
-            return
-        }
-        model.tabs[model.activeIndex].profileId = id
-        changed()
-    }
-
-    func closeTab(_ id: String) throws {
-        guard let index = model.tabs.firstIndex(where: { $0.id == id }) else { throw BrowserFailure.invalid("Unknown tab.") }
-        let opener = windowOpeners.removeValue(forKey: id)
-        windowOpeners = windowOpeners.filter { $0.value != id }
-        removeRenderer(for: id)
-        model.tabs.remove(at: index)
-        tabPreviewDocuments.removeValue(forKey: id)
-        model.discardUnusedPrivateSessions()
-        if model.tabs.isEmpty { newTab() }
-        else if model.activeTabId == id {
-            let destination = opener.flatMap { candidate in model.tabs.first { $0.id == candidate }?.id }
-                ?? model.tabs[min(index, model.tabs.count - 1)].id
-            try selectTab(destination)
-        }
         changed()
     }
 
@@ -353,6 +325,7 @@ final class BrowserController: UIViewController {
                 "mode": mode, "panel": panel as Any? ?? NSNull(), "url": tab.url, "title": tab.title,
                 "siteName": tab.siteName, "iconUrl": tab.iconUrl,
                 "width": frame.width, "height": frame.height, "footerHeight": currentFooterHeight,
+                "safeAreaBottom": windowBottomConstraint?.isActive == true ? view.safeAreaInsets.bottom : 0,
                 "webApp": webApp, "controlsCollapsed": controlsCollapsed, "privateBrowsing": tab.isPrivate,
                 "canGoBack": mode == "browse" && currentRenderer?.canGoBack == true,
                 "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,

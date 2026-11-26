@@ -34,8 +34,9 @@ final class BrowserSmokeTests: XCTestCase {
 
     private func checkBrowser(websiteURL: String, siteNames: [String], headingText: String) throws {
         let home = button(["Рабочий стол", "Home"])
+        let desktopMenu = button(["Меню браузера", "Browser menu"])
         let startupBeginning = Date()
-        let homeReadyWithinDeadline = home.waitForExistence(timeout: 20)
+        let homeReadyWithinDeadline = desktopMenu.waitForExistence(timeout: 20)
         if !homeReadyWithinDeadline {
             screenshot("startup-at-20-seconds")
             let initialHierarchy = XCTAttachment(string: app.debugDescription)
@@ -43,7 +44,7 @@ final class BrowserSmokeTests: XCTestCase {
             initialHierarchy.lifetime = .keepAlways
             add(initialHierarchy)
             let remainingObservation = max(0, 60 - Date().timeIntervalSince(startupBeginning))
-            let appearedDuringObservation = home.waitForExistence(timeout: remainingObservation)
+            let appearedDuringObservation = desktopMenu.waitForExistence(timeout: remainingObservation)
             print("Startup diagnostic: initial20s=false, appearedLater=\(appearedDuringObservation), elapsed=\(Date().timeIntervalSince(startupBeginning))")
             screenshot("startup-late-observation")
             let finalHierarchy = XCTAttachment(string: app.debugDescription)
@@ -60,11 +61,12 @@ final class BrowserSmokeTests: XCTestCase {
         hierarchy.name = "home-hierarchy"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
-        XCTAssertTrue(home.isHittable, "Home controls must be visible and usable")
+        XCTAssertTrue(desktopMenu.isHittable, "Home controls must be visible and usable")
         XCTAssertTrue(app.webViews.matching(identifier: "atma.ui").firstMatch.exists)
         XCTAssertEqual(siteRenderers.count, 0, "First home launch must not allocate a site renderer")
 
         let settings = button(["Настройки", "Settings"])
+        desktopMenu.tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
         let close = button(["Закрыть", "Close"])
@@ -74,6 +76,7 @@ final class BrowserSmokeTests: XCTestCase {
         close.tap()
 
         let newTab = button(["Новая вкладка", "New tab"])
+        desktopMenu.tap()
         XCTAssertTrue(newTab.waitForExistence(timeout: 5))
         newTab.tap()
         var address = app.textFields.firstMatch
@@ -181,7 +184,7 @@ final class BrowserSmokeTests: XCTestCase {
         app.terminate()
         app.launchArguments.removeAll { $0 == "--atma-ui-diagnostics" }
         app.launch()
-        XCTAssertTrue(button(["Рабочий стол", "Home"]).waitForExistence(timeout: 20))
+        XCTAssertTrue(desktopMenu.waitForExistence(timeout: 20))
         XCTAssertFalse(app.staticTexts[headingText].exists, "Relaunch must return to the desktop")
         XCTAssertEqual(siteRenderers.count, 0, "Restored tabs must remain lazy on home launch")
         screenshot("relaunched-home")
