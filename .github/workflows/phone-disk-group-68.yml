@@ -1,0 +1,29 @@
+name: Verify existing PhoneDisk build 68
+
+on:
+  push:
+    branches: [phone-disk/group-68]
+    paths: ['.github/workflows/phone-disk-group-68.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  group:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DISK_BUILD: '68'
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify and assign the existing build
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/phone-disk-group"
+          "$RUNNER_TEMP/phone-disk-group/bin/pip" install --disable-pip-version-check "PyJWT[crypto]"
+          "$RUNNER_TEMP/phone-disk-group/bin/python" .github/phone-disk-testflight.py assign | tee -a "$GITHUB_STEP_SUMMARY"

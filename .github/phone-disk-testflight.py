@@ -78,6 +78,16 @@ def next_build():
     return max(68, max(known, default=0) + 1)
 
 
+def groups_for_build(build):
+    groups = resources(f"/v1/apps/{APP}/betaGroups", {"fields[betaGroups]": "isInternalGroup"})
+    linked = set()
+    for group in groups:
+        items = resources(f"/v1/betaGroups/{group['id']}/builds", {"fields[builds]": "version"})
+        if any(item["id"] == build for item in items):
+            linked.add(group["id"])
+    return linked
+
+
 def assign(num):
     deadline = time.monotonic() + 16 * 60
     recorded = None
@@ -105,8 +115,8 @@ def assign(num):
                           {"fields[preReleaseVersions]": "version,platform"})["data"]["attributes"]
                 if pre["version"] != VERSION or pre["platform"] != "IOS":
                     raise RuntimeError("App Store Connect reported a different version or platform")
-                links = {group["id"] for group in resources(f"/v1/builds/{build}/betaGroups",
-                                                           {"fields[betaGroups]": "isInternalGroup"})}
+                links = groups_for_build(build)
+                print(f"Existing build {build}; owner linked: {GROUP in links}", flush=True)
                 if links - {GROUP}:
                     raise RuntimeError("Build already has another group")
                 if GROUP not in links:
@@ -121,11 +131,11 @@ def assign(num):
 
 def verify(build):
     for _ in range(15):
-        groups = {item["id"] for item in resources(f"/v1/builds/{build}/betaGroups",
-                                                  {"fields[betaGroups]": "isInternalGroup"})}
-        detail = api(f"/v1/builds/{build}/buildBetaDetail",
-                     {"fields[buildBetaDetails]": "internalBuildState"})["data"]["attributes"]
-        if groups == {GROUP} and detail["internalBuildState"] == "IN_BETA_TESTING":
+        groups = groups_for_build(build)
+        detail = api("/v1/buildBetaDetails", {"filter[build]": build,
+                     "fields[buildBetaDetails]": "internalBuildState"})["data"]
+        detail = detail[0]["attributes"] if len(detail) == 1 else {}
+        if groups == {GROUP} and detail.get("internalBuildState") == "IN_BETA_TESTING":
             print(f"VALID / IN_BETA_TESTING / Владелец / {build}", flush=True)
             return
         time.sleep(10)
