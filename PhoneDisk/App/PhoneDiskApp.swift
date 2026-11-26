@@ -74,6 +74,26 @@ struct NativePickerRequest {
     var type: String
 }
 
+private enum DiskTab: String, CaseIterable {
+    case files, backup, transfers
+
+    var title: String {
+        switch self {
+        case .files: return "Файлы"
+        case .backup: return "Автокопии"
+        case .transfers: return "Передача"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .files: return "folder"
+        case .backup: return "arrow.clockwise"
+        case .transfers: return "arrow.up.arrow.down"
+        }
+    }
+}
+
 final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     @Published var offline = false
     let uploadSelection = PassthroughSubject<NativePickerRequest,Never>()
@@ -109,6 +129,17 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }()
 
     func reload() { offline=false; view.load(URLRequest(url:Transfers.base)) }
+
+    fileprivate func selectWebTab(_ tab: DiskTab) {
+        guard tab != .transfers, Transfers.sameHost(view.url) else { return }
+        let script = """
+        (() => {
+          const button = document.querySelector('nav.bottom-tabs button[data-tab="\(tab.rawValue)"]');
+          if (button && !button.closest('[hidden]')) button.click();
+        })();
+        """
+        view.evaluateJavaScript(script, completionHandler: nil)
+    }
 
     func changeRoute(_ route: DiskRoute) {
         WKWebsiteDataStore.default().proxyConfigurations = route.proxy
@@ -327,7 +358,12 @@ struct DiskScreen: View {
             }
             .overlay { if jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
             .safeAreaInset(edge:.bottom,spacing:0) {
-                if selectingTransfers { transferSelectionBar }
+                VStack(spacing: 0) {
+                    if selectingTransfers { transferSelectionBar }
+                    Divider()
+                    transferTabs
+                }
+                .background(.bar)
             }
             .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?",isPresented:Binding(
                 get:{ !transfersToRemove.isEmpty },
@@ -341,6 +377,34 @@ struct DiskScreen: View {
                 if entries.count == 1, let job = entries.first { Text(job.name) }
             }
         }
+    }
+
+    private var transferTabs: some View {
+        HStack(spacing: 0) {
+            ForEach(DiskTab.allCases, id: \.self) { tab in
+                let selected = tab == .transfers
+                Button {
+                    guard !selected else { return }
+                    disk.selectWebTab(tab)
+                    showQueue = false
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 19, weight: .medium))
+                            .accessibilityHidden(true)
+                        Text(tab.title)
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selected ? Color.accentColor : Color(uiColor: .secondaryLabel))
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("queue-tab-\(tab.rawValue)")
+            }
+        }
+        .padding(.horizontal, 8)
     }
 
     private func clearTransferSelection() {

@@ -48,8 +48,7 @@ jobs:
           python3 -m venv "$tools"
           "$tools/bin/pip" install --disable-pip-version-check codemagic-cli-tools==0.70.0
           echo "$tools/bin" >> "$GITHUB_PATH"
-      - name: Test download controls on iOS
-        if: contains(github.event.head_commit.message, '[phone-disk-testflight]')
+      - name: Test download controls and queue navigation on iOS
         run: |
           set -euo pipefail
           smoke="$RUNNER_TEMP/phone-disk-smoke"

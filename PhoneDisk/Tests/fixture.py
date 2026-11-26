@@ -93,9 +93,25 @@ class Fixture(BaseHTTPRequestHandler):
         if url.path=="/":
             html = (
                 '<meta name="viewport" content="width=device-width">'
+                '<section id="fixture-files">'
                 '<a href="/api/resources/download?source=photos-c&amp;file=%2Fci-download.txt">Скачать пробный файл</a>'
                 '<p><a href="/api/resources/download?source=photos-c&amp;file=%2Fslow+file+%2B.bin">Скачать файл для остановки</a></p>'
-                '<button data-tab="transfers">Передача</button>'
+                '</section><p id="fixture-backup" hidden>Настройки автокопий</p>'
+                '<nav class="bottom-tabs" aria-label="Разделы">'
+                '<button type="button" data-tab="files">Файлы</button>'
+                '<button type="button" data-tab="backup">Автокопии</button>'
+                '<button type="button" data-tab="transfers">Передача</button>'
+                '</nav>'
+                """
+                <script>
+                document.querySelector('.bottom-tabs').addEventListener('click', event => {
+                    const tab = event.target.dataset.tab;
+                    if (tab !== 'files' && tab !== 'backup') return;
+                    document.getElementById('fixture-files').hidden = tab !== 'files';
+                    document.getElementById('fixture-backup').hidden = tab !== 'backup';
+                });
+                </script>
+                """
             )
             if arguments.v2_downloads:
                 html += "<p>Fixture v2</p>"
