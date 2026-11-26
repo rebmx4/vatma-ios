@@ -518,38 +518,44 @@ struct DiskScreen: View {
                 .accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-            List(visibleTransfers) { job in
-                Group {
-                    if selectingTransfers {
-                        selectableTransfer(job)
-                    } else {
-                        transferRow(job)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    transfersToRemove = [job.id]
-                                } label: { Label("Удалить", systemImage: "trash") }
-                                .tint(DiskPalette.danger)
-                            }
+            if visibleTransfers.isEmpty {
+                VStack(spacing: 9) {
+                    Image(systemName: transferDirection.icon)
+                        .font(.title2)
+                        .foregroundStyle(DiskPalette.muted)
+                        .accessibilityHidden(true)
+                    Text(transferDirection.emptyTitle)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(visibleTransfers) { job in
+                    Group {
+                        if selectingTransfers {
+                            selectableTransfer(job)
+                        } else {
+                            transferRow(job)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        transfersToRemove = [job.id]
+                                    } label: { Label("Удалить", systemImage: "trash") }
+                                    .tint(DiskPalette.danger)
+                                }
+                        }
                     }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 14))
+                    .listRowBackground(Color.black)
+                    .listRowSeparatorTint(DiskPalette.separator)
                 }
-                .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 14))
-                .listRowBackground(Color.black)
-                .listRowSeparatorTint(DiskPalette.separator)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .environment(\.defaultMinListRowHeight, 52)
-            .refreshable { await transfers.refreshQueue() }
-            .overlay {
-                if visibleTransfers.isEmpty {
-                    ContentUnavailableView(transferDirection.emptyTitle, systemImage: transferDirection.icon)
-                        .allowsHitTesting(false)
-                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, 52)
+                .refreshable { await transfers.refreshQueue() }
             }
         }
         .background(Color.black)
         .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?", isPresented: Binding(
-            get: { !removal.isEmpty },
+            get: { !transfersToRemove.isEmpty },
             set: { if !$0 { transfersToRemove.removeAll() } }
         ), presenting: removal) { entries in
             Button("Нет", role: .cancel) {}
@@ -732,6 +738,7 @@ struct DiskScreen: View {
             .buttonStyle(.borderless)
             .foregroundStyle(DiskPalette.accent)
             .accessibilityLabel("Поделиться")
+            .accessibilityIdentifier("queue-share")
             if let type = photosResourceType(file, job: job) {
                 if savingToPhotos.contains(job.id) {
                     ProgressView().tint(DiskPalette.accent).frame(width: 44, height: 44)
