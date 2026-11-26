@@ -537,6 +537,7 @@ struct DiskScreen: View {
                 let file = Transfers.documents.appendingPathComponent(name)
                 HStack {
                     ShareLink(item:file)
+                        .buttonStyle(.borderless)
                     if let type = photosResourceType(file,job:job) {
                         let saving = savingToPhotos.contains(job.id)
                         Button {

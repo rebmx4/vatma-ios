@@ -7,7 +7,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 parser=argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
@@ -18,6 +18,7 @@ arguments=parser.parse_args()
 output=arguments.output
 staged={}
 downloads=b"PhoneDisk download fixture\n"
+sample_names = ("slow file +.bin", "fixture-one.bin", "fixture-two.bin", "fixture-three.bin")
 range_file = bytes(150 * 64 * 1024)
 range_file_sha = hashlib.sha256(range_file).hexdigest()
 range_file_etag = f'"{range_file_sha}"'
@@ -51,7 +52,7 @@ class Fixture(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != "Bearer " + test_token:
             self.reply(401)
             return False
-        if params.get("source") != ["photos-c"] or params.get("path") != ["/slow file +.bin"]:
+        if params.get("source") != ["photos-c"] or params.get("path") not in [["/" + name] for name in sample_names]:
             self.reply(404)
             return False
         return True
@@ -97,7 +98,9 @@ class Fixture(BaseHTTPRequestHandler):
                 '<section id="fixture-files">'
                 '<a href="/api/resources/download?source=photos-c&amp;file=%2Fci-download.txt">Скачать пробный файл</a>'
                 '<p><a href="/api/resources/download?source=photos-c&amp;file=%2Fslow+file+%2B.bin">Скачать файл для остановки</a></p>'
-                '</section><p id="fixture-backup" hidden>Настройки автокопий</p>'
+                + "".join(f'<a href="/api/resources/download?source=photos-c&amp;file={quote("/" + name, safe="")}">{name}</a><br>'
+                          for name in sample_names[1:])
+                + '</section><p id="fixture-backup" hidden>Настройки автокопий</p>'
                 '<nav class="bottom-tabs" aria-label="Разделы">'
                 '<button type="button" data-tab="files">Файлы</button>'
                 '<button type="button" data-tab="backup">Автокопии</button>'
@@ -145,7 +148,7 @@ class Fixture(BaseHTTPRequestHandler):
             self.reply(200,json.dumps(info).encode())
         elif params.get("source")==["photos-c"] and params.get("file")==["/ci-download.txt"]:
             self.reply(200,downloads,"application/octet-stream",Content_Disposition='attachment; filename="ci-download.txt"')
-        elif params.get("source")==["photos-c"] and params.get("file")==["/slow file +.bin"]:
+        elif params.get("source")==["photos-c"] and params.get("file") in [["/" + name] for name in sample_names]:
             self.stream_test_file()
         elif params.get("path",[None])[0] in staged:
             self.reply(200,b'{}')

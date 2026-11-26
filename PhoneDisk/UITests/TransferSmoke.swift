@@ -63,27 +63,26 @@ final class TransferSmoke: XCTestCase {
 
         filesTab.tap()
         XCTAssertTrue(download.waitForExistence(timeout:10))
-        startDownload.tap()
-        Thread.sleep(forTimeInterval:1.3)
-        startDownload.tap()
-        Thread.sleep(forTimeInterval:1.3)
-        startDownload.tap()
+        let bulkNames = ["fixture-one.bin", "fixture-two.bin", "fixture-three.bin"]
+        for filename in bulkNames {
+            app.links[filename].tap()
+        }
         queue.tap()
-        let rows = app.cells.containing(.staticText,identifier:"slow file +.bin")
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
-        rows.firstMatch.swipeLeft()
+        for filename in bulkNames {
+            XCTAssertTrue(app.cells.containing(.staticText,identifier:filename).firstMatch.waitForExistence(timeout:10))
+        }
+        app.cells.containing(.staticText,identifier:bulkNames[2]).firstMatch.swipeLeft()
         app.buttons["Удалить"].tap()
         app.alerts.buttons["Удалить"].tap()
+        XCTAssertFalse(app.staticTexts[bulkNames[2]].exists)
 
         app.buttons["Выбрать"].tap()
         XCTAssertTrue(filesTab.isHittable)
         XCTAssertTrue(backupTab.isHittable)
-        let entries = app.buttons.matching(identifier:"slow file +.bin")
         let remove = app.buttons["Удалить выбранные передачи"]
         XCTAssertFalse(remove.isEnabled)
-        XCTAssertEqual(entries.count,2)
-        entries.element(boundBy:0).tap()
-        entries.element(boundBy:1).tap()
+        app.buttons[bulkNames[0]].tap()
+        app.buttons[bulkNames[1]].tap()
         XCTAssertTrue(remove.isEnabled)
         remove.tap()
         app.alerts.buttons["Удалить"].tap()
