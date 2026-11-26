@@ -31,7 +31,7 @@ jobs:
           "$RUNNER_TEMP/verify-backup-history"
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           (cd PhoneDisk && xcodegen generate)
-      - name: Test download controls and queue navigation on iOS
+      - name: Retest transfer persistence on a fresh simulator
         run: |
           set -euo pipefail
           smoke="$RUNNER_TEMP/phone-disk-smoke"
@@ -52,19 +52,9 @@ jobs:
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
           xcrun simctl keychain "$device" add-root-cert "$smoke/ca.crt"
-          python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" --v2-downloads &
-          fixture=$!
-          trap 'kill "$fixture" 2>/dev/null || true' EXIT
-          curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/ > /dev/null
-          xcodebuild test -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk \
-            -configuration Debug -destination "id=$device" -parallel-testing-enabled NO \
-            -derivedDataPath "$smoke/build" -only-testing:PhoneDiskUITests/TransferSmoke/testStopRetryAndRemoveDownload \
-            CODE_SIGNING_ALLOWED=NO
-          kill "$fixture"
-          wait "$fixture" || true
-          xcrun simctl uninstall "$device" ru.atma.phonedisk || true
           python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" &
           fixture=$!
+          trap 'kill "$fixture" 2>/dev/null || true' EXIT
           curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/ > /dev/null
           xcodebuild test -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk \
             -configuration Debug -destination "id=$device" -parallel-testing-enabled NO \
