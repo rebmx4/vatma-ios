@@ -58,11 +58,21 @@ final class BrowserPrivacyUITests: XCTestCase {
 
     func testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu() throws {
         let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
-        // Keep the gesture inside Home on wide iPads, away from icons and scrollbars.
-        let emptySpace = ui.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+        let incognito = button(["Открыть Инкогнито", "Open Incognito"])
+        let dockShortcut = button(["Открыть ВКонтакте", "Open ВКонтакте"])
+        let desktopReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            incognito.isHittable && dockShortcut.isHittable && dockShortcut.frame.minY > incognito.frame.maxY + 60
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [desktopReady], timeout: 10), .completed)
+        let emptyY = (incognito.frame.maxY + dockShortcut.frame.minY) / 2
+        let emptySpace = ui.coordinate(withNormalizedOffset: .zero).withOffset(
+            CGVector(dx: ui.frame.width / 2, dy: emptyY - ui.frame.minY)
+        )
         emptySpace.press(forDuration: 4)
         let ordinaryRemove = button(["Удалить ВКонтакте", "Remove ВКонтакте"])
-        XCTAssertTrue(ordinaryRemove.waitForExistence(timeout: 5))
+        let editingEntered = ordinaryRemove.waitForExistence(timeout: 5)
+        if !editingEntered { screenshot("desktop-edit-long-press-failure") }
+        XCTAssertTrue(editingEntered)
         emptySpace.tap()
         XCTAssertTrue(ordinaryRemove.waitForNonExistence(timeout: 5))
         button(["Меню браузера", "Browser menu"]).tap()
