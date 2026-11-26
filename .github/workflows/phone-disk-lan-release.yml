@@ -42,8 +42,8 @@ jobs:
           if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') }}" == true ]]; then
             test "$GITHUB_RUN_ATTEMPT" = 1
             git cat-file -e e2f931dfd92554f660eb6b2833a0f53d4df281b5^{commit}
-            git diff --exit-code e2f931dfd92554f660eb6b2833a0f53d4df281b5 -- PhoneDisk ':(exclude)PhoneDisk/UITests/TransferSmoke.swift'
-            git diff --exit-code 28ea63594313da5d3861d277840c47473b72065b -- PhoneDisk/UITests/TransferSmoke.swift
+            git diff --exit-code e2f931dfd92554f660eb6b2833a0f53d4df281b5 -- PhoneDisk ':(exclude)PhoneDisk/UITests/TransferSmoke.swift' ':(exclude)PhoneDisk/Tests/fixture.py'
+            git diff --exit-code bb3bac9c157bd59c05d7e84b297138b8f15518ca -- PhoneDisk/UITests/TransferSmoke.swift PhoneDisk/Tests/fixture.py
           fi
           xcodebuild -version
           swiftc -swift-version 5 PhoneDisk/App/BackupHistory.swift PhoneDisk/Tests/verify-backup-history.swift \
