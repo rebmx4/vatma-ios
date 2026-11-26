@@ -99,7 +99,12 @@ final class TransferSmoke: XCTestCase {
     }
 
     @MainActor func testTenRangesFinishWhileOnHomeScreen() async throws {
-        struct Snapshot: Decodable { let requested: Int; let sent: Int; let contiguous: Bool }
+        struct Snapshot: Decodable {
+            let requested: Int
+            let sent: Int
+            let contiguous: Bool
+            let failedOnce: Bool
+        }
         func snapshot(_ path: String = "parallel-state") async throws -> Snapshot {
             let url = try XCTUnwrap(URL(string: "https://127.0.0.1:18878/" + path))
             let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
@@ -131,9 +136,11 @@ final class TransferSmoke: XCTestCase {
         XCTAssertEqual(status.requested, 10)
         XCTAssertEqual(status.sent, 10)
         XCTAssertTrue(status.contiguous)
+        XCTAssertTrue(status.failedOnce)
         app.activate()
         app.buttons["queue-tab-transfers"].tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Поделиться")).first.waitForExistence(timeout: 25), app.debugDescription)
+        let result = app.cells.containing(.staticText, identifier: "slow file +.bin").firstMatch
+        XCTAssertTrue(result.staticTexts["Готово"].waitForExistence(timeout: 35), app.debugDescription)
     }
 
     func testUploadDownloadAndPersistentQueue() throws {

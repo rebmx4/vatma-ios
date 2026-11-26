@@ -34,6 +34,7 @@ slow_requests_lock = threading.Lock()
 release_ranges = threading.Event()
 requested_ranges = set()
 sent_ranges = set()
+failed_last_range = False
 
 class Fixture(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
@@ -75,12 +76,21 @@ class Fixture(BaseHTTPRequestHandler):
                        X_File_SHA256=range_file_sha, X_File_Size=str(len(range_file)))
 
     def stream_test_file(self, start=0, stop=len(range_file), partial=False):
-        global slow_requests
+        global slow_requests, failed_last_range
+        fail_this_request = False
         with slow_requests_lock:
             slow_requests += 1
             attempt = slow_requests
             if arguments.parallel_downloads:
                 requested_ranges.add((start, stop))
+                if partial and stop == len(range_file) and not failed_last_range:
+                    failed_last_range = True
+                    fail_this_request = True
+        if fail_this_request:
+            # Reproduce a single busy upstream while the other parts can finish.
+            release_ranges.wait(120)
+            self.reply(503)
+            return
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(stop - start))
@@ -118,7 +128,8 @@ class Fixture(BaseHTTPRequestHandler):
                 spans = sorted(sent_ranges)
                 contiguous = bool(spans) and spans[0][0] == 0 and spans[-1][1] == len(range_file) and all(
                     a[1] == b[0] for a,b in zip(spans, spans[1:]))
-                snapshot = {"requested": len(requested_ranges), "sent": len(spans), "contiguous": contiguous}
+                snapshot = {"requested": len(requested_ranges), "sent": len(spans),
+                            "contiguous": contiguous, "failedOnce": failed_last_range}
             self.reply(200,json.dumps(snapshot).encode())
             return
         if url.path=="/":

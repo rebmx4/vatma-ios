@@ -69,6 +69,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     private var restoring: Task<Set<String>,Never>?
     private var bytesInFlight: [String:[String:Int64]] = [:]
     private var stagedDownloads: [String:[Int64:Int64]] = [:]
+    private var receivedRangeInBatch = Set<String>()
     private var completions: [String:() -> Void] = [:]
     private var ended = Set<String>()
     private var work: [String:Int] = [:]
@@ -215,6 +216,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
 
     private func clearRanges(_ id: String) {
         stagedDownloads.removeValue(forKey: id)
+        receivedRangeInBatch.remove(id)
         try? FileManager.default.removeItem(at: rangesFolder(id))
     }
 
@@ -617,7 +619,12 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let committed = slice.generation == nil ? 0 : downloadedBytes(slice.id,receipt)
         let total = committed + (bytesInFlight[slice.id]?.values.reduce(0,+) ?? 0)
         let now = ProcessInfo.processInfo.systemUptime
-        let value = speeds[slice.id] ?? (now,0,0)
+        guard let value = speeds[slice.id] else {
+            // The background daemon can resume a batch in a fresh app process.
+            speeds[slice.id] = (now,total,0)
+            report(slice.id,receipt,route)
+            return
+        }
         let elapsed = now - value.0
         if elapsed < 0.4 { return }
         let measured = Double(max(0,total - value.1)) / elapsed
@@ -650,13 +657,16 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
             guard let ledger, var receipt = try ledger.read(slice.id),
                   let reply = downloadTask.response as? HTTPURLResponse, route.acceptsBackgroundURL(reply.url)
             else { throw DiskFailure.rejected }
+            guard (200..<300).contains(reply.statusCode) else { throw DiskFailure.response(reply.statusCode) }
             guard reply.value(forHTTPHeaderField:"ETag") == receipt.etag else { throw DiskFailure.response(412) }
             if let plan = receipt.downloadRanges {
                 guard plan.generation == slice.generation,
                       let range = plan.ranges.first(where: { $0.lowerBound == slice.start }),
                       plan.accepts(reply, for: range, etag: receipt.etag ?? "") else { throw DiskFailure.response(412) }
                 if range.lowerBound >= receipt.confirmed {
+                    let newRange = !plan.staged(range, in: rangesFolder(slice.id))
                     try plan.stage(location, range: range, in: rangesFolder(slice.id))
+                    if newRange { receivedRangeInBatch.insert(slice.id) }
                     _ = downloadedBytes(slice.id,receipt)
                     stagedDownloads[slice.id,default:[:]][slice.start] = range.upperBound - range.lowerBound
                 }
@@ -712,7 +722,9 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         if let generation = slice.generation {
             guard let receipt = try? ledger?.read(slice.id), receipt.downloadRanges?.generation == generation,
                   tasksByJob[slice.id]?.contains(where: { $0.hasPrefix("\(slice.id):\(slice.start):") }) != true else { return false }
-        } else if tasksByJob[slice.id] != nil { return false }
+        } else if tasksByJob[slice.id] != nil || (try? ledger?.read(slice.id))?.downloadRanges != nil {
+            return false
+        }
         // iOS can replay completed system events before the new process calls allTasks.
         tasksByJob[slice.id,default:[]].insert(key)
         return true
@@ -772,7 +784,15 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
             if tasksByJob[slice.id] == nil {
                 bytesInFlight.removeValue(forKey:slice.id)
                 let outcome = batchErrors.removeValue(forKey:slice.id)
-                await resume?(slice.id,outcome)
+                let advanced = receivedRangeInBatch.remove(slice.id) != nil
+                // Replace a failed lane during this background wake if other parts
+                // arrived. A batch that makes no progress uses the normal backoff.
+                let networkFailure: Bool
+                if let network = outcome as? URLError { networkFailure = network.code != .cancelled }
+                else if let failure = outcome as? DiskFailure, case .response(let code) = failure {
+                    networkFailure = [408,429,502,503,504].contains(code)
+                } else { networkFailure = false }
+                await resume?(slice.id,advanced && networkFailure ? nil : outcome)
             }
             if let identifier {
                 work[identifier,default:0] -= 1
