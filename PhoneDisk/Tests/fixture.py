@@ -128,11 +128,12 @@ class Fixture(BaseHTTPRequestHandler):
         if arguments.v2_downloads and url.path == "/api/v2/file":
             if not self.range_file_allowed(params):
                 return
-            bounds = re.fullmatch(r"bytes=([0-9]+)-([0-9]+)", self.headers.get("Range", ""))
+            bounds = re.fullmatch(r"bytes=([0-9]+)-([0-9]*)", self.headers.get("Range", ""))
             if bounds is None or self.headers.get("If-Range") != range_file_etag:
                 self.reply(416)
                 return
-            start, end = map(int, bounds.groups())
+            start = int(bounds[1])
+            end = int(bounds[2]) if bounds[2] else len(range_file) - 1
             if not 0 <= start <= end < len(range_file):
                 self.reply(416)
                 return

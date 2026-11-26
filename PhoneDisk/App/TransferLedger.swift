@@ -9,6 +9,7 @@ struct TransferReceipt: Codable {
     var confirmed: Int64 = 0
     var upload: String?
     var etag: String?
+    var boundedDownload: Bool?
 }
 
 final class TransferLedger {

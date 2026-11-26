@@ -58,6 +58,7 @@ struct DiskCapabilities: Decodable {
     var version: Int
     var serverId: String
     var lan: Bool
+    var autoFinishUploads: Bool?
 }
 
 final class DiskRoutes: NSObject, ObservableObject, URLSessionTaskDelegate {

@@ -26,7 +26,7 @@ struct DiskJob: Codable, Identifiable {
     var isFinished: Bool { phase == "Готово" }
     var canStopDownload: Bool {
         downloadURL != nil && localName == nil &&
-            [Self.waiting, "Подготовка", "Скачивание", "Восстанавливаю соединение"].contains(phase)
+            [Self.waiting, "Подготовка", "Скачивание", "Восстанавливаю соединение", "Ожидание сети"].contains(phase)
     }
     var canRemoveDownload: Bool { downloadURL != nil && !canStopDownload && phase != "Проверка файла" }
     var canRetryDownload: Bool { canRemoveDownload && !isFinished }

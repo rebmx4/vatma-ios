@@ -51,6 +51,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var backupSettingsRevision = 0
     private var retrying: [String:Task<Void,Never>] = [:]
     private var retries: [String:Int] = [:]
+    private var recentDownload: (source:String,path:String,at:TimeInterval)?
     private let defaults = UserDefaults.standard
     private static let automaticTransferLimit = 2
     private static let backupLog = Logger(subsystem: bundleID, category: "Autocopies")
@@ -137,6 +138,10 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     @MainActor func refreshQueue() async {
         await restoreTasks()
+        for job in jobs where job.asset == nil && !job.isStopped && !job.isFinished && !active.contains(job.id) && retrying[job.id] == nil {
+            start(job.id)
+        }
+        try? await scan(prepareOriginals:false)
     }
 
     @MainActor private func restoreTasks() async {
@@ -151,7 +156,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
-    func routeChanged(_ route: DiskRoute) { resumable.switchRoute(to:route) }
+    func routeChanged() { recover() }
     @MainActor func revokeDevice() async { await resumable.revoke() }
 
     func handleV2Events(_ identifier: String,_ callback: @escaping () -> Void) -> Bool {
@@ -276,17 +281,31 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             try FileManager.default.copyItem(at:url,to:stage(id))
         }
-        jobs.insert(DiskJob(id:id,name:filename(name ?? url.lastPathComponent),destination:destination,asset:asset),at:0)
-        save()
+        do {
+            try FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],
+                                                  ofItemAtPath:stage(id).path)
+            var queue = jobs
+            queue.insert(DiskJob(id:id,name:filename(name ?? url.lastPathComponent),destination:destination,asset:asset),at:0)
+            try writeQueue(queue)
+            jobs = queue
+        } catch {
+            try? FileManager.default.removeItem(at:stage(id))
+            throw error
+        }
         return id
     }
 
     func enqueueDownload(_ url:URL,_ name:String?) {
         guard let location = Self.downloadLocation(url) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let recentDownload, recentDownload.source == location.source, recentDownload.path == location.path,
+           now - recentDownload.at < 1.2 { return }
         let suggested = (location.path as NSString).lastPathComponent
         let id = UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
-        jobs.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url),at:0)
-        save()
+        var queue = jobs
+        queue.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url),at:0)
+        guard applyQueueChange(queue) else { return }
+        recentDownload = (location.source,location.path,now)
         start(id)
     }
 
@@ -463,25 +482,25 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func done(_ id:String) {
-        let automatic = jobs.first(where: { $0.id == id })?.asset != nil
         markInactive(id)
+        guard let index = jobs.firstIndex(where:{$0.id == id}), !jobs[index].isFinished else { return }
+        var queue = jobs
+        queue[index].phase = "Готово"
+        queue[index].progress = 1
+        guard applyQueueChange(queue) else { return }
+        let automatic = queue[index].asset != nil
         retrying.removeValue(forKey:id)?.cancel()
         retries.removeValue(forKey:id)
         if var reading = readings[id] {
             reading.confirmed = reading.total
+            reading.inFlight = 0
             reading.bytesPerSecond = 0
             readings[id] = reading
         }
-        update(id){$0.phase="Готово";$0.progress=1}
         try? FileManager.default.removeItem(at:stage(id))
         try? FileManager.default.removeItem(at:resumeFile(id))
         notify(success:true)
-        if automatic {
-            Self.schedule()
-            Task { @MainActor in
-                if UIApplication.shared.applicationState == .active { try? await scan() }
-            }
-        }
+        if automatic { Self.schedule() }
     }
 
     private func failed(_ id:String,_ text:String) {
@@ -501,19 +520,23 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if let error { waitForTransfer(id,error); return }
         retries.removeValue(forKey:id)
         await beginTransfer(id)
+        if job.asset != nil && jobs.contains(where:{ $0.id == id && $0.isFinished }) {
+            try? await scan(prepareOriginals:false)
+        }
     }
 
     @MainActor private func waitForTransfer(_ id: String, _ error: Error) {
         markInactive(id)
         guard isRunnable(id) else { return }
-        if var reading = readings[id] { reading.bytesPerSecond = 0; readings[id] = reading }
+        if var reading = readings[id] { reading.bytesPerSecond = 0; reading.inFlight = 0; readings[id] = reading }
         let number = retries[id,default:0]
         let errorCode: Int?
         if case DiskFailure.response(let code) = error { errorCode = code } else { errorCode = nil }
-        let transient = error is URLError || errorCode.map { [401,408,429,502,503,504].contains($0) } == true
-        guard transient, number < 6 else { failed(id,error.localizedDescription); return }
+        let transient = error is URLError || errorCode.map { [401,408,412,416,429,502,503,504].contains($0) } == true
+        let automaticDiskWait = errorCode == 404 && jobs.contains { $0.id == id && $0.asset != nil }
+        guard (transient || automaticDiskWait), number < 6 else { failed(id,error.localizedDescription); return }
         retries[id] = number + 1
-        update(id){$0.phase="Восстанавливаю соединение"}
+        update(id){$0.phase=automaticDiskWait ? "Ожидание выбранного диска" : "Ожидание сети"}
         Self.schedule()
         retrying[id]?.cancel()
         retrying[id] = Task { @MainActor [weak self] in
@@ -570,7 +593,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             update(id){$0.uploaded=true;$0.phase="Проверка на ПК"}
             eventWork += 1
             Task { @MainActor in
-                do { try await publish(job,destination); done(id) }
+                do {
+                    try await publish(job,destination)
+                    done(id)
+                    if job.asset != nil { try? await scan(prepareOriginals:false) }
+                }
                 catch { failed(id,error.localizedDescription) }
                 eventWork -= 1
                 finishEvents()
@@ -629,12 +656,12 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         try? await scan()
     }
 
-    @MainActor func scan() async throws {
+    @MainActor func scan(prepareOriginals:Bool = true) async throws {
         guard defaults.bool(forKey:"photo-auto") else { return }
         let access=PHPhotoLibrary.authorizationStatus(for:.readWrite)
         guard access == .authorized || access == .limited else { return }
         if scanning {
-            if UIApplication.shared.applicationState == .active { scanAgain=true }
+            scanAgain = scanAgain || prepareOriginals
             return
         }
         scanning=true
@@ -677,13 +704,13 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         var remaining=Self.automaticTransferLimit - jobs.filter {
             $0.asset != nil && $0.phase != "Готово" && active.contains($0.id)
         }.count
-        guard remaining > 0 else { return }
         func current() -> Bool {
             defaults.bool(forKey:"photo-auto") && backupSettingsRevision == revision
         }
 
         let previous = jobs.reversed().filter { job in
-            guard job.asset != nil, job.phase != "Готово", !active.contains(job.id), let target=job.destination
+            guard job.asset != nil, !job.isFinished, !job.isStopped,
+                  !active.contains(job.id), retrying[job.id] == nil, let target=job.destination
             else { return false }
             return destinations.contains { $0.source == target.source && $0.path == target.path }
         }
@@ -694,7 +721,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             await beginTransfer(job.id)
             if active.contains(job.id) { remaining -= 1 }
         }
-        guard remaining > 0 else { return }
+        guard prepareOriginals else { return }
+        // Keep one successor staged so the transfer daemon's callback can queue
+        // it without first fetching a potentially large iCloud original.
+        let capacity = (try? Self.support.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
+                        .volumeAvailableCapacityForImportantUsage) ?? 0
+        let standby = previous.contains { job in !active.contains(job.id) && jobs.contains { $0.id == job.id && !$0.isFinished } }
+        var toPrepare = max(0,remaining) + (capacity >= 512 * 1024 * 1024 && !standby ? 1 : 0)
+        guard toPrepare > 0 else { return }
 
         var history=BackupHistory(jobs:jobs)
         let options=PHFetchOptions()
@@ -710,7 +744,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         for index in 0..<assets.count {
             try Task.checkCancellation()
             guard current() else { return }
-            if remaining <= 0 { break }
+            if toPrepare <= 0 { break }
             let item=assets.object(at:index)
             let isVideo=item.mediaType == .video
             guard let target=isVideo ? video : photo,
@@ -735,8 +769,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 guard current() else { return }
                 let id=try storeUpload(temporary,destination:target,name:asset.originalFilename,asset:item.localIdentifier)
                 history.record(item.localIdentifier,on:target.source)
-                await beginTransfer(id)
-                remaining -= 1
+                if remaining > 0 {
+                    await beginTransfer(id)
+                    remaining -= 1
+                }
+                toPrepare -= 1
                 prepared += 1
             } catch is CancellationError {
                 throw CancellationError()

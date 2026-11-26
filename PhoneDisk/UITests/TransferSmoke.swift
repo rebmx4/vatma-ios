@@ -9,7 +9,7 @@ final class TransferSmoke: XCTestCase {
         let download = app.links["Скачать файл для остановки"]
         XCTAssertTrue(download.waitForExistence(timeout:45))
         let startDownload = app.buttons["Запустить контрольное скачивание"]
-        let queue = app.webViews.buttons["Передача"]
+        let queue = app.buttons["queue-tab-transfers"]
         let filesTab = app.buttons["queue-tab-files"]
         let backupTab = app.buttons["queue-tab-backup"]
         let transfersTab = app.buttons["queue-tab-transfers"]
@@ -57,9 +57,13 @@ final class TransferSmoke: XCTestCase {
         app.alerts.buttons["Удалить"].tap()
         XCTAssertTrue(app.staticTexts["Передач пока нет"].waitForExistence(timeout:8))
 
-        app.buttons["Готово"].tap()
+        filesTab.tap()
         XCTAssertTrue(download.waitForExistence(timeout:10))
-        for _ in 0..<3 { startDownload.tap() }
+        startDownload.tap()
+        Thread.sleep(forTimeInterval:1.3)
+        startDownload.tap()
+        Thread.sleep(forTimeInterval:1.3)
+        startDownload.tap()
         queue.tap()
         let rows = app.cells.containing(.staticText,identifier:"slow file +.bin")
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
@@ -95,7 +99,7 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(download.waitForExistence(timeout:20))
         download.tap()
         attachment.tap()
-        app.buttons["Передача"].tap()
+        app.buttons["queue-tab-transfers"].tap()
         XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
         XCUIDevice.shared.press(.home)
         app.activate()
@@ -106,7 +110,7 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(app.staticTexts["ci-download.txt"].exists)
         app.terminate()
         app.launch()
-        app.buttons["Передача"].tap()
+        app.buttons["queue-tab-transfers"].tap()
         XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
         XCTAssertTrue(app.staticTexts["ci-download.txt"].exists)
         XCTAssertEqual(completed.count,2)

@@ -26,7 +26,7 @@ struct PhoneDiskApp: App {
                     transfers.recover()
                 }
                 .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
-                    transfers.routeChanged(route)
+                    transfers.routeChanged()
                     disk.changeRoute(route)
                 }
                 .onChange(of:phase) { _, state in
@@ -99,11 +99,22 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     let uploadSelection = PassthroughSubject<NativePickerRequest,Never>()
     let openTransfers = PassthroughSubject<Void,Never>()
     private let bridge = "phoneDiskNative"
+    private var webTab: DiskTab = .files
     lazy var view:WKWebView = {
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.websiteDataStore.proxyConfigurations = DiskRoutes.shared.selected.proxy
         config.allowsInlineMediaPlayback=true
+        let nativeTabs = """
+        window.phoneDiskNativeTabVersion = 1;
+        document.addEventListener('DOMContentLoaded', () => {
+          if (typeof window.phoneDiskHostSelectTab !== 'function') {
+            const tabs = document.querySelector('nav.bottom-tabs');
+            if (tabs) tabs.style.display = 'none';
+          }
+        }, { once: true });
+        """
+        config.userContentController.addUserScript(WKUserScript(source:nativeTabs,injectionTime:.atDocumentStart,forMainFrameOnly:true))
         let script = """
         const deviceSettings = document.getElementById('device-settings');
         if (deviceSettings) deviceSettings.hidden = false;
@@ -131,9 +142,20 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     func reload() { offline=false; view.load(URLRequest(url:Transfers.base)) }
 
     fileprivate func selectWebTab(_ tab: DiskTab) {
-        guard tab != .transfers, Transfers.sameHost(view.url) else { return }
+        guard tab != .transfers else { return }
+        webTab = tab
+        syncWebTab()
+    }
+
+    private func syncWebTab() {
+        guard Transfers.sameHost(view.url) else { return }
+        let tab = webTab
         let script = """
         (() => {
+          if (typeof window.phoneDiskHostSelectTab === 'function') {
+            window.phoneDiskHostSelectTab('\(tab.rawValue)');
+            return;
+          }
           const button = document.querySelector('nav.bottom-tabs button[data-tab="\(tab.rawValue)"]');
           if (button && !button.closest('[hidden]')) button.click();
         })();
@@ -143,7 +165,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func changeRoute(_ route: DiskRoute) {
         WKWebsiteDataStore.default().proxyConfigurations = route.proxy
-        reload()
+        if offline { reload() }
     }
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
@@ -155,7 +177,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             case "enable":
                 Task { @MainActor in await Transfers.shared.authorization() }
             case "queue":
-                openTransfers.send(())
+                openTransfers.send()
             case "disable-auto":
                 Task { @MainActor in Transfers.shared.disableAuto() }
             case "notifications":
@@ -214,6 +236,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         }
         """
         webView.evaluateJavaScript(install,completionHandler:nil)
+        syncWebTab()
         Task { @MainActor in try? await Transfers.shared.scan() }
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
@@ -249,7 +272,7 @@ struct DiskScreen: View {
     @State private var destination:Destination?
     @State private var files=false
     @State private var showPhotos=false
-    @State private var showQueue=false
+    @State private var currentTab: DiskTab = .files
     @State private var selectingTransfers = false
     @State private var selectedTransfers = Set<String>()
     @State private var transfersToRemove = Set<String>()
@@ -259,39 +282,24 @@ struct DiskScreen: View {
 
     var body: some View {
         VStack(spacing:0) {
-            if disk.offline {
-                ContentUnavailableView {
-                    Label("Домашний ПК недоступен",systemImage:"wifi.slash")
-                } actions: { Button("Повторить"){ disk.reload() }.buttonStyle(.borderedProminent) }
-            } else { WebSurface(browser:disk) }
-            #if DEBUG && targetEnvironment(simulator)
-            if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
-                Button("Запустить контрольное скачивание") {
-                    let path = "/api/resources/download?source=photos-c&file=%2Fslow%20file%20%2B.bin"
-                    if let url = URL(string: path, relativeTo: Transfers.base)?.absoluteURL {
-                        disk.view.load(URLRequest(url: url))
-                    }
-                }
-                Button("Выбрать пробный файл") {
-                    let url=FileManager.default.temporaryDirectory.appendingPathComponent("fixture-source.txt")
-                    do {
-                        try Data("PhoneDisk fixture bytes\n".utf8).write(to:url)
-                        try transfers.enqueueFile(url,destination:Destination(source:"photos-c",path:"/"),name:"fixture-data.txt")
-                    } catch { transfers.message=error.localizedDescription }
-                }
+            ZStack {
+                webContent
+                    .opacity(currentTab == .transfers ? 0 : 1)
+                    .allowsHitTesting(currentTab != .transfers)
+                    .accessibilityHidden(currentTab == .transfers)
+                if currentTab == .transfers { queue }
             }
-            #endif
+            if currentTab == .transfers && selectingTransfers { transferSelectionBar }
+            Divider()
+            transferTabs.background(.bar)
         }
-        .onReceive(disk.openTransfers) { _ in
-            showQueue=true
-        }
+        .onReceive(disk.openTransfers) { selectTab(.transfers) }
         .onReceive(disk.uploadSelection) { selection in
             pickerType=selection.type
             pickPhotos=selection.type != "files"
             if let destination=selection.destination { pick(destination) }
             else { showDestinations=true }
         }
-        .sheet(isPresented:$showQueue,onDismiss:clearTransferSelection) { queue }
         .confirmationDialog("Папка назначения",isPresented:$showDestinations,titleVisibility:.visible) {
             Button("Фото и видео · C"){ pick(Destination(source:"photos-c",path:"/")) }
             Button("Видео интервью · D"){ pick(Destination(source:"interviews-d",path:"/")) }
@@ -318,6 +326,40 @@ struct DiskScreen: View {
         .alert("Мой диск",isPresented:Binding(get:{!transfers.message.isEmpty},set:{if !$0 {transfers.message=""}})) {
             Button("Закрыть",role:.cancel){ transfers.message="" }
         } message:{ Text(transfers.message) }
+    }
+
+    private var webContent: some View {
+        VStack(spacing:0) {
+            if disk.offline {
+                ContentUnavailableView {
+                    Label("Домашний ПК недоступен",systemImage:"wifi.slash")
+                } actions: { Button("Повторить"){ disk.reload() }.buttonStyle(.borderedProminent) }
+            } else { WebSurface(browser:disk) }
+            #if DEBUG && targetEnvironment(simulator)
+            if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
+                Button("Запустить контрольное скачивание") {
+                    let path = "/api/resources/download?source=photos-c&file=%2Fslow%20file%20%2B.bin"
+                    if let url = URL(string: path, relativeTo: Transfers.base)?.absoluteURL {
+                        disk.view.load(URLRequest(url: url))
+                    }
+                }
+                Button("Выбрать пробный файл") {
+                    let url=FileManager.default.temporaryDirectory.appendingPathComponent("fixture-source.txt")
+                    do {
+                        try Data("PhoneDisk fixture bytes\n".utf8).write(to:url)
+                        try transfers.enqueueFile(url,destination:Destination(source:"photos-c",path:"/"),name:"fixture-data.txt")
+                    } catch { transfers.message=error.localizedDescription }
+                }
+            }
+            #endif
+        }
+    }
+
+    private func selectTab(_ tab: DiskTab) {
+        guard currentTab != tab else { return }
+        if currentTab == .transfers { clearTransferSelection() }
+        currentTab = tab
+        if tab != .transfers { disk.selectWebTab(tab) }
     }
 
     private func pick(_ target:Destination) {
@@ -358,19 +400,10 @@ struct DiskScreen: View {
                         Button("Отмена",action:clearTransferSelection)
                     } else {
                         Button("Выбрать") { selectingTransfers = true }.disabled(jobs.isEmpty)
-                        Button("Готово") { showQueue = false }
                     }
                 }
             }
             .overlay { if jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
-            .safeAreaInset(edge:.bottom,spacing:0) {
-                VStack(spacing: 0) {
-                    if selectingTransfers { transferSelectionBar }
-                    Divider()
-                    transferTabs
-                }
-                .background(.bar)
-            }
             .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?",isPresented:Binding(
                 get:{ !transfersToRemove.isEmpty },
                 set:{ if !$0 { transfersToRemove.removeAll() } }
@@ -388,11 +421,9 @@ struct DiskScreen: View {
     private var transferTabs: some View {
         HStack(spacing: 0) {
             ForEach(DiskTab.allCases, id: \.self) { tab in
-                let selected = tab == .transfers
+                let selected = tab == currentTab
                 Button {
-                    guard !selected else { return }
-                    disk.selectWebTab(tab)
-                    showQueue = false
+                    selectTab(tab)
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon)
@@ -465,9 +496,10 @@ struct DiskScreen: View {
                 Spacer(minLength:4)
                 if !selectingTransfers && job.downloadURL != nil { downloadActions(job) }
             }
-            if let reading = transfers.readings[job.id] { transferDetails(reading) }
             if !job.isFinished {
-                let progress = transfers.readings[job.id].map { $0.total > 0 ? Double($0.confirmed)/Double($0.total) : 0 } ?? job.progress
+                let reading = transfers.readings[job.id]
+                transferDetails(reading)
+                let progress = reading.map { $0.total > 0 ? min(1,Double($0.visibleBytes)/Double($0.total)) : 0 } ?? job.progress
                 ProgressView(value:progress)
                 if !selectingTransfers && job.downloadURL == nil &&
                     !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
@@ -507,23 +539,26 @@ struct DiskScreen: View {
         .accessibilityLabel(Text(label))
     }
 
-    private func transferDetails(_ reading: TransferReading) -> some View {
-        let left = max(0,reading.total-reading.confirmed)
-        let percent = reading.total > 0 ? Int(100 * Double(reading.confirmed)/Double(reading.total)) : 0
-        let size = ByteCountFormatter.string(fromByteCount:reading.confirmed,countStyle:.file)
-        let remaining = ByteCountFormatter.string(fromByteCount:left,countStyle:.file)
+    private func transferDetails(_ reading: TransferReading?) -> some View {
+        let count = reading?.visibleBytes ?? 0
+        let total = reading?.total ?? 0
+        let left = max(0,total-count)
+        let percent = total > 0 ? Int(100 * Double(count)/Double(total)) : 0
+        let size = ByteCountFormatter.string(fromByteCount:count,countStyle:.file)
+        let totalSize = ByteCountFormatter.string(fromByteCount:total,countStyle:.file)
+        let speed = reading?.bytesPerSecond ?? 0
         return VStack(alignment:.leading,spacing:4) {
-            Text("\(percent)% · \(size) сохранено · \(remaining) осталось")
-            Text(reading.connection)
-            if reading.bytesPerSecond > 0 && left > 0 {
-                let speed = reading.bytesPerSecond / 1_000_000
-                let seconds = Int(min(86400 * 7, ceil(Double(left) / reading.bytesPerSecond)))
+            Text(total > 0 ? "\(percent)% · \(size) из \(totalSize)" : "—% · —")
+            Text(reading?.connection ?? "Маршрут · —")
+            if speed > 0 && left > 0 {
+                let seconds = Int(min(86400 * 7,ceil(Double(left) / speed)))
                 let eta = Duration.seconds(seconds).formatted(.units(allowed:[.hours,.minutes,.seconds],width:.abbreviated,maximumUnitCount:2))
-                Text("\(speed.formatted(.number.precision(.fractionLength(2)))) МБ/с · \(eta)")
-            }
+                Text("\((speed / 1_000_000).formatted(.number.precision(.fractionLength(2)))) МБ/с · \(eta)")
+            } else { Text("— МБ/с · —") }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
         .monospacedDigit()
+        .lineLimit(1)
     }
 }
