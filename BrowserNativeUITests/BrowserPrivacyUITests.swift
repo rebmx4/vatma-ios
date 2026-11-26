@@ -38,7 +38,11 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertFalse(home.isHittable, "Browser navigation hides during Incognito address entry")
         screenshot("incognito-start")
         input.typeText("example.org")
-        XCTAssertEqual(input.value as? String, "example.org")
+        let addressEntered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            input.value as? String == "example.org"
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [addressEntered], timeout: 5), .completed,
+                       "The Incognito address must contain the complete URL, got \(String(describing: input.value))")
         device.tap()
         let close = button(["Закрыть", "Close"])
         XCTAssertTrue(close.waitForExistence(timeout: 5))
