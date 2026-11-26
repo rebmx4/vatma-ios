@@ -378,10 +378,10 @@ struct DiskScreen: View {
             #if DEBUG && targetEnvironment(simulator)
             if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
                 Button("Запустить контрольное скачивание") {
-                    let path = "/api/resources/download?source=photos-c&file=%2Fslow%20file%20%2B.bin"
-                    if let url = URL(string: path, relativeTo: Transfers.base)?.absoluteURL {
-                        disk.view.load(URLRequest(url: url))
-                    }
+                    let persistence = ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE_PERSISTENCE"] == "1"
+                    let file = persistence ? "/ci-download.txt" : "/slow file +.bin"
+                    let url = Transfers.address("/api/resources/download", ["source": "photos-c", "file": file])
+                    disk.view.load(URLRequest(url: url))
                 }
                 Button("Выбрать пробный файл") {
                     let url=FileManager.default.temporaryDirectory.appendingPathComponent("fixture-source.txt")

@@ -93,17 +93,21 @@ final class TransferSmoke: XCTestCase {
     }
 
     func testUploadDownloadAndPersistentQueue() throws {
-        let app=XCUIApplication()
-        app.launchEnvironment["PHONE_DISK_FIXTURE"]="1"
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["PHONE_DISK_FIXTURE"] = "1"
+        app.launchEnvironment["PHONE_DISK_FIXTURE_PERSISTENCE"] = "1"
         app.launch()
         let attachment=app.buttons["Выбрать пробный файл"]
         XCTAssertTrue(attachment.waitForExistence(timeout:20))
-        let download=app.links["Скачать пробный файл"]
-        XCTAssertTrue(download.waitForExistence(timeout:20))
+        XCTAssertTrue(app.links["Скачать пробный файл"].waitForExistence(timeout: 20))
+        let download = app.buttons["Запустить контрольное скачивание"]
+        XCTAssertTrue(download.isHittable)
         download.tap()
         attachment.tap()
         app.buttons["queue-tab-transfers"].tap()
         XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
+        XCTAssertTrue(app.staticTexts["ci-download.txt"].waitForExistence(timeout:10), app.debugDescription)
         XCUIDevice.shared.press(.home)
         app.activate()
         let completed=app.staticTexts.matching(identifier:"Готово")
