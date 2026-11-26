@@ -9,12 +9,19 @@ import UniformTypeIdentifiers
 import WebKit
 
 private enum DiskPalette {
-    static let surface = Color(white: 23.0 / 255)
     static let accent = Color(uiColor: accentUI)
     static let accentUI = UIColor(red: 164.0 / 255, green: 200.0 / 255, blue: 174.0 / 255, alpha: 1)
-    static let selection = Color(red: 36.0 / 255, green: 46.0 / 255, blue: 39.0 / 255)
     static let muted = Color(white: 179.0 / 255)
+    static let separator = Color.white.opacity(0.13)
     static let danger = Color(red: 1, green: 150.0 / 255, blue: 150.0 / 255)
+}
+
+private struct DiskCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay { Capsule().strokeBorder(DiskPalette.separator).allowsHitTesting(false) }
+    }
 }
 
 @main
@@ -33,6 +40,7 @@ struct PhoneDiskApp: App {
                 .task {
                     DiskRoutes.shared.start()
                     if let route = DiskRoutes.shared.selected { disk.changeRoute(route) }
+                    else if Transfers.base.host != "127.0.0.1" { disk.reload() }
                     transfers.recover()
                 }
                 .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
@@ -42,6 +50,7 @@ struct PhoneDiskApp: App {
                 .onChange(of:phase) { _, state in
                     if state == .active {
                         DiskRoutes.shared.refresh()
+                        disk.reconnectIfNeeded()
                         transfers.recover()
                         Task { try? await transfers.scan() }
                     }
@@ -108,13 +117,31 @@ private enum DiskTab: String, CaseIterable {
     }
 }
 
+private enum TransferDirection: String, CaseIterable {
+    case upload, download
+
+    var title: String { self == .upload ? "Выгрузки" : "Скачивания" }
+    var icon: String { self == .upload ? "tray.and.arrow.up" : "tray.and.arrow.down" }
+    var emptyTitle: String { self == .upload ? "Выгрузок пока нет" : "Скачиваний пока нет" }
+
+    func includes(_ job: DiskJob) -> Bool {
+        (job.downloadURL != nil) == (self == .download)
+    }
+}
+
+enum DiskPageState: Equatable {
+    case connecting, ready, unavailable
+}
+
 final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-    @Published var offline = false
+    @Published private(set) var pageState: DiskPageState = .connecting
     let uploadSelection = PassthroughSubject<NativePickerRequest,Never>()
     let openTransfers = PassthroughSubject<Void,Never>()
     private let bridge = "phoneDiskNative"
     private var webTab: DiskTab = .files
     private var pageRoute: DiskRoute?
+    private var pageNavigation: WKNavigation?
+    private var reconnect: Task<Void, Never>?
     lazy var view:WKWebView = {
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .default()
@@ -157,23 +184,39 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         view.allowsBackForwardNavigationGestures=true
         if Transfers.base.host == "127.0.0.1" {
             config.websiteDataStore.proxyConfigurations = []
-            view.load(URLRequest(url: Transfers.base))
+            pageNavigation = view.load(URLRequest(url: Transfers.base))
         }
         return view
     }()
 
     func reload() {
-        Task { @MainActor in
-            do { load(try await DiskRoutes.shared.resolve()) }
-            catch { offline = true }
+        reconnect?.cancel()
+        pageState = .connecting
+        reconnect = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let route = try await DiskRoutes.shared.resolve()
+                try Task.checkCancellation()
+                if pageNavigation == nil { load(route) }
+            } catch is CancellationError {
+                return
+            } catch {
+                pageState = .unavailable
+            }
         }
     }
 
+    func reconnectIfNeeded() {
+        if pageState == .unavailable { reload() }
+    }
+
     private func load(_ route: DiskRoute) {
+        reconnect?.cancel()
+        reconnect = nil
         pageRoute = route
         view.configuration.websiteDataStore.proxyConfigurations = route.proxy
-        offline = false
-        view.load(URLRequest(url: Transfers.base))
+        pageState = .connecting
+        pageNavigation = view.load(URLRequest(url: Transfers.base))
     }
 
     fileprivate func selectWebTab(_ tab: DiskTab) {
@@ -201,11 +244,12 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     func changeRoute(_ route: DiskRoute?) {
         guard let route else {
             pageRoute = nil
+            pageNavigation = nil
             view.stopLoading()
-            offline = true
+            pageState = .unavailable
             return
         }
-        if pageRoute != route || offline { load(route) }
+        if pageRoute != route || pageState == .unavailable { load(route) }
     }
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
@@ -254,7 +298,11 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
-        offline=false
+        if let pageNavigation, pageNavigation !== navigation { return }
+        pageNavigation = nil
+        reconnect?.cancel()
+        reconnect = nil
+        pageState = .ready
         let install="""
         if (typeof pickUpload === 'function' && !window.phoneDiskUploadsInstalled) {
           window.phoneDiskUploadsInstalled=true;
@@ -280,9 +328,29 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         Task { @MainActor in try? await Transfers.shared.scan() }
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
-        if (error as NSError).code != NSURLErrorCancelled { offline=true }
+        navigationFailed(navigation, error: error)
     }
-    func webViewWebContentProcessDidTerminate(_ webView:WKWebView) { reload() }
+
+    func webView(_ webView:WKWebView,didFail navigation:WKNavigation!,withError error:Error) {
+        navigationFailed(navigation, error: error)
+    }
+
+    private func navigationFailed(_ navigation: WKNavigation?, error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        if let pageNavigation, pageNavigation !== navigation { return }
+        pageNavigation = nil
+        pageState = .unavailable
+        reconnect?.cancel()
+        reconnect = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            self?.reload()
+        }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView:WKWebView) {
+        pageNavigation = nil
+        reload()
+    }
 }
 
 struct WebSurface: UIViewRepresentable {
@@ -312,6 +380,7 @@ struct DiskScreen: View {
     @State private var files=false
     @State private var showPhotos=false
     @State private var currentTab: DiskTab = .files
+    @State private var transferDirection: TransferDirection = .download
     @State private var selectingTransfers = false
     @State private var selectedTransfers = Set<String>()
     @State private var transfersToRemove = Set<String>()
@@ -329,11 +398,11 @@ struct DiskScreen: View {
                     .accessibilityHidden(currentTab == .transfers)
                 if currentTab == .transfers { queue }
             }
-            if currentTab == .transfers && selectingTransfers { transferSelectionBar }
-            Divider()
-            transferTabs.background(DiskPalette.surface)
+            if currentTab == .transfers { transferControls }
+            transferTabs
         }
-        .onReceive(disk.openTransfers) { selectTab(.transfers) }
+        .background(Color.black)
+        .onReceive(disk.openTransfers) { showTransfers(.download) }
         .onReceive(disk.uploadSelection) { selection in
             pickerType=selection.type
             pickPhotos=selection.type != "files"
@@ -346,20 +415,27 @@ struct DiskScreen: View {
             Button("Видео с камеры · E"){ pick(Destination(source:"camera-e",path:"/")) }
         } message:{ Text("Чтобы выбрать вложенную папку, сначала откройте её в «Файлах».") }
         .fileImporter(isPresented:$files,allowedContentTypes:[.item],allowsMultipleSelection:true) { result in
-            do { if let destination { for url in try result.get() { try transfers.enqueueFile(url,destination:destination) } } }
-            catch { transfers.message=error.localizedDescription }
+            do {
+                guard let destination else { return }
+                let urls = try result.get()
+                for url in urls { try transfers.enqueueFile(url,destination:destination) }
+                if !urls.isEmpty { showTransfers(.upload) }
+            } catch { transfers.message=error.localizedDescription }
         }
         .photosPicker(isPresented:$showPhotos,selection:$photos,maxSelectionCount:20,matching:pickerType=="photo" ? .images : pickerType=="video" ? .videos : .any(of:[.images,.videos]))
         .onChange(of:photos) { _, selected in
             guard !selected.isEmpty, let destination else { return }
             Task {
+                var enqueued = false
                 do {
                     for photo in selected {
                         guard let file=try await photo.loadTransferable(type:ImportFile.self) else { continue }
                         defer { try? FileManager.default.removeItem(at:file.url.deletingLastPathComponent()) }
                         try transfers.enqueueFile(file.url,destination:destination)
+                        enqueued = true
                     }
                 } catch { transfers.message=error.localizedDescription }
+                if enqueued { showTransfers(.upload) }
                 photos=[]
             }
         }
@@ -370,11 +446,22 @@ struct DiskScreen: View {
 
     private var webContent: some View {
         VStack(spacing:0) {
-            if disk.offline {
-                ContentUnavailableView {
-                    Label("Домашний ПК недоступен",systemImage:"wifi.slash")
-                } actions: { Button("Повторить"){ disk.reload() }.buttonStyle(.borderedProminent) }
-            } else { WebSurface(browser:disk) }
+            ZStack {
+                WebSurface(browser:disk)
+                    .opacity(disk.pageState == .ready ? 1 : 0)
+                    .allowsHitTesting(disk.pageState == .ready)
+                    .accessibilityHidden(disk.pageState != .ready)
+                if disk.pageState == .connecting {
+                    ProgressView("Подключаюсь к ПК…").tint(DiskPalette.accent)
+                } else if disk.pageState == .unavailable {
+                    ContentUnavailableView {
+                        Label("Домашний ПК недоступен",systemImage:"wifi.slash")
+                    } actions: {
+                        Button("Повторить"){ disk.reload() }.buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            .background(Color.black)
             #if DEBUG && targetEnvironment(simulator)
             if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] == "1" {
                 Button("Запустить контрольное скачивание") {
@@ -402,67 +489,129 @@ struct DiskScreen: View {
         if tab != .transfers { disk.selectWebTab(tab) }
     }
 
+    private func showTransfers(_ direction: TransferDirection) {
+        selectTransferDirection(direction)
+        selectTab(.transfers)
+    }
+
+    private func selectTransferDirection(_ direction: TransferDirection) {
+        guard transferDirection != direction else { return }
+        clearTransferSelection()
+        transferDirection = direction
+    }
+
     private func pick(_ target:Destination) {
         destination=target
         if pickPhotos { showPhotos=true }
         else { files=true }
     }
 
-    private var queue:some View {
-        let jobs = transfers.jobs.filter { $0.hiddenFromQueue != true }
-        let removal = jobs.filter { transfersToRemove.contains($0.id) }
-        return NavigationStack {
-            List(jobs) { job in
-                if selectingTransfers {
-                    selectableTransfer(job)
-                        .listRowBackground(DiskPalette.surface)
-                } else {
-                    transferRow(job)
-                        .listRowBackground(DiskPalette.surface)
-                        .swipeActions(edge:.trailing,allowsFullSwipe:false) {
-                            Button(role:.destructive) {
-                                transfersToRemove = [job.id]
-                            } label: { Label("Удалить",systemImage:"trash") }
-                            .tint(DiskPalette.danger)
-                        }
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("Передача")
-            .toolbarBackground(Color.black,for:.navigationBar)
-            .toolbarBackground(.visible,for:.navigationBar)
-            .refreshable { await transfers.refreshQueue() }
-            .toolbar {
-                ToolbarItem(placement:.topBarLeading) {
-                    Button {
-                        Task { await transfers.refreshQueue() }
-                    } label: {
-                        Image(systemName:"arrow.clockwise")
-                    }
-                    .accessibilityLabel("Обновить передачи")
-                }
-                ToolbarItemGroup(placement:.topBarTrailing) {
+    private var visibleTransfers: [DiskJob] {
+        transfers.jobs.filter { $0.hiddenFromQueue != true && transferDirection.includes($0) }
+    }
+
+    private var queue: some View {
+        let removal = visibleTransfers.filter { transfersToRemove.contains($0.id) }
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("Передача")
+                .font(.largeTitle.bold())
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+            List(visibleTransfers) { job in
+                Group {
                     if selectingTransfers {
-                        Button("Отмена",action:clearTransferSelection)
+                        selectableTransfer(job)
                     } else {
-                        Button("Выбрать") { selectingTransfers = true }.disabled(jobs.isEmpty)
+                        transferRow(job)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    transfersToRemove = [job.id]
+                                } label: { Label("Удалить", systemImage: "trash") }
+                                .tint(DiskPalette.danger)
+                            }
                     }
                 }
+                .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 14))
+                .listRowBackground(Color.black)
+                .listRowSeparatorTint(DiskPalette.separator)
             }
-            .overlay { if jobs.isEmpty { ContentUnavailableView("Передач пока нет",systemImage:"arrow.up.arrow.down") } }
-            .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?",isPresented:Binding(
-                get:{ !transfersToRemove.isEmpty },
-                set:{ if !$0 { transfersToRemove.removeAll() } }
-            ),presenting:removal) { entries in
-                Button("Нет",role:.cancel) {}
-                Button("Удалить",role:.destructive) {
-                    if transfers.removeTransfers(Set(entries.map(\.id))) { clearTransferSelection() }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 52)
+            .refreshable { await transfers.refreshQueue() }
+            .overlay {
+                if visibleTransfers.isEmpty {
+                    ContentUnavailableView(transferDirection.emptyTitle, systemImage: transferDirection.icon)
+                        .allowsHitTesting(false)
                 }
-            } message: { entries in
-                if entries.count == 1, let job = entries.first { Text(job.name) }
             }
         }
+        .background(Color.black)
+        .alert(removal.count == 1 ? "Удалить запись передачи?" : "Удалить выбранные передачи?", isPresented: Binding(
+            get: { !removal.isEmpty },
+            set: { if !$0 { transfersToRemove.removeAll() } }
+        ), presenting: removal) { entries in
+            Button("Нет", role: .cancel) {}
+            Button("Удалить", role: .destructive) {
+                if transfers.removeTransfers(Set(entries.map(\.id))) { clearTransferSelection() }
+            }
+        } message: { entries in
+            if entries.count == 1, let job = entries.first { Text(job.name) }
+        }
+    }
+
+    private var transferControls: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            if selectingTransfers { transferSelectionBar }
+            HStack(spacing: 7) {
+                HStack(spacing: 0) {
+                    ForEach(TransferDirection.allCases, id: \.self) { direction in
+                        let selected = direction == transferDirection
+                        Button {
+                            selectTransferDirection(direction)
+                        } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: direction.icon)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(selected ? DiskPalette.accent : DiskPalette.muted)
+                                    .accessibilityHidden(true)
+                                Text(direction.title)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(DiskPalette.muted)
+                            }
+                            .padding(.horizontal, 7)
+                            .frame(minWidth: 44, minHeight: 48)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                        .accessibilityIdentifier("queue-direction-\(direction.rawValue)")
+                    }
+                }
+                .padding(.horizontal, 3)
+                .modifier(DiskCapsule())
+
+                HStack(spacing: 0) {
+                    transferIcon("Обновить передачи", "arrow.clockwise", color: .primary) {
+                        Task { await transfers.refreshQueue() }
+                    }
+                    transferIcon(selectingTransfers ? "Отмена" : "Выбрать",
+                                 selectingTransfers ? "xmark" : "checkmark.circle") {
+                        if selectingTransfers { clearTransferSelection() }
+                        else { selectingTransfers = true }
+                    }
+                    .disabled(!selectingTransfers && visibleTransfers.isEmpty)
+                    .opacity(!selectingTransfers && visibleTransfers.isEmpty ? 0.4 : 1)
+                }
+                .padding(.horizontal, 2)
+                .frame(minHeight: 48)
+                .modifier(DiskCapsule())
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
     }
 
     private var transferTabs: some View {
@@ -475,21 +624,24 @@ struct DiskScreen: View {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(selected ? DiskPalette.accent : DiskPalette.muted)
                             .accessibilityHidden(true)
                         Text(tab.title)
                             .font(.caption2.weight(.semibold))
+                            .foregroundStyle(DiskPalette.muted)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .frame(maxWidth: .infinity, minHeight: 50)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(selected ? DiskPalette.accent : DiskPalette.muted)
-                .background(selected ? DiskPalette.selection : Color.clear,in:RoundedRectangle(cornerRadius:12))
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .accessibilityIdentifier("queue-tab-\(tab.rawValue)")
             }
         }
-        .padding(.horizontal, 8)
+        .padding(2)
+        .modifier(DiskCapsule())
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
 
     private func clearTransferSelection() {
@@ -498,18 +650,24 @@ struct DiskScreen: View {
         transfersToRemove.removeAll()
     }
 
-    private var transferSelectionBar:some View {
+    private var transferSelectionBar: some View {
         HStack {
-            Text("Выбрано \(selectedTransfers.count)").foregroundStyle(.secondary)
+            Text("Выбрано \(selectedTransfers.count)").foregroundStyle(DiskPalette.muted)
             Spacer()
-            Button(role:.destructive) {
+            Button(role: .destructive) {
                 transfersToRemove = selectedTransfers
-            } label: { Label("Удалить",systemImage:"trash") }
+            } label: {
+                Label("Удалить", systemImage: "trash")
+                    .frame(minHeight: 44)
+            }
+            .foregroundStyle(DiskPalette.danger)
+            .buttonStyle(.plain)
             .accessibilityLabel("Удалить выбранные передачи")
             .disabled(selectedTransfers.isEmpty)
+            .opacity(selectedTransfers.isEmpty ? 0.4 : 1)
         }
-        .padding()
-        .background(DiskPalette.surface)
+        .font(.subheadline)
+        .padding(.horizontal, 8)
     }
 
     private func selectableTransfer(_ job:DiskJob) -> some View {
@@ -534,39 +692,53 @@ struct DiskScreen: View {
     }
 
     private func transferRow(_ job:DiskJob) -> some View {
-        VStack(alignment:.leading,spacing:5) {
-            HStack(alignment:.top,spacing:4) {
-                VStack(alignment:.leading,spacing:4) {
-                    Text(job.name).font(.body)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 3) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(job.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Text(transfers.stopping.contains(job.id) ? "Останавливаю…" : job.phase)
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(DiskPalette.muted)
                 }
-                Spacer(minLength:4)
-                if !selectingTransfers && job.downloadURL != nil { downloadActions(job) }
+                Spacer(minLength: 0)
+                if !selectingTransfers {
+                    if job.downloadURL != nil {
+                        if job.isFinished, let name = job.localName { completedDownload(job, name: name) }
+                        downloadActions(job)
+                    } else if !job.isFinished &&
+                        !["Выгрузка", "Подготовка", "Проверка на ПК", "Проверка файла"].contains(job.phase) {
+                        transferIcon("Продолжить", "arrow.clockwise") { transfers.start(job.id) }
+                    }
+                }
             }
             if !job.isFinished {
-                let reading = transfers.readings[job.id]
-                transferDetails(reading)
-                let progress = reading.map { $0.total > 0 ? min(1,Double($0.visibleBytes)/Double($0.total)) : 0 } ?? job.progress
-                ProgressView(value:progress).tint(DiskPalette.accent)
-                if !selectingTransfers && job.downloadURL == nil &&
-                    !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
-                    Button("Продолжить") { transfers.start(job.id) }.buttonStyle(.borderless)
-                }
-            } else if !selectingTransfers, let name = job.localName {
-                let file = Transfers.documents.appendingPathComponent(name)
-                HStack {
-                    ShareLink(item:file)
-                        .buttonStyle(.borderless)
-                    if let type = photosResourceType(file,job:job) {
-                        let saving = savingToPhotos.contains(job.id)
-                        Button {
-                            saveToPhotos(job.id,file:file,type:type)
-                        } label: {
-                            Label(saving ? "Сохраняю…" : "Сохранить в Фото",systemImage:"photo.badge.plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(saving)
+                transferDetails(job)
+            }
+        }
+    }
+
+    private func completedDownload(_ job: DiskJob, name: String) -> some View {
+        let file = Transfers.documents.appendingPathComponent(name)
+        return HStack(spacing: 0) {
+            ShareLink(item: file) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(DiskPalette.accent)
+            .accessibilityLabel("Поделиться")
+            if let type = photosResourceType(file, job: job) {
+                if savingToPhotos.contains(job.id) {
+                    ProgressView().tint(DiskPalette.accent).frame(width: 44, height: 44)
+                        .accessibilityLabel("Сохраняю в Фото")
+                } else {
+                    transferIcon("Сохранить в Фото", "photo.badge.plus") {
+                        saveToPhotos(job.id, file: file, type: type)
                     }
                 }
             }
@@ -616,49 +788,62 @@ struct DiskScreen: View {
             if transfers.stopping.contains(job.id) {
                 ProgressView().tint(DiskPalette.accent).frame(width:44,height:44)
             } else if job.canStopDownload {
-                downloadButton("Остановить скачивание","stop.fill") { transfers.stopDownload(job.id) }
+                transferIcon("Остановить скачивание", "stop.fill") { transfers.stopDownload(job.id) }
             } else {
                 if job.canRetryDownload {
-                    downloadButton("Повторить скачивание","arrow.counterclockwise") { transfers.retryDownload(job.id) }
+                    transferIcon("Повторить скачивание", "arrow.counterclockwise") { transfers.retryDownload(job.id) }
                 }
                 if job.canRemoveDownload {
-                    downloadButton("Удалить запись передачи","trash",role:.destructive) { transfersToRemove = [job.id] }
+                    transferIcon("Удалить запись передачи", "trash", color: DiskPalette.danger, role: .destructive) {
+                        transfersToRemove = [job.id]
+                    }
                 }
             }
         }
     }
 
-    private func downloadButton(_ label:String,_ icon:String,role:ButtonRole?=nil,action:@escaping () -> Void) -> some View {
+    private func transferIcon(_ label: String, _ icon: String, color: Color = DiskPalette.accent,
+                              role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
         Button(role:role,action:action) {
             Image(systemName:icon)
-                .font(.body.weight(.medium))
+                .font(.system(size: 16, weight: .medium))
                 .frame(width:44,height:44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .tint(role == .destructive ? DiskPalette.danger : DiskPalette.accent)
+        .foregroundStyle(color)
         .accessibilityLabel(Text(label))
     }
 
-    private func transferDetails(_ reading: TransferReading?) -> some View {
-        let count = reading?.visibleBytes ?? 0
+    private func transferDetails(_ job: DiskJob) -> some View {
+        let reading = transfers.readings[job.id]
         let total = reading?.total ?? 0
-        let left = max(0,total-count)
-        let percent = total > 0 ? Int(100 * Double(count)/Double(total)) : 0
-        let size = ByteCountFormatter.string(fromByteCount:count,countStyle:.file)
-        let totalSize = ByteCountFormatter.string(fromByteCount:total,countStyle:.file)
+        let count = min(total, reading?.visibleBytes ?? 0)
+        let progress = total > 0 ? Double(count) / Double(total) : job.progress
+        let size = ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+        let totalSize = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
         let speed = reading?.bytesPerSecond ?? 0
-        return VStack(alignment:.leading,spacing:4) {
-            Text(total > 0 ? "\(percent)% · \(size) из \(totalSize)" : "—% · —")
-            Text(reading?.connection ?? "Маршрут · —")
-            if speed > 0 && left > 0 {
-                let seconds = Int(min(86400 * 7,ceil(Double(left) / speed)))
-                let eta = Duration.seconds(seconds).formatted(.units(allowed:[.hours,.minutes,.seconds],width:.abbreviated,maximumUnitCount:2))
-                Text("\((speed / 1_000_000).formatted(.number.precision(.fractionLength(2)))) МБ/с · \(eta)")
-            } else { Text("— МБ/с · —") }
+        let left = total - count
+        var route = reading?.connection ?? "Маршрут · —"
+        if speed > 0 && left > 0 {
+            let seconds = Int(min(86400 * 7, ceil(Double(left) / speed)))
+            let eta = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds],
+                                                                 width: .abbreviated, maximumUnitCount: 2))
+            route += " · \(eta)"
+        }
+        let rate = speed > 0 ? (speed / 1_000_000).formatted(.number.precision(.fractionLength(2))) : "—"
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(total > 0 ? "\(Int(100 * progress))% · \(size) из \(totalSize)" : "—% · —")
+                Spacer(minLength: 3)
+                Text("\(rate) МБ/с")
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            ProgressView(value: progress).tint(DiskPalette.accent)
+            Text(route)
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DiskPalette.muted)
         .monospacedDigit()
         .lineLimit(1)
     }

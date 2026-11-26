@@ -298,7 +298,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return id
     }
 
-    // Returns true when the same item is already available in the queue.
+    // Open the queue for either a newly accepted download or an existing item.
     func enqueueDownload(_ url:URL,_ name:String?) -> Bool {
         guard let location = Self.downloadLocation(url) else { return false }
         let existing = jobs.contains { job in
@@ -317,7 +317,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard applyQueueChange(queue) else { return false }
         recentDownload = (location.source,location.path,now)
         start(id)
-        return false
+        return true
     }
 
     @MainActor func stopDownload(_ id:String) {

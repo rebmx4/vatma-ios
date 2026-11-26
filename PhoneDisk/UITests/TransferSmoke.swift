@@ -6,27 +6,30 @@ final class TransferSmoke: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["PHONE_DISK_FIXTURE"] = "1"
         app.launch()
-        let download = app.links["Скачать файл для остановки"]
-        XCTAssertTrue(download.waitForExistence(timeout:45))
         let queue = app.buttons["queue-tab-transfers"]
         let filesTab = app.buttons["queue-tab-files"]
         let backupTab = app.buttons["queue-tab-backup"]
-        let transfersTab = app.buttons["queue-tab-transfers"]
-        let resumable = app.staticTexts["Fixture v2"].exists
-        if !resumable { download.tap() }
-        queue.tap()
-        XCTAssertTrue(transfersTab.isSelected, app.debugDescription)
+        let uploads = app.buttons["queue-direction-upload"]
+        let downloads = app.buttons["queue-direction-download"]
+        let download = app.links["Скачать файл для остановки"]
         let name = app.staticTexts["slow file +.bin"]
+        XCTAssertTrue(queue.waitForExistence(timeout:20))
+        // The v2 fixture clicks the real WebKit download link once on page load.
         XCTAssertTrue(name.waitForExistence(timeout:30), app.debugDescription)
+        XCTAssertTrue(queue.isSelected)
+        XCTAssertTrue(downloads.isSelected)
         let stop = app.buttons["Остановить скачивание"]
         XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:20))
-        if resumable {
-            let speed = app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "МБ/с")).firstMatch
-            XCTAssertTrue(speed.waitForExistence(timeout:20))
-        }
+        let speed = app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@", "МБ/с")).firstMatch
+        XCTAssertTrue(speed.waitForExistence(timeout:20))
         XCTAssertTrue(filesTab.isHittable)
         XCTAssertTrue(backupTab.isHittable)
-        XCTAssertTrue(transfersTab.isHittable)
+        XCTAssertTrue(queue.isHittable)
+        uploads.tap()
+        XCTAssertTrue(app.staticTexts["Выгрузок пока нет"].waitForExistence(timeout:10))
+        XCTAssertFalse(name.exists)
+        downloads.tap()
+        XCTAssertTrue(name.waitForExistence(timeout:10))
         backupTab.tap()
         XCTAssertTrue(app.webViews.staticTexts["Настройки автокопий"].waitForExistence(timeout:20))
         queue.tap()
@@ -59,15 +62,16 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(name.exists)
         app.buttons["Удалить запись передачи"].tap()
         app.alerts.buttons["Удалить"].tap()
-        XCTAssertTrue(app.staticTexts["Передач пока нет"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.staticTexts["Скачиваний пока нет"].waitForExistence(timeout:8))
 
-        filesTab.tap()
-        XCTAssertTrue(download.waitForExistence(timeout:10))
         let bulkNames = ["fixture-one.bin", "fixture-two.bin", "fixture-three.bin"]
         for filename in bulkNames {
-            app.links[filename].tap()
+            filesTab.tap()
+            let link = app.links[filename]
+            XCTAssertTrue(link.waitForExistence(timeout:10))
+            link.tap()
+            XCTAssertTrue(app.cells.containing(.staticText, identifier:filename).firstMatch.waitForExistence(timeout:10))
         }
-        queue.tap()
         for filename in bulkNames {
             XCTAssertTrue(app.cells.containing(.staticText,identifier:filename).firstMatch.waitForExistence(timeout:10))
         }
@@ -92,8 +96,8 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(remove.isEnabled)
         remove.tap()
         app.alerts.buttons["Удалить"].tap()
-        XCTAssertTrue(app.staticTexts["Передач пока нет"].waitForExistence(timeout:8))
-        XCTAssertTrue(transfersTab.isHittable)
+        XCTAssertTrue(app.staticTexts["Скачиваний пока нет"].waitForExistence(timeout:8))
+        XCTAssertTrue(queue.isHittable)
         filesTab.tap()
         XCTAssertTrue(download.waitForExistence(timeout:10))
     }
@@ -109,23 +113,32 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(app.links["Скачать пробный файл"].waitForExistence(timeout: 20))
         let download = app.buttons["Запустить контрольное скачивание"]
         XCTAssertTrue(download.isHittable)
-        download.tap()
         attachment.tap()
-        app.buttons["queue-tab-transfers"].tap()
-        XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
+        download.tap()
+        let queue = app.buttons["queue-tab-transfers"]
+        let uploads = app.buttons["queue-direction-upload"]
+        let downloads = app.buttons["queue-direction-download"]
         XCTAssertTrue(app.staticTexts["ci-download.txt"].waitForExistence(timeout:10), app.debugDescription)
+        XCTAssertTrue(downloads.isSelected)
+        uploads.tap()
+        XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
+        XCTAssertFalse(app.staticTexts["ci-download.txt"].exists)
         XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 4)
         app.activate()
-        let completed=app.staticTexts.matching(identifier:"Готово")
-        let finished=NSPredicate{ _,_ in completed.count==2 }
-        let completion = XCTNSPredicateExpectation(predicate: finished, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [completion], timeout: 60), .completed, app.debugDescription)
+        let completed = app.staticTexts["Готово"]
+        XCTAssertTrue(completed.waitForExistence(timeout:45), app.debugDescription)
+        downloads.tap()
         XCTAssertTrue(app.staticTexts["ci-download.txt"].exists)
+        XCTAssertTrue(completed.waitForExistence(timeout:30))
+        XCTAssertTrue(app.buttons["Поделиться"].exists)
         app.terminate()
         app.launch()
-        app.buttons["queue-tab-transfers"].tap()
-        XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
+        queue.tap()
         XCTAssertTrue(app.staticTexts["ci-download.txt"].exists)
-        XCTAssertEqual(completed.count,2)
+        XCTAssertTrue(completed.exists)
+        uploads.tap()
+        XCTAssertTrue(app.staticTexts["fixture-data.txt"].waitForExistence(timeout:15))
+        XCTAssertTrue(completed.exists)
     }
 }

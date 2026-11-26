@@ -2,7 +2,7 @@ name: PhoneDisk Wi-Fi priority TestFlight
 
 on:
   push:
-    branches: [phone-disk/lan-priority-release]
+    branches: [phone-disk/lan-priority-release, phone-disk/compact-transfer]
     paths:
       - "PhoneDisk/App/**"
       - "PhoneDisk/Tests/**"
@@ -20,7 +20,13 @@ concurrency:
 
 jobs:
   archive:
-    if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-testflight]') || contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]')
+    if: >-
+      (github.ref == 'refs/heads/phone-disk/lan-priority-release' &&
+      (contains(github.event.head_commit.message, '[phone-disk-build-only]') ||
+      contains(github.event.head_commit.message, '[phone-disk-testflight]') ||
+      contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]'))) ||
+      (github.ref == 'refs/heads/phone-disk/compact-transfer' &&
+      contains(github.event.head_commit.message, '[phone-disk-owner-candidate]'))
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -30,6 +36,8 @@ jobs:
       DISK_BUNDLE: ru.atma.phonedisk
       DISK_TEAM: GR3WB4Z646
       DISK_VERSION: "1.0.0"
+      OWNER_RELEASE: ${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') || github.ref == 'refs/heads/phone-disk/compact-transfer' }}
+      COMPACT_CANDIDATE: ${{ github.ref == 'refs/heads/phone-disk/compact-transfer' }}
     steps:
       - name: Checkout authorized revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -39,8 +47,10 @@ jobs:
       - name: Verify backup history and prepare Xcode
         run: |
           set -euo pipefail
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') }}" == true ]]; then
+          if [[ "$OWNER_RELEASE" == true ]]; then
             test "$GITHUB_RUN_ATTEMPT" = 1
+          fi
+          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') }}" == true ]]; then
             git cat-file -e e2f931dfd92554f660eb6b2833a0f53d4df281b5^{commit}
             git diff --exit-code e2f931dfd92554f660eb6b2833a0f53d4df281b5 -- PhoneDisk ':(exclude)PhoneDisk/UITests/TransferSmoke.swift' ':(exclude)PhoneDisk/Tests/fixture.py'
             git diff --exit-code bb3bac9c157bd59c05d7e84b297138b8f15518ca -- PhoneDisk/UITests/TransferSmoke.swift PhoneDisk/Tests/fixture.py
@@ -76,14 +86,37 @@ jobs:
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
           xcrun simctl keychain "$device" add-root-cert "$smoke/ca.crt"
-          python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" --v2-downloads &
-          fixture=$!
-          trap 'kill "$fixture" 2>/dev/null || true' EXIT
-          curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/ > /dev/null
+          start_fixture() {
+            python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" "$@" &
+            fixture=$!
+            curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/ > /dev/null
+          }
+          stop_fixture() {
+            if [[ -n "${fixture:-}" ]]; then
+              kill "$fixture" 2>/dev/null || true
+              wait "$fixture" 2>/dev/null || true
+              fixture=""
+            fi
+          }
+          trap stop_fixture EXIT
+          start_fixture --v2-downloads
+          test_filters=(-only-testing:PhoneDiskUITests/TransferSmoke/testStopRetryAndRemoveDownload)
+          if [[ "$COMPACT_CANDIDATE" == true ]]; then
+            test_filters+=(-only-testing:PhoneDiskRouteTests)
+          fi
           xcodebuild test -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk \
             -configuration Debug -destination "id=$device" -parallel-testing-enabled NO \
-            -derivedDataPath "$smoke/build" -only-testing:PhoneDiskUITests/TransferSmoke/testStopRetryAndRemoveDownload \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath "$smoke/build" "${test_filters[@]}" CODE_SIGNING_ALLOWED=NO
+          if [[ "$COMPACT_CANDIDATE" == true ]]; then
+            stop_fixture
+            xcrun simctl uninstall "$device" "$DISK_BUNDLE"
+            start_fixture
+            xcodebuild test -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk \
+              -configuration Debug -destination "id=$device" -parallel-testing-enabled NO \
+              -derivedDataPath "$smoke/build" -only-testing:PhoneDiskUITests/TransferSmoke/testUploadDownloadAndPersistentQueue \
+              CODE_SIGNING_ALLOWED=NO
+            python3 -c 'from pathlib import Path; import sys; assert Path(sys.argv[1]).read_bytes() == b"PhoneDisk fixture bytes\n"' "$smoke/upload.txt"
+          fi
       - name: Prepare existing signing materials
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -92,7 +125,7 @@ jobs:
           CERT_KEY_B64: ${{ secrets.CERT_KEY_B64 }}
         run: |
           set -euo pipefail
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') }}" == true ]]; then
+          if [[ "$OWNER_RELEASE" == true ]]; then
             number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
           else
             latest="$(app-store-connect get-latest-testflight-build-number "$DISK_APP_ID")"
@@ -152,7 +185,7 @@ jobs:
           test -n "$icon"
           swift PhoneDisk/Tests/check-icon.swift "$icon"
       - name: Encrypt the signed IPA for the requesting PC
-        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]')
+        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || env.OWNER_RELEASE == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/phone-disk-delivery"
@@ -167,7 +200,7 @@ jobs:
           printf '%s\n%s\n%s\n' "$DISK_VERSION" "$DISK_BUILD" "$GITHUB_SHA" > "$RUNNER_TEMP/phone-disk-delivery/build.txt"
           echo "Verified and exported PhoneDisk $DISK_VERSION ($DISK_BUILD)." >> "$GITHUB_STEP_SUMMARY"
       - name: Save encrypted build
-        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]')
+        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || env.OWNER_RELEASE == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: phonedisk-encrypted-ipa-${{ github.run_id }}
@@ -175,21 +208,21 @@ jobs:
           retention-days: 2
           if-no-files-found: error
       - name: Upload the verified build to TestFlight
-        if: contains(github.event.head_commit.message, '[phone-disk-testflight]') || contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]')
+        if: contains(github.event.head_commit.message, '[phone-disk-testflight]') || env.OWNER_RELEASE == 'true'
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]') }}" == true ]]; then
+          if [[ "$OWNER_RELEASE" == true ]]; then
             number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
             [[ "$number" == "$DISK_BUILD" ]]
           fi
           app-store-connect publish --path "$RUNNER_TEMP/phone-disk-ipa/PhoneDisk.ipa" --enable-package-validation
           echo "App Store Connect received PhoneDisk $DISK_VERSION ($DISK_BUILD)." >> "$GITHUB_STEP_SUMMARY"
       - name: Verify Apple processing and the existing internal group
-        if: contains(github.event.head_commit.message, '[phone-disk-lan-priority-owner]')
+        if: env.OWNER_RELEASE == 'true'
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
