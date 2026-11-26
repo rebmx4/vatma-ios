@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   archive:
-    if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-testflight]') || contains(github.event.head_commit.message, '[phone-disk-testflight]')
+    if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-testflight]') || contains(github.event.head_commit.message, '[phone-disk-5417149-owner]')
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -39,7 +39,7 @@ jobs:
       - name: Verify backup history and prepare Xcode
         run: |
           set -euo pipefail
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-testflight]') }}" == true ]]; then
+          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-5417149-owner]') }}" == true ]]; then
             test "$GITHUB_RUN_ATTEMPT" = 1
             git cat-file -e 5417149^{commit}
             git diff --exit-code 5417149 -- PhoneDisk
@@ -91,7 +91,7 @@ jobs:
           CERT_KEY_B64: ${{ secrets.CERT_KEY_B64 }}
         run: |
           set -euo pipefail
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-testflight]') }}" == true ]]; then
+          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-5417149-owner]') }}" == true ]]; then
             number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
           else
             latest="$(app-store-connect get-latest-testflight-build-number "$DISK_APP_ID")"
@@ -110,12 +110,6 @@ jobs:
           xcode-project use-profiles --project PhoneDisk/PhoneDisk.xcodeproj --export-options-plist "$options"
           /usr/libexec/PlistBuddy -c 'Delete :destination' "$options" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c 'Add :destination string export' "$options"
-          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-testflight]') }}" == true ]]; then
-            xcodebuild -help > "$RUNNER_TEMP/phone-disk-xcode-help" 2>&1 || true
-            grep -q 'testFlightInternalTestingOnly' "$RUNNER_TEMP/phone-disk-xcode-help"
-            /usr/libexec/PlistBuddy -c 'Delete :testFlightInternalTestingOnly' "$options" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c 'Add :testFlightInternalTestingOnly bool true' "$options"
-          fi
       - name: Archive and verify one iOS build
         run: |
           set -euo pipefail
@@ -157,7 +151,7 @@ jobs:
           test -n "$icon"
           swift PhoneDisk/Tests/check-icon.swift "$icon"
       - name: Encrypt the signed IPA for the requesting PC
-        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-testflight]')
+        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-5417149-owner]')
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/phone-disk-delivery"
@@ -172,7 +166,7 @@ jobs:
           printf '%s\n%s\n%s\n' "$DISK_VERSION" "$DISK_BUILD" "$GITHUB_SHA" > "$RUNNER_TEMP/phone-disk-delivery/build.txt"
           echo "Verified and exported PhoneDisk $DISK_VERSION ($DISK_BUILD)." >> "$GITHUB_STEP_SUMMARY"
       - name: Save encrypted build
-        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-testflight]')
+        if: contains(github.event.head_commit.message, '[phone-disk-build-only]') || contains(github.event.head_commit.message, '[phone-disk-5417149-owner]')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: phonedisk-encrypted-ipa-${{ github.run_id }}
@@ -180,19 +174,21 @@ jobs:
           retention-days: 2
           if-no-files-found: error
       - name: Upload the verified build to TestFlight
-        if: contains(github.event.head_commit.message, '[phone-disk-testflight]')
+        if: contains(github.event.head_commit.message, '[phone-disk-testflight]') || contains(github.event.head_commit.message, '[phone-disk-5417149-owner]')
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
-          [[ "$number" == "$DISK_BUILD" ]]
+          if [[ "${{ contains(github.event.head_commit.message, '[phone-disk-5417149-owner]') }}" == true ]]; then
+            number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
+            [[ "$number" == "$DISK_BUILD" ]]
+          fi
           app-store-connect publish --path "$RUNNER_TEMP/phone-disk-ipa/PhoneDisk.ipa" --enable-package-validation
           echo "App Store Connect received PhoneDisk $DISK_VERSION ($DISK_BUILD)." >> "$GITHUB_STEP_SUMMARY"
       - name: Verify Apple processing and the existing internal group
-        if: contains(github.event.head_commit.message, '[phone-disk-testflight]')
+        if: contains(github.event.head_commit.message, '[phone-disk-5417149-owner]')
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}

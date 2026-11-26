@@ -59,9 +59,9 @@ def validate_target():
     owner = [group for group in groups if group["id"] == GROUP]
     if len(owner) != 1 or not owner[0]["attributes"].get("isInternalGroup") or owner[0]["attributes"]["name"] != "Владелец":
         raise RuntimeError("Expected one existing internal owner group")
-    if any(group["id"] != GROUP and group["attributes"].get("isInternalGroup")
+    if any(group["id"] != GROUP
            and group["attributes"].get("hasAccessToAllBuilds") for group in groups):
-        raise RuntimeError("An additional internal group has automatic access")
+        raise RuntimeError("An additional group has automatic access")
 
 
 def next_build():
@@ -98,8 +98,8 @@ def assign(num):
             if status in ("INVALID", "FAILED"):
                 raise RuntimeError(f"Apple build processing {status}")
             if status == "VALID":
-                if attributes.get("expired") or attributes.get("buildAudienceType") != "INTERNAL_ONLY":
-                    raise RuntimeError("Expected an active internal-only build")
+                if attributes.get("expired"):
+                    raise RuntimeError("Expected an active build")
                 build = item["id"]
                 pre = api(f"/v1/builds/{build}/preReleaseVersion",
                           {"fields[preReleaseVersions]": "version,platform"})["data"]["attributes"]
@@ -126,7 +126,7 @@ def verify(build):
         detail = api(f"/v1/builds/{build}/buildBetaDetail",
                      {"fields[buildBetaDetails]": "internalBuildState"})["data"]["attributes"]
         if groups == {GROUP} and detail["internalBuildState"] == "IN_BETA_TESTING":
-            print(f"VALID / INTERNAL_ONLY / IN_BETA_TESTING / Владелец / {build}", flush=True)
+            print(f"VALID / IN_BETA_TESTING / Владелец / {build}", flush=True)
             return
         time.sleep(10)
     raise RuntimeError(f"Build {build} exists but internal testing has not been verified.")
