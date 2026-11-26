@@ -15,6 +15,28 @@ final class BrowserSmokeTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    func testDesktopQuickAccessExpandsWithoutDismissingKeyboard() {
+        let address = app.textFields.firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 20))
+        address.tap()
+
+        let keyboard = app.keyboards.firstMatch
+        let expand = button(["Развернуть", "Show more"])
+        let collapse = button(["Свернуть", "Show less"])
+        let secondRow = button(["Открыть RUTUBE", "Open RUTUBE"])
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+
+        expand.tap()
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5))
+        XCTAssertTrue(secondRow.isHittable)
+        XCTAssertTrue(keyboard.exists)
+
+        collapse.tap()
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        XCTAssertTrue(keyboard.exists)
+    }
+
     @MainActor
     func testHomeSettingsBlankTabWebsiteAndRelaunch() async throws {
         let websiteName = "Тестовый сайт ATMA"

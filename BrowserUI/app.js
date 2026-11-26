@@ -336,6 +336,8 @@ function consume(next) {
   $('incognito-device').innerHTML=`${icon(privateDevice?.family==='Компьютер'?'computer':privateDevice?.family==='iPad'?'tablet':'phone')}<span>${escape(privateDevice?.name||next.deviceName)}</span>${icon('down')}`;
   document.body.dataset.controlsCollapsed=String(Boolean(next.controlsCollapsed));
   if(Number.isFinite(next.footerHeight))document.documentElement.style.setProperty('--bar-height',`min(100vh, ${next.footerHeight}px)`);
+  const safeBottom=Number.isFinite(next.safeAreaBottom)?Math.max(0,next.safeAreaBottom):0;
+  document.documentElement.style.setProperty('--native-safe-area-bottom',`${safeBottom}px`);
   updateTabSurface();
   $('go-back').disabled = next.mode !== 'browse' || next.canGoBack !== true;
   $('go-forward').disabled = next.mode !== 'browse' || next.canGoForward !== true;
@@ -641,10 +643,21 @@ function closeDesktopSearch() {
 }
 $('desktop-search-dismiss').addEventListener('pointerdown',event=>event.preventDefault());
 $('desktop-search-dismiss').addEventListener('click',closeDesktopSearch);
-$('desktop-focus-dock').addEventListener('pointerdown',event=>{
+const keepDesktopSearchFocused=event=>{
   if(document.activeElement===$('address')&&event.target.closest('button,.app-item'))event.preventDefault();
-});
-$('desktop-suggestion-toggle').addEventListener('click',()=>{quickAccessExpanded=!quickAccessExpanded;renderDesktopQuickAccess();});
+};
+for(const type of ['pointerdown','mousedown'])$('desktop-focus-dock').addEventListener(type,keepDesktopSearchFocused);
+const quickAccessToggle=$('desktop-suggestion-toggle');
+const toggleQuickAccess=()=>{quickAccessExpanded=!quickAccessExpanded;renderDesktopQuickAccess();};
+quickAccessToggle.addEventListener('touchstart',keepDesktopSearchFocused,{passive:false});
+quickAccessToggle.addEventListener('touchend',event=>{
+  if(document.activeElement!==$('address'))return;
+  // Complete the tap before WebKit can transfer focus away from the address.
+  event.preventDefault();
+  const touch=event.changedTouches[0];
+  if(!event.touches.length&&touch&&quickAccessToggle.contains(document.elementFromPoint(touch.clientX,touch.clientY)))toggleQuickAccess();
+},{passive:false});
+quickAccessToggle.addEventListener('click',toggleQuickAccess);
 document.addEventListener('focusin',event=>syncDesktopSearch(event.target));
 document.addEventListener('focusout',event=>{if(desktopSearchTarget(event.target))syncDesktopSearch(event.relatedTarget);});
 new MutationObserver(()=>syncDesktopSearch()).observe(document.body,{attributes:true,attributeFilter:['data-surface']});

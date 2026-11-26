@@ -41,6 +41,16 @@ body[data-theme][data-mode=home][data-surface=home] .browser-bar {
   display:flex; align-items:center; justify-content:center; gap:6px;
   padding:5px 13px max(5px,env(safe-area-inset-bottom,0px)); background:transparent;
 }
+body[data-theme][data-mode=home][data-surface=home]:not([data-desktop-search],.address-submit-hold,:has(#address:focus)) {
+  --desktop-bar-safe-bottom:max(var(--native-safe-area-bottom,0px),env(safe-area-inset-bottom,0px));
+  --desktop-bar-side:clamp(16px,7.5vw,34px);
+  --bar-height:calc(60px + var(--desktop-bar-safe-bottom));
+
+  .browser-bar {
+    padding-inline:max(var(--desktop-bar-side),env(safe-area-inset-left,0px)) max(var(--desktop-bar-side),env(safe-area-inset-right,0px));
+    padding-bottom:calc(5px + var(--desktop-bar-safe-bottom));
+  }
+}
 body[data-surface=home] .browser-bar .address-form { flex:1; min-width:0; margin:0; height:44px }
 body[data-surface=home] .address-entry { height:44px }
 body[data-surface=home] .browser-nav { display:contents }
