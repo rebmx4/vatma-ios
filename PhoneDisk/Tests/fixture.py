@@ -19,6 +19,7 @@ output=arguments.output
 staged={}
 downloads=b"PhoneDisk download fixture\n"
 sample_names = ("slow file +.bin", "fixture-one.bin", "fixture-two.bin", "fixture-three.bin")
+queue_fixture_key = f"phone-disk-queue-{time.time_ns()}"
 range_file = bytes(150 * 64 * 1024)
 range_file_sha = hashlib.sha256(range_file).hexdigest()
 range_file_etag = f'"{range_file_sha}"'
@@ -95,9 +96,10 @@ class Fixture(BaseHTTPRequestHandler):
         if url.path=="/":
             html = (
                 '<meta name="viewport" content="width=device-width">'
+                '<style>#fixture-files a { display: block; line-height: 44px; }</style>'
                 '<section id="fixture-files">'
                 '<a href="/api/resources/download?source=photos-c&amp;file=%2Fci-download.txt">Скачать пробный файл</a>'
-                '<p><a href="/api/resources/download?source=photos-c&amp;file=%2Fslow+file+%2B.bin">Скачать файл для остановки</a></p>'
+                '<a id="queue-download" href="/api/resources/download?source=photos-c&amp;file=%2Fslow+file+%2B.bin">Скачать файл для остановки</a>'
                 + "".join(f'<a href="/api/resources/download?source=photos-c&amp;file={quote("/" + name, safe="")}">{name}</a><br>'
                           for name in sample_names[1:])
                 + '</section><p id="fixture-backup" hidden>Настройки автокопий</p>'
@@ -118,7 +120,17 @@ class Fixture(BaseHTTPRequestHandler):
                 """
             )
             if arguments.v2_downloads:
-                html += "<p>Fixture v2</p>"
+                # Start this queue fixture through the app's normal WebKit download link.
+                # Relaunching the app must preserve the stopped job without enqueueing it again.
+                html += f'<p id="queue-marker" data-run="{queue_fixture_key}">Fixture v2</p>' + """
+                    <script>
+                    window.addEventListener('load', () => {
+                        const key = document.getElementById('queue-marker').dataset.run;
+                        if (localStorage.getItem(key)) return;
+                        localStorage.setItem(key, 'started');
+                        document.getElementById('queue-download').click();
+                    }, { once: true });
+                    </script>"""
             self.reply(200,html.encode(),"text/html; charset=utf-8",
                        Set_Cookie="fixture=allowed; Path=/; Max-Age=3600; HttpOnly")
             return

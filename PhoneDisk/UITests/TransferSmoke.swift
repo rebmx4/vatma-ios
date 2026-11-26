@@ -8,17 +8,16 @@ final class TransferSmoke: XCTestCase {
         app.launch()
         let download = app.links["Скачать файл для остановки"]
         XCTAssertTrue(download.waitForExistence(timeout:45))
-        let startDownload = app.buttons["Запустить контрольное скачивание"]
         let queue = app.buttons["queue-tab-transfers"]
         let filesTab = app.buttons["queue-tab-files"]
         let backupTab = app.buttons["queue-tab-backup"]
         let transfersTab = app.buttons["queue-tab-transfers"]
         let resumable = app.staticTexts["Fixture v2"].exists
-        startDownload.tap()
+        if !resumable { download.tap() }
         queue.tap()
-        XCTAssertTrue(transfersTab.waitForExistence(timeout:15))
+        XCTAssertTrue(transfersTab.isSelected, app.debugDescription)
         let name = app.staticTexts["slow file +.bin"]
-        XCTAssertTrue(name.waitForExistence(timeout:15))
+        XCTAssertTrue(name.waitForExistence(timeout:30), app.debugDescription)
         let stop = app.buttons["Остановить скачивание"]
         XCTAssertTrue(app.staticTexts["Скачивание"].waitForExistence(timeout:20))
         if resumable {
@@ -42,7 +41,8 @@ final class TransferSmoke: XCTestCase {
         queue.tap()
         XCTAssertTrue(stopped.waitForExistence(timeout:15))
         filesTab.tap()
-        startDownload.tap()
+        XCTAssertTrue(download.waitForExistence(timeout:15))
+        download.tap()
         XCTAssertTrue(stopped.waitForExistence(timeout:15))
         XCTAssertEqual(app.cells.containing(.staticText,identifier:"slow file +.bin").count,1)
         app.buttons["Обновить передачи"].tap()
