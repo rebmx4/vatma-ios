@@ -14,18 +14,26 @@ parser.add_argument("output", type=Path)
 parser.add_argument("certificate", type=Path)
 parser.add_argument("key", type=Path)
 parser.add_argument("--v2-downloads", action="store_true")
+parser.add_argument("--parallel-downloads", action="store_true")
 arguments=parser.parse_args()
+if arguments.parallel_downloads:
+    arguments.v2_downloads = True
 output=arguments.output
 staged={}
 downloads=b"PhoneDisk download fixture\n"
 sample_names = ("slow file +.bin", "fixture-one.bin", "fixture-two.bin", "fixture-three.bin")
 queue_fixture_key = f"phone-disk-queue-{time.time_ns()}"
 range_file = bytes(150 * 64 * 1024)
+if arguments.parallel_downloads:
+    range_file = bytes(range(251)) * 66001
 range_file_sha = hashlib.sha256(range_file).hexdigest()
 range_file_etag = f'"{range_file_sha}"'
 test_token = "fixture-download-device"
 slow_requests = 0
 slow_requests_lock = threading.Lock()
+release_ranges = threading.Event()
+requested_ranges = set()
+sent_ranges = set()
 
 class Fixture(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
@@ -63,7 +71,7 @@ class Fixture(BaseHTTPRequestHandler):
         if not arguments.v2_downloads or url.path != "/api/v2/file":
             self.reply(404)
         elif self.range_file_allowed(parse_qs(url.query)):
-            self.reply(200, kind="application/octet-stream", ETag=range_file_etag,
+            self.reply(200, kind="application/octet-stream", ETag=range_file_etag, Accept_Ranges="bytes",
                        X_File_SHA256=range_file_sha, X_File_Size=str(len(range_file)))
 
     def stream_test_file(self, start=0, stop=len(range_file), partial=False):
@@ -71,6 +79,8 @@ class Fixture(BaseHTTPRequestHandler):
         with slow_requests_lock:
             slow_requests += 1
             attempt = slow_requests
+            if arguments.parallel_downloads:
+                requested_ranges.add((start, stop))
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(stop - start))
@@ -81,18 +91,36 @@ class Fixture(BaseHTTPRequestHandler):
         print(f"Fixture download attempt {attempt}: bytes {start}-{stop-1}", flush=True)
         chunk = 64 * 1024
         try:
+            if arguments.parallel_downloads and not release_ranges.wait(120):
+                self.close_connection = True
+                return
+            if arguments.parallel_downloads and start == 0:
+                time.sleep(0.4)
             for offset in range(start, stop, chunk):
                 self.wfile.write(range_file[offset:min(offset+chunk, stop)])
                 self.wfile.flush()
-                if attempt == 1:
+                if attempt == 1 and not arguments.parallel_downloads:
                     # Keep the first transfer active through the tab switch on slower CI runners.
                     time.sleep(1.5)
+            if arguments.parallel_downloads:
+                with slow_requests_lock:
+                    sent_ranges.add((start, stop))
         except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
             pass
 
     def do_GET(self):
         url=urlsplit(self.path)
         params=parse_qs(url.query)
+        if arguments.parallel_downloads and url.path in ("/parallel-state", "/parallel-release"):
+            if url.path == "/parallel-release":
+                release_ranges.set()
+            with slow_requests_lock:
+                spans = sorted(sent_ranges)
+                contiguous = bool(spans) and spans[0][0] == 0 and spans[-1][1] == len(range_file) and all(
+                    a[1] == b[0] for a,b in zip(spans, spans[1:]))
+                snapshot = {"requested": len(requested_ranges), "sent": len(spans), "contiguous": contiguous}
+            self.reply(200,json.dumps(snapshot).encode())
+            return
         if url.path=="/":
             html = (
                 '<meta name="viewport" content="width=device-width">'
@@ -198,7 +226,10 @@ class Fixture(BaseHTTPRequestHandler):
         output.write_bytes(data)
         self.reply(200,json.dumps({"succeeded":[item]}).encode())
 
-server=ThreadingHTTPServer(("127.0.0.1",18878),Fixture)
+class FixtureServer(ThreadingHTTPServer):
+    request_queue_size = 32
+
+server=FixtureServer(("127.0.0.1",18878),Fixture)
 tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 tls.load_cert_chain(arguments.certificate,arguments.key)
 server.socket=tls.wrap_socket(server.socket,server_side=True)

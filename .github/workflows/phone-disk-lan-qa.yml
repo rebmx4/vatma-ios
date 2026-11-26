@@ -2,7 +2,7 @@ name: PhoneDisk routing QA
 
 on:
   push:
-    branches: [phone-disk/lan-priority]
+    branches: [phone-disk/lan-priority, phone-disk/parallel-downloads]
     paths:
       - "PhoneDisk/**"
       - ".github/workflows/phone-disk-lan-qa.yml"
@@ -61,3 +61,17 @@ jobs:
             -derivedDataPath "$smoke/build" -only-testing:PhoneDiskRouteTests -only-testing:PhoneDiskUITests/TransferSmoke/testUploadDownloadAndPersistentQueue \
             CODE_SIGNING_ALLOWED=NO
           python3 -c 'from pathlib import Path; import sys; assert Path(sys.argv[1]).read_bytes() == b"PhoneDisk fixture bytes\n"' "$smoke/upload.txt"
+      - name: Complete a ten-part download with the iPhone on its Home Screen
+        if: github.ref_name == 'phone-disk/parallel-downloads'
+        run: |
+          set -euo pipefail
+          smoke="$RUNNER_TEMP/phone-disk-smoke"
+          device="$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; print(next(d["udid"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["name"].startswith("iPhone")))')"
+          python3 PhoneDisk/Tests/fixture.py "$smoke/upload.txt" "$smoke/server.crt" "$smoke/server.key" --parallel-downloads &
+          fixture=$!
+          trap 'kill "$fixture" 2>/dev/null || true' EXIT
+          curl --fail --silent --retry 8 --retry-connrefused --cacert "$smoke/ca.crt" https://127.0.0.1:18878/parallel-state > /dev/null
+          xcodebuild test -project PhoneDisk/PhoneDisk.xcodeproj -scheme PhoneDisk \
+            -configuration Debug -destination "id=$device" -parallel-testing-enabled NO \
+            -derivedDataPath "$smoke/build" -only-testing:PhoneDiskUITests/TransferSmoke/testTenRangesFinishWhileOnHomeScreen \
+            CODE_SIGNING_ALLOWED=NO

@@ -10,6 +10,7 @@ struct TransferReceipt: Codable {
     var upload: String?
     var etag: String?
     var boundedDownload: Bool?
+    var downloadRanges: DownloadRanges?
 }
 
 final class TransferLedger {

@@ -98,6 +98,44 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(download.waitForExistence(timeout:10))
     }
 
+    @MainActor func testTenRangesFinishWhileOnHomeScreen() async throws {
+        struct Snapshot: Decodable { let requested: Int; let sent: Int; let contiguous: Bool }
+        func snapshot(_ path: String = "parallel-state") async throws -> Snapshot {
+            let url = try XCTUnwrap(URL(string: "https://127.0.0.1:18878/" + path))
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(Snapshot.self, from: data)
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["PHONE_DISK_FIXTURE"] = "1"
+        app.launchEnvironment["PHONE_DISK_PARALLEL_FIXTURE"] = "1"
+        app.launch()
+        let deadline = Date().addingTimeInterval(60)
+        var status = try await snapshot()
+        while status.requested == 0 && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(300))
+            status = try await snapshot()
+        }
+        XCTAssertGreaterThan(status.requested, 0, app.debugDescription)
+        XCTAssertEqual(status.sent, 0)
+        XCUIDevice.shared.press(.home)
+        XCTAssertNotEqual(app.state, .runningForeground)
+        _ = try await snapshot("parallel-release")
+        let finish = Date().addingTimeInterval(100)
+        repeat {
+            try await Task.sleep(for: .milliseconds(350))
+            status = try await snapshot()
+        } while status.sent < 10 && Date() < finish
+        XCTAssertNotEqual(app.state, .runningForeground)
+        XCTAssertEqual(status.requested, 10)
+        XCTAssertEqual(status.sent, 10)
+        XCTAssertTrue(status.contiguous)
+        app.activate()
+        app.buttons["queue-tab-transfers"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Поделиться")).first.waitForExistence(timeout: 25), app.debugDescription)
+    }
+
     func testUploadDownloadAndPersistentQueue() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
