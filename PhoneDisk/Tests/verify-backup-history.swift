@@ -44,5 +44,16 @@ struct VerifyBackupHistory {
         precondition(history.contains("asset-3", on: disk.source), "A fresh queue entry must be remembered")
         precondition(!history.contains("asset-1", on: "backup-d"), "The backup history must track each disk")
         print("Verified first backup of older videos and no duplicate queue entries after re-enabling.")
+        let fromD = Destination(source:"backup-d",path:"/Видео")
+        let fromC = Destination(source:"backup-c",path:"/Видео")
+        let photoFromD = Destination(source:"backup-d",path:"/Фото")
+        let goingToD: [String:Any] = [
+            "video":["enabled":true,"disk":"D"],
+            "photo":["enabled":false,"disk":"D"]]
+        assert(backupSettingsAllow(fromD,settings:goingToD))
+        assert(!backupSettingsAllow(fromC,settings:goingToD))
+        assert(!backupSettingsAllow(photoFromD,settings:goingToD))
+        assert(!backupSettingsAllow(fromD,settings:["video":["enabled":false,"disk":"D"]]))
+        assert(backupSettingsAllow(fromD,settings:goingToD))
     }
 }
