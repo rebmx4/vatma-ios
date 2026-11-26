@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             let completion=ProcessingCompletion(job)
             let run = Task { @MainActor in
                 await Transfers.scheduleIfNeeded()
-                do { try await Transfers.shared.scan(); completion.finish(!Task.isCancelled) }
+                do { try await Transfers.shared.processBackgroundWork(); completion.finish(!Task.isCancelled) }
                 catch { completion.finish(false) }
             }
             job.expirationHandler={ run.cancel(); DispatchQueue.main.async { completion.finish(false) } }

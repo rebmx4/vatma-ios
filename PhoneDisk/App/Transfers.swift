@@ -183,7 +183,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func writeQueue(_ queue:[DiskJob]) throws {
-        try JSONEncoder().encode(queue).write(to:queueURL,options:.atomic)
+        try JSONEncoder().encode(queue).write(to:queueURL,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
     }
 
     private func save() {
@@ -399,6 +399,11 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let route = DiskRoutes.shared.transferRoute
         do {
             try Task.checkCancellation()
+            if try await resumable.finishLocalDownload(job) {
+                update(id){$0.localName=String(id.prefix(8))+"-"+job.name}
+                done(id)
+                return
+            }
             if !job.uploaded {
                 let usesV2 = resumable.contains(id)
                 let capability = try await DiskRoutes.shared.capabilities(route)
@@ -625,18 +630,36 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         Task { @MainActor in await scheduleIfNeeded() }
     }
 
+    private var pendingBackgroundJobs: [DiskJob] {
+        jobs.filter { job in
+            job.asset == nil && !job.isStopped && !job.isFinished && job.hiddenFromQueue != true &&
+            [DiskJob.waiting,"Подготовка","Скачивание","Выгрузка","Проверка файла",
+             "Ожидание сети","Восстанавливаю соединение"].contains(job.phase)
+        }
+    }
+
     @MainActor static func scheduleIfNeeded() async {
-        guard UserDefaults.standard.bool(forKey:"photo-auto"), !checkingSchedule else { return }
+        let workPending = { UserDefaults.standard.bool(forKey:"photo-auto") || !shared.pendingBackgroundJobs.isEmpty }
+        guard workPending(), !checkingSchedule else { return }
         checkingSchedule=true
         defer { checkingSchedule=false }
         let pending=await BGTaskScheduler.shared.pendingTaskRequests()
-        guard UserDefaults.standard.bool(forKey:"photo-auto"), !Task.isCancelled,
+        guard workPending(), !Task.isCancelled,
               !pending.contains(where:{ $0.identifier == processing && $0.earliestBeginDate == nil })
         else { return }
         let request=BGProcessingTaskRequest(identifier:processing)
         request.requiresNetworkConnectivity=true
         do { try BGTaskScheduler.shared.submit(request) }
         catch { backupLog.error("Could not schedule automatic backup: \((error as NSError).code)") }
+    }
+
+    @MainActor func processBackgroundWork() async throws {
+        await restoreTasks()
+        for job in pendingBackgroundJobs where !active.contains(job.id) && retrying[job.id] == nil {
+            try Task.checkCancellation()
+            await beginTransfer(job.id)
+        }
+        try await scan()
     }
 
     @MainActor func backupSettingsChanged(enabled:Bool) async {
@@ -789,6 +812,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @MainActor func disableAuto() {
         backupSettingsRevision += 1
         defaults.set(false,forKey:"photo-auto")
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.processing)
+        if pendingBackgroundJobs.isEmpty {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.processing)
+        }
     }
 }
