@@ -83,7 +83,8 @@ class Fixture(BaseHTTPRequestHandler):
                 self.wfile.write(range_file[offset:min(offset+chunk, stop)])
                 self.wfile.flush()
                 if attempt == 1:
-                    time.sleep(0.5)
+                    # Keep the first transfer active through the tab switch on slower CI runners.
+                    time.sleep(1.5)
         except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
             pass
 

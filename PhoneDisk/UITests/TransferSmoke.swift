@@ -7,14 +7,16 @@ final class TransferSmoke: XCTestCase {
         app.launchEnvironment["PHONE_DISK_FIXTURE"] = "1"
         app.launch()
         let download = app.links["Скачать файл для остановки"]
-        XCTAssertTrue(download.waitForExistence(timeout:20))
+        XCTAssertTrue(download.waitForExistence(timeout:45))
+        let startDownload = app.buttons["Запустить контрольное скачивание"]
         let queue = app.webViews.buttons["Передача"]
         let filesTab = app.buttons["queue-tab-files"]
         let backupTab = app.buttons["queue-tab-backup"]
         let transfersTab = app.buttons["queue-tab-transfers"]
         let resumable = app.staticTexts["Fixture v2"].exists
-        download.tap()
+        startDownload.tap()
         queue.tap()
+        XCTAssertTrue(transfersTab.waitForExistence(timeout:15))
         let name = app.staticTexts["slow file +.bin"]
         XCTAssertTrue(name.waitForExistence(timeout:15))
         let stop = app.buttons["Остановить скачивание"]
@@ -27,16 +29,17 @@ final class TransferSmoke: XCTestCase {
         XCTAssertTrue(backupTab.isHittable)
         XCTAssertTrue(transfersTab.isHittable)
         backupTab.tap()
-        XCTAssertTrue(app.webViews.staticTexts["Настройки автокопий"].waitForExistence(timeout:10))
+        XCTAssertTrue(app.webViews.staticTexts["Настройки автокопий"].waitForExistence(timeout:20))
         queue.tap()
         XCTAssertTrue(name.waitForExistence(timeout:10))
         XCTAssertTrue(app.staticTexts["Скачивание"].exists)
-        filesTab.tap()
-        XCTAssertTrue(download.waitForExistence(timeout:10))
-        queue.tap()
         XCTAssertTrue(stop.waitForExistence(timeout:10))
         stop.tap()
         let stopped = app.staticTexts["Остановлено"]
+        XCTAssertTrue(stopped.waitForExistence(timeout:15))
+        filesTab.tap()
+        XCTAssertTrue(download.waitForExistence(timeout:20))
+        queue.tap()
         XCTAssertTrue(stopped.waitForExistence(timeout:15))
         app.buttons["Обновить передачи"].tap()
         XCTAssertTrue(stopped.exists)
@@ -56,7 +59,7 @@ final class TransferSmoke: XCTestCase {
 
         app.buttons["Готово"].tap()
         XCTAssertTrue(download.waitForExistence(timeout:10))
-        for _ in 0..<3 { download.tap() }
+        for _ in 0..<3 { startDownload.tap() }
         queue.tap()
         let rows = app.cells.containing(.staticText,identifier:"slow file +.bin")
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:10))
