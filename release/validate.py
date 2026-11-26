@@ -61,6 +61,7 @@ def validate_project(project):
         sources = [target]
         if kind == "bundle.ui-testing":
             sources.append("BrowserNativeTests/BrowserRenderingFixtureServer.swift")
+            sources.append({"path": "store/site", "type": "folder", "buildPhase": "resources"})
         require(row["type"] == kind and row["sources"] == sources, "Wrong test target")
         require(row["dependencies"] == [{"target": "ATMA"}], "Wrong test application dependency")
 

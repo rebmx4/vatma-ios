@@ -89,7 +89,13 @@ final class BrowserRenderingFixtureServer {
             }
             let body = self.resources[path] ?? Data("Not found".utf8)
             let status = self.resources[path] == nil ? "404 Not Found" : "200 OK"
-            let mime = path.hasSuffix(".png") ? "image/png" : path.hasSuffix(".json") ? "application/manifest+json" : "text/html; charset=utf-8"
+            let mime: String
+            switch URL(fileURLWithPath: path).pathExtension {
+            case "png": mime = "image/png"
+            case "json": mime = "application/manifest+json"
+            case "css": mime = "text/css; charset=utf-8"
+            default: mime = "text/html; charset=utf-8"
+            }
             let response = "HTTP/1.1 \(status)\r\nContent-Type: \(mime)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
             let send = { connection.send(content: Data(response.utf8) + body, completion: .contentProcessed { _ in connection.cancel() }) }
             if let delay = self.delays[path] { self.queue.asyncAfter(deadline: .now() + delay, execute: send) }

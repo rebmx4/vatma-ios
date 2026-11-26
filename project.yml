@@ -83,7 +83,12 @@
       "platform": "iOS",
       "sources": [
         "BrowserNativeUITests",
-        "BrowserNativeTests/BrowserRenderingFixtureServer.swift"
+        "BrowserNativeTests/BrowserRenderingFixtureServer.swift",
+        {
+          "path": "store/site",
+          "type": "folder",
+          "buildPhase": "resources"
+        }
       ],
       "dependencies": [
         {
