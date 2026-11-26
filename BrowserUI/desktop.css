@@ -12,7 +12,6 @@ body {
   --desktop-icon-size: clamp(48px, 17vw, 74px);
   --desktop-label-size: clamp(calc(11px * var(--text-scale, 1)), calc(3.2vw * var(--text-scale, 1)), calc(13px * var(--text-scale, 1)));
   --desktop-label-height: calc(1.2 * var(--desktop-label-size));
-  --desktop-focus: #b8bdff;
 }
 
 body[data-theme=light] {
@@ -26,7 +25,6 @@ body[data-theme=light] {
   --desktop-search-veil: #eef2f686;
   --desktop-glass-shine: #fff;
   --desktop-glass-shadow: #263c541c;
-  --desktop-focus: #393bb0;
 }
 
 body[data-surface=home][data-theme][data-wallpaper=solid] .wallpaper {
@@ -90,8 +88,8 @@ body[data-surface=home][data-theme][data-wallpaper=solid] .wallpaper {
   -webkit-touch-callout: none;
 }
 
-.drag-ghost {
-  justify-content: center;
+.drag-ghost .app-tile {
+  box-shadow: none;
 }
 
 body[data-theme=light] :is(.home, .drag-ghost) .app-tile {
@@ -172,26 +170,6 @@ body[data-theme=light] .app-item[data-app=youtube] .app-tile:has(.shortcut-brand
 .home .desktop-slot {
   height: 100%;
   place-items: center;
-}
-
-.home .desktop-slot::before {
-  width: min(91%, var(--desktop-icon-size));
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: 24%;
-}
-
-.home .desktop-slot.drop-cell::before {
-  background: color-mix(in srgb, var(--desktop-focus) 19%, transparent);
-  box-shadow: inset 0 0 0 2px var(--desktop-focus);
-}
-
-.home .app-item.drop-target .app-tile {
-  box-shadow: inset 0 0 0 2px var(--desktop-focus);
-}
-
-.home .app-item.combine-ready .app-tile {
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--desktop-focus) 50%, transparent);
 }
 
 .desktop-controls {

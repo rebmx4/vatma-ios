@@ -47,3 +47,15 @@ test('holding, cancelling, or moving away does not launch a shortcut',async()=>{
  press();await f.page.endGesture({...f.event(),clientX:40});
  assert.deepEqual(f.opened,[]);
 });
+test('a completed drop removes the dragged artwork before rendering its new slot',async()=>{
+ const f=tileFixture(),order=[];
+ f.item.events.get('pointerdown')(f.event('.app-tile'));
+ f.page.gesture.active=true;
+ f.page.gesture.ghost={remove:()=>order.push('remove')};
+ f.page.panel=null;
+ f.page.updateDropTarget=()=>{f.page.gesture.targetSlot=10;};
+ f.page.placeEntry=()=>({changed:true,items:[]});
+ f.page.updatePool=()=>{order.push('render');assert.equal(f.page.gesture,null);};
+ await f.page.endGesture(f.event('.app-tile'));
+ assert.deepEqual(order,['remove','render']);
+});

@@ -477,7 +477,7 @@ function setEditing(value) {
   $('edit-apps').setAttribute('aria-label', value ? 'Завершить редактирование' : 'Редактировать приложения');
   renderApps(); if (panel === 'folder') renderFolder();
 }
-function positions(container) { return new Map([...container.querySelectorAll('.app-item')].map(item => [item.dataset.app, item.getBoundingClientRect()])); }
+function positions(container) { return new Map([...container.querySelectorAll('.app-item:not(.dragging)')].map(item => [item.dataset.app, item.getBoundingClientRect()])); }
 function animatePositions(container, previous) {
   if (reducedMotion.matches) return;
   for (const item of container.querySelectorAll('.app-item')) {
@@ -727,7 +727,6 @@ function beginGesture(event, app, parentId,scope='public') {
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
 function clearHover() {
   if (gesture) { clearTimeout(gesture.hoverTimer); gesture.targetId = null; gesture.targetSlot = null; gesture.targetDockSlot = null; gesture.hoverKey = null; gesture.combine = false; }
-  document.querySelectorAll('.drop-target,.combine-ready,.drop-cell').forEach(item=>item.classList.remove('drop-target','combine-ready','drop-cell'));
 }
 document.addEventListener('pointermove', event => {
   const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
@@ -743,9 +742,13 @@ document.addEventListener('pointermove', event => {
     current.active = true; clearTimeout(current.hold); suppressClickUntil = Date.now()+1000;
     const original = [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===current.id&&item.dataset.scope===current.scope);
     if(!original){gesture=null;return;}
-    const rect = original.getBoundingClientRect();
+    const tile = original.querySelector('.app-tile');
+    const rect = tile.getBoundingClientRect();
     current.ghost = original.cloneNode(true); current.ghost.classList.add('drag-ghost');
-    current.ghost.querySelector('.app-remove')?.remove(); current.ghost.style.width = `${rect.width}px`;
+    current.ghost.setAttribute('aria-hidden','true');
+    const artwork = current.ghost.querySelector('.app-tile');
+    current.ghost.replaceChildren(artwork);
+    current.ghost.style.width = artwork.style.width = `${tile.offsetWidth}px`;
     current.offsetX = current.x-rect.x; current.offsetY = current.y-rect.y;
     document.body.append(current.ghost); original.classList.add('dragging');
   }
@@ -784,11 +787,12 @@ function updateDropTarget(x,y,current) {
   if(dockTarget&&!panel){
     const slot=Number(dockTarget.dataset.slot);
     if(current.targetDockSlot===slot)return;
-    clearHover();current.targetDockSlot=slot;dockTarget.classList.add(dockTarget.classList.contains('desktop-slot')?'drop-cell':'drop-target');return;
+    clearHover();current.targetDockSlot=slot;return;
   }
   const empty=hit.map(item=>item.closest('.desktop-slot')).find(item=>item&&(item.dataset.scope||'public')===current.scope);
-  if(empty&&!panel){const slot=Number(empty.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;empty.classList.add('drop-cell');return;}
-  const target = hit.map(item=>item.closest('.app-item')).find(item=>item && item.dataset.app !== current.id&&item.dataset.scope===current.scope);
+  if(empty&&!panel){const slot=Number(empty.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;return;}
+  const target = hit.map(item=>item.closest('.app-item')).find(item=>item?.dataset.scope===current.scope);
+  if(target?.dataset.app===current.id){clearHover();current.targetId=current.id;return;}
   const targetId = target?.dataset.app || null;
   if (!target) {
     if(!panel){
@@ -799,7 +803,7 @@ function updateDropTarget(x,y,current) {
           const rect=item.getBoundingClientRect(),distance=Math.hypot(x-rect.left-rect.width/2,y-rect.top-rect.height/2);
           return !best||distance<best.distance?{item,distance}:best;
         },null)?.item;
-        if(nearest){const slot=Number(nearest.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;nearest.classList.add('drop-cell');return;}
+        if(nearest){const slot=Number(nearest.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;return;}
       }
     }
     clearHover(); return;
@@ -811,10 +815,10 @@ function updateDropTarget(x,y,current) {
   const hoverKey = `${targetId}:${canCombine}`;
   if (hoverKey === current.hoverKey) return;
   clearHover(); current.hoverKey=hoverKey;
-  current.targetId = targetId; target.classList.add('drop-target');
+  current.targetId = targetId;
   current.hoverTimer = setTimeout(() => {
     if (gesture !== current || current.targetId !== targetId) return;
-    if (canCombine) { current.combine = true; target.classList.add('combine-ready'); }
+    if (canCombine) { current.combine = true; }
     else if(!current.fromDock) {
       const result = panel==='folder'?dropEntry(poolFor(current.scope),current.id,targetId,{destinationFolderId:openFolderId}):placeEntry(poolFor(current.scope),current.id,Number(target.dataset.slot),gridMetrics().columns);
       if (result.changed) { current.reorderedTargetId=targetId; updatePool(current.scope,result.items); }
@@ -844,13 +848,10 @@ async function endGesture(event, cancelled = false) {
         } else result=dropEntry(poolFor(current.scope),current.id,targetId,{combine,columns:gridMetrics().columns,destinationFolderId:panel==='folder'?openFolderId:null});
       }
     }
-    const ghost = current.ghost; gesture = null; suppressClickUntil=Date.now()+350;
+    current.ghost.remove();
+    gesture = null; suppressClickUntil=Date.now()+350;
     if (result.changed) { updatePool(current.scope,result.items); } else { renderApps(); if(panel==='folder') renderFolder(); }
-    const destination = [...document.querySelectorAll('.app-item:not(.drag-ghost)')].find(item=>item.dataset.app===(result.folderId || current.id)&&item.dataset.scope===current.scope);
-    const rect = destination?.getBoundingClientRect(), before = ghost.getBoundingClientRect();
-    if (rect && !reducedMotion.matches) await ghost.animate([{transform:'scale(1.1)'},{transform:`translate(${rect.x-before.x}px,${rect.y-before.y}px) scale(${result.folderId? .3:1})`,opacity:result.folderId?.2:1}],{duration:230,easing:'cubic-bezier(.2,.8,.2,1)'}).finished.catch(()=>{});
-    ghost.remove();
-    if (result.folderId) openFolder(result.folderId,current.scope);
+    if (result.folderId) await openFolder(result.folderId,current.scope);
   } else {
     gesture=null;
     const shortTap = current.onTile && Date.now() >= suppressClickUntil
