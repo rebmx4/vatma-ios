@@ -82,6 +82,9 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         engine.resume = { [weak self] id, error in await self?.resumePart(id,error) }
         engine.isRunnable = { [weak self] id in self?.isRunnable(id) == true }
         engine.onReading = { [weak self] id, data in self?.readings[id] = data }
+        engine.onTaskStarted = { [weak self] id, downloading in
+            self?.update(id) { $0.phase = downloading ? "Скачивание" : "Выгрузка" }
+        }
         engine.onChecking = { [weak self] id in self?.update(id){$0.phase="Проверка файла"} }
         return engine
     }()
@@ -295,18 +298,26 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return id
     }
 
-    func enqueueDownload(_ url:URL,_ name:String?) {
-        guard let location = Self.downloadLocation(url) else { return }
+    // Returns true when the same item is already available in the queue.
+    func enqueueDownload(_ url:URL,_ name:String?) -> Bool {
+        guard let location = Self.downloadLocation(url) else { return false }
+        let existing = jobs.contains { job in
+            guard !job.isFinished, job.hiddenFromQueue != true,
+                  let previousURL = job.downloadURL, let previous = Self.downloadLocation(previousURL) else { return false }
+            return previous.source == location.source && previous.path == location.path
+        }
+        if existing { return true }
         let now = ProcessInfo.processInfo.systemUptime
         if let recentDownload, recentDownload.source == location.source, recentDownload.path == location.path,
-           now - recentDownload.at < 1.2 { return }
+           now - recentDownload.at < 1.2 { return true }
         let suggested = (location.path as NSString).lastPathComponent
         let id = UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
         var queue = jobs
         queue.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url),at:0)
-        guard applyQueueChange(queue) else { return }
+        guard applyQueueChange(queue) else { return false }
         recentDownload = (location.source,location.path,now)
         start(id)
+        return false
     }
 
     @MainActor func stopDownload(_ id:String) {
@@ -395,7 +406,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @MainActor private func beginTransfer(_ id:String) async {
         guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),!job.isFinished,!job.isStopped else { return }
         active.insert(id)
-        update(id){$0.phase="Подготовка"}
+        update(id){$0.phase=job.downloadURL == nil ? "Подготовка" : "Подготовка файла"}
         let route = DiskRoutes.shared.transferRoute
         do {
             try Task.checkCancellation()
@@ -410,7 +421,6 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 guard isRunnable(id) else { throw CancellationError() }
                 if usesV2 || capability != nil {
                     guard capability != nil else { throw DiskFailure.response(503) }
-                    update(id){$0.phase=job.destination == nil ? "Скачивание" : "Выгрузка"}
                     if try await resumable.advance(job,route:route) {
                         guard isRunnable(id) else { throw CancellationError() }
                         if job.downloadURL != nil { update(id){$0.localName=String(id.prefix(8))+"-"+job.name} }
@@ -657,7 +667,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var pendingBackgroundJobs: [DiskJob] {
         jobs.filter { job in
             job.asset == nil && !job.isStopped && !job.isFinished && job.hiddenFromQueue != true &&
-            [DiskJob.waiting,"Подготовка","Скачивание","Выгрузка","Проверка файла",
+            [DiskJob.waiting,"Подготовка","Подготовка файла","Скачивание","Выгрузка","Проверка файла",
              "Ожидание сети","Восстанавливаю соединение"].contains(job.phase)
         }
     }

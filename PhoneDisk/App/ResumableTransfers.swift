@@ -77,6 +77,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     var isRunnable: ((String) -> Bool)?
     var onReading: ((String,TransferReading) -> Void)?
     var onChecking: ((String) -> Void)?
+    var onTaskStarted: ((String,Bool) -> Void)?
 
     init(directory: URL) { self.directory = directory }
 
@@ -477,7 +478,8 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
 
     private func startTask(_ task: URLSessionTask,_ id: String,_ start: Int64,attempt: String) {
         let description = "\(id):\(start):\(attempt)"
-        if tasksByJob[id] == nil {
+        let firstTask = tasksByJob[id] == nil
+        if firstTask {
             let now = ProcessInfo.processInfo.systemUptime
             let previous = speeds[id]
             speeds[id] = (now,0,previous.map { now - $0.0 < 8 ? $0.2 : 0 } ?? 0)
@@ -485,6 +487,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         tasksByJob[id,default:[]].insert(description)
         task.taskDescription = description
         task.resume()
+        if firstTask { onTaskStarted?(id,task is URLSessionDownloadTask) }
     }
 
     private func report(_ id: String,_ receipt: TransferReceipt,_ route: DiskRoute) {

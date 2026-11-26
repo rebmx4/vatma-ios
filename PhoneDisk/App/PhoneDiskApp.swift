@@ -7,6 +7,15 @@ import UIKit
 import UniformTypeIdentifiers
 import WebKit
 
+private enum DiskPalette {
+    static let surface = Color(white: 23.0 / 255)
+    static let accent = Color(uiColor: accentUI)
+    static let accentUI = UIColor(red: 164.0 / 255, green: 200.0 / 255, blue: 174.0 / 255, alpha: 1)
+    static let selection = Color(red: 36.0 / 255, green: 46.0 / 255, blue: 39.0 / 255)
+    static let muted = Color(white: 179.0 / 255)
+    static let danger = Color(red: 1, green: 150.0 / 255, blue: 150.0 / 255)
+}
+
 @main
 struct PhoneDiskApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
@@ -17,6 +26,9 @@ struct PhoneDiskApp: App {
     var body: some Scene {
         WindowGroup {
             DiskScreen(disk:disk,transfers:transfers)
+                .preferredColorScheme(.dark)
+                .tint(DiskPalette.accent)
+                .background(Color.black.ignoresSafeArea())
                 .task {
                     #if DEBUG && targetEnvironment(simulator)
                     if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] != "1" { DiskRoutes.shared.start() }
@@ -132,6 +144,12 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         config.userContentController.addUserScript(WKUserScript(source:script,injectionTime:.atDocumentEnd,forMainFrameOnly:true))
         config.userContentController.add(self,name:bridge)
         let view=WKWebView(frame:.zero,configuration:config)
+        view.overrideUserInterfaceStyle = .dark
+        view.isOpaque = false
+        view.backgroundColor = .black
+        view.scrollView.backgroundColor = .black
+        view.underPageBackgroundColor = .black
+        view.tintColor = DiskPalette.accentUI
         view.navigationDelegate=self
         view.uiDelegate=self
         view.allowsBackForwardNavigationGestures=true
@@ -203,7 +221,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping (WKNavigationActionPolicy)->Void) {
         guard Transfers.sameHost(action.request.url) else { decisionHandler(.cancel); return }
         if let url=action.request.url,url.path=="/api/resources/download",(action.request.httpMethod ?? "GET") == "GET" {
-            Transfers.shared.enqueueDownload(url,nil)
+            if Transfers.shared.enqueueDownload(url,nil) { openTransfers.send() }
             decisionHandler(.cancel)
         } else { decisionHandler(.allow) }
     }
@@ -291,7 +309,7 @@ struct DiskScreen: View {
             }
             if currentTab == .transfers && selectingTransfers { transferSelectionBar }
             Divider()
-            transferTabs.background(.bar)
+            transferTabs.background(DiskPalette.surface)
         }
         .onReceive(disk.openTransfers) { selectTab(.transfers) }
         .onReceive(disk.uploadSelection) { selection in
@@ -375,16 +393,23 @@ struct DiskScreen: View {
             List(jobs) { job in
                 if selectingTransfers {
                     selectableTransfer(job)
+                        .listRowBackground(DiskPalette.surface)
                 } else {
                     transferRow(job)
+                        .listRowBackground(DiskPalette.surface)
                         .swipeActions(edge:.trailing,allowsFullSwipe:false) {
                             Button(role:.destructive) {
                                 transfersToRemove = [job.id]
                             } label: { Label("Удалить",systemImage:"trash") }
+                            .tint(DiskPalette.danger)
                         }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.black)
             .navigationTitle("Передача")
+            .toolbarBackground(Color.black,for:.navigationBar)
+            .toolbarBackground(.visible,for:.navigationBar)
             .refreshable { await transfers.refreshQueue() }
             .toolbar {
                 ToolbarItem(placement:.topBarLeading) {
@@ -436,7 +461,8 @@ struct DiskScreen: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(selected ? Color.accentColor : Color(uiColor: .secondaryLabel))
+                .foregroundStyle(selected ? DiskPalette.accent : DiskPalette.muted)
+                .background(selected ? DiskPalette.selection : Color.clear,in:RoundedRectangle(cornerRadius:12))
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .accessibilityIdentifier("queue-tab-\(tab.rawValue)")
             }
@@ -461,7 +487,7 @@ struct DiskScreen: View {
             .disabled(selectedTransfers.isEmpty)
         }
         .padding()
-        .background(.bar)
+        .background(DiskPalette.surface)
     }
 
     private func selectableTransfer(_ job:DiskJob) -> some View {
@@ -475,7 +501,7 @@ struct DiskScreen: View {
                 Spacer()
                 Image(systemName:selected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(selected ? Color.accentColor : Color(uiColor:.secondaryLabel))
+                    .foregroundStyle(selected ? DiskPalette.accent : DiskPalette.muted)
                     .frame(width:44,height:44)
             }
             .contentShape(Rectangle())
@@ -500,7 +526,7 @@ struct DiskScreen: View {
                 let reading = transfers.readings[job.id]
                 transferDetails(reading)
                 let progress = reading.map { $0.total > 0 ? min(1,Double($0.visibleBytes)/Double($0.total)) : 0 } ?? job.progress
-                ProgressView(value:progress)
+                ProgressView(value:progress).tint(DiskPalette.accent)
                 if !selectingTransfers && job.downloadURL == nil &&
                     !["Выгрузка","Подготовка","Проверка на ПК","Проверка файла"].contains(job.phase) {
                     Button("Продолжить") { transfers.start(job.id) }.buttonStyle(.borderless)
@@ -514,7 +540,7 @@ struct DiskScreen: View {
     private func downloadActions(_ job:DiskJob) -> some View {
         HStack(spacing:0) {
             if transfers.stopping.contains(job.id) {
-                ProgressView().frame(width:44,height:44)
+                ProgressView().tint(DiskPalette.accent).frame(width:44,height:44)
             } else if job.canStopDownload {
                 downloadButton("Остановить скачивание","stop.fill") { transfers.stopDownload(job.id) }
             } else {
@@ -536,6 +562,7 @@ struct DiskScreen: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
+        .tint(role == .destructive ? DiskPalette.danger : DiskPalette.accent)
         .accessibilityLabel(Text(label))
     }
 
