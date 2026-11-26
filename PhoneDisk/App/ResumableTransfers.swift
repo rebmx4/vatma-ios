@@ -380,6 +380,29 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         return [0..<8,8..<12,12..<16,16..<20,20..<32].map { String(c[$0]) }.joined(separator:"-")
     }
 
+    @MainActor func finishLocalDownload(_ job: DiskJob) async throws -> Bool {
+        guard job.downloadURL != nil, let ledger, var receipt = try ledger.read(job.id),
+              receipt.etag != nil, receipt.confirmed == receipt.size else { return false }
+        let progress = incoming(job.id)
+        let published = Transfers.documents.appendingPathComponent(String(job.id.prefix(8)) + "-" + job.name)
+        let alreadyPublished = FileManager.default.fileExists(atPath:published.path)
+        let file = alreadyPublished ? published : progress
+        guard FileManager.default.fileExists(atPath:file.path) else { return false }
+        onChecking?(job.id)
+        let actual = try await Task.detached(priority:.utility) { try Self.readFile(file) }.value
+        guard isRunnable?(job.id) == true else { throw CancellationError() }
+        guard actual.0 == receipt.size, actual.1 == receipt.sha256 else {
+            if !alreadyPublished {
+                try FileManager.default.removeItem(at:progress)
+                receipt.confirmed = 0
+                try ledger.write(job.id,receipt)
+            }
+            throw DiskFailure.rejected
+        }
+        if !alreadyPublished { try FileManager.default.moveItem(at:progress,to:published) }
+        return true
+    }
+
     @MainActor private func download(_ job: DiskJob,_ url: URL,_ route: DiskRoute,_ ledger: TransferLedger) async throws -> Bool {
         guard let location = Transfers.downloadLocation(url) else { throw DiskFailure.rejected }
         let query = ["source":location.source,"path":location.path]
@@ -393,14 +416,9 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         var receipt = TransferReceipt(size:size,sha256:hash,partSize:route.isLocal ? 16 * 1024 * 1024 : 4 * 1024 * 1024,etag:etag)
         if let old, old.etag == etag { receipt = old }
         else { try? FileManager.default.removeItem(at:resumeFile(job.id)) }
-        let published = Transfers.documents.appendingPathComponent(String(job.id.prefix(8)) + "-" + job.name)
-        if receipt.confirmed == size && FileManager.default.fileExists(atPath:published.path) {
-            let (_,hash) = try await Task.detached(priority:.utility) { try Self.readFile(published) }.value
-            guard hash == receipt.sha256 else { throw DiskFailure.rejected }
-            return true
-        }
         if !FileManager.default.fileExists(atPath:progress.path) {
-            guard FileManager.default.createFile(atPath:progress.path,contents:nil) else { throw DiskFailure.rejected }
+            guard FileManager.default.createFile(atPath:progress.path,contents:nil,
+                attributes:[.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication]) else { throw DiskFailure.rejected }
             receipt.confirmed = 0
         }
         let file = try FileHandle(forWritingTo:progress)
@@ -410,18 +428,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         try file.close()
         try ledger.write(job.id,receipt)
         report(job.id,receipt,route)
-        if receipt.confirmed == size {
-            onChecking?(job.id)
-            let actual = try await Task.detached(priority:.utility) { try Self.readFile(progress) }.value
-            guard actual.0 == size, actual.1 == hash else {
-                try FileManager.default.removeItem(at:progress)
-                receipt.confirmed = 0
-                try ledger.write(job.id,receipt)
-                throw DiskFailure.rejected
-            }
-            try FileManager.default.moveItem(at:progress,to:published)
-            return true
-        }
+        if receipt.confirmed == size { return try await finishLocalDownload(job) }
         let fileURL = Transfers.address("/api/v2/file",query)
         var request = try await self.request(fileURL,"GET",route:route)
         guard isRunnable?(job.id) != false else { throw CancellationError() }
