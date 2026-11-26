@@ -108,8 +108,8 @@ final class TransferSmoke: XCTestCase {
         app.activate()
         let completed=app.staticTexts.matching(identifier:"Готово")
         let finished=NSPredicate{ _,_ in completed.count==2 }
-        expectation(for:finished,evaluatedWith:app)
-        waitForExpectations(timeout:60)
+        let completion = XCTNSPredicateExpectation(predicate: finished, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [completion], timeout: 60), .completed, app.debugDescription)
         XCTAssertTrue(app.staticTexts["ci-download.txt"].exists)
         app.terminate()
         app.launch()

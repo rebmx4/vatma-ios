@@ -226,7 +226,7 @@ final class DiskRoutes: NSObject, ObservableObject, URLSessionTaskDelegate {
         if wifiAvailable != false {
             if candidates.isEmpty {
                 // Give Bonjour time to find a new address after joining Wi-Fi.
-                try? await Task.sleep(for: .milliseconds(800))
+                try? await Task.sleep(for: .milliseconds(1200))
             }
             let networks = wifiNetworks()
             let saved = UserDefaults.standard.string(forKey: localKey).flatMap(DiskRoute.restore)
@@ -257,7 +257,7 @@ final class DiskRoutes: NSObject, ObservableObject, URLSessionTaskDelegate {
         let route: DiskRoute
         if let hint { route = hint }
         else { route = try await resolve() }
-        let direct = url.path.hasPrefix("/api/v2/")
+        let direct = route.address != nil && url.path.hasPrefix("/api/v2/")
         var routed = request
         if direct { routed.url = route.backgroundURL(url) }
 
@@ -281,7 +281,7 @@ final class DiskRoutes: NSObject, ObservableObject, URLSessionTaskDelegate {
 
     @MainActor func capabilities(_ route: DiskRoute) async throws -> DiskCapabilities? {
         let url = Transfers.address("/api/v2/capabilities")
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 1.5)
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: route == .internet ? 10 : 2)
         let (data, response) = try await self.data(request, route: route)
         if response.statusCode == 404, route == .internet { return nil }
         guard response.statusCode == 200, let result = try? JSONDecoder().decode(DiskCapabilities.self, from: data),
