@@ -334,6 +334,7 @@ function consume(next) {
   if(Number.isSafeInteger(state?.sequence)&&(!Number.isSafeInteger(next.sequence)||next.sequence<state.sequence))return;
   const previousMode=state?.mode,previousLoading=state?.loading,changedTab=state?.activeTabId!==next.activeTabId;
   const previousTranslation=state?.translationStatus;
+  const translationChanged=previousMode!==next.mode||previousTranslation!==next.translationStatus||state?.translationOffered!==next.translationOffered;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
   const languageChanged=Array.isArray(next.preferredLanguages)&&localization.updateSystem(next.preferredLanguages);
@@ -357,14 +358,16 @@ function consume(next) {
   $('share-page').hidden = next.canGoForward === true;
   $('share-page').disabled = next.mode !== 'browse' || !next.url;
   $('refresh').disabled = next.mode !== 'browse';
-  const translateButton=$('show-original');
-  const translated=next.translationStatus==='translated';
-  translateButton.hidden=next.mode!=='browse'||!(next.translationOffered||translated||next.translationStatus==='translating');
-  translateButton.disabled=next.translationStatus==='translating';
-  const translationLabel=translated?'Показать оригинал':translateButton.disabled?'Перевод страницы…':'Перевести страницу';
-  translateButton.setAttribute('aria-label',translationLabel);
-  translateButton.setAttribute('title',translationLabel);
-  translateButton.setAttribute('aria-pressed',String(translated));
+  if(translationChanged){
+    const translateButton=$('show-original');
+    const translated=next.translationStatus==='translated',translating=next.translationStatus==='translating';
+    translateButton.hidden=next.mode!=='browse'||!(next.translationOffered||translated||translating);
+    translateButton.disabled=translating;
+    const translationLabel=translated?'Показать оригинал':translating?'Перевод страницы…':'Перевести страницу';
+    translateButton.setAttribute('aria-label',translationLabel);
+    translateButton.setAttribute('title',translationLabel);
+    translateButton.setAttribute('aria-pressed',String(translated));
+  }
   if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
     reportError(localization.t('Перевод страницы сейчас недоступен.'));
   }
