@@ -298,8 +298,10 @@ function updateGroup(view) {
   grid.append(view.empty);
  }
  const count = view.regularCount;
- const unit = view.options.language === 'en' ? (count === 1 ? 'tab' : 'tabs') : tabWord[russianPlural.select(count)];
- setText(switches[0].text, count + ' ' + unit);
+ const language = view.options.language || 'ru';
+ const countLabel = language === 'ru' ? `${count} ${tabWord[russianPlural.select(count)]}` :
+  label(view, new Intl.PluralRules(language).select(count) === 'one' ? '{count} вкладка' : '{count} вкладок', {count});
+ setText(switches[0].text, countLabel);
  setText(switches[1].text, label(view, 'Приватные'));
  switches.forEach(({button}, index) => {
   button.setAttribute('aria-selected', String(index === group));

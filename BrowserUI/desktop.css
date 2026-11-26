@@ -10,6 +10,8 @@ body {
   --desktop-glass-shine: #ffffff26;
   --desktop-glass-shadow: #0005;
   --desktop-icon-size: clamp(48px, 17vw, 74px);
+  --desktop-label-size: clamp(calc(11px * var(--text-scale, 1)), calc(3.2vw * var(--text-scale, 1)), calc(13px * var(--text-scale, 1)));
+  --desktop-label-height: calc(1.2 * var(--desktop-label-size));
   --desktop-focus: #b8bdff;
 }
 
@@ -97,8 +99,17 @@ body[data-theme=light] :is(.home, .drag-ghost) .app-tile {
 }
 
 :is(.home, .drag-ghost) .app-name {
-  font-size: clamp(calc(11px * var(--text-scale, 1)), calc(3.2vw * var(--text-scale, 1)), calc(13px * var(--text-scale, 1)));
-  line-height: 1.2;
+  flex: none;
+  font-size: var(--desktop-label-size);
+  line-height: var(--desktop-label-height);
+}
+
+.home .desktop-page .app-item {
+  container-type: size;
+}
+
+.home .desktop-page .app-tile {
+  max-width: calc(100cqh - var(--desktop-label-height) - 5px);
 }
 
 body[data-theme][data-wallpaper=solid] :is(.home, .drag-ghost) .app-name {
@@ -283,7 +294,7 @@ body[data-wallpaper=solid] .desktop-controls {
   min-height: calc(58px + 19px * var(--text-scale, 1));
 }
 
-.desktop-dock .app-tile {
+:is(.desktop-dock, .desktop-suggestions-grid) .app-tile {
   width: min(88%, var(--desktop-icon-size), 72px);
 }
 
@@ -340,13 +351,12 @@ body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
 }
 
 .desktop-suggestions-grid {
-  padding: 10px 8px;
+  padding: 10px 5px;
   background: var(--desktop-search-glass);
   pointer-events: auto;
 }
 
 .desktop-suggestions-grid .app-tile {
-  width: min(88%, var(--desktop-icon-size), 66px);
   touch-action: manipulation;
 }
 
@@ -367,7 +377,7 @@ body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
 }
 
 @media (max-height: 590px) {
-  body {
+  .home .desktop-page, .drag-ghost {
     --desktop-icon-size: clamp(41px, 12vw, 58px);
   }
 

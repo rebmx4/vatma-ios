@@ -73,7 +73,7 @@ export async function renderCookieBrowser(root,{api,onBack,reportError,t=value=>
       title.dataset.noTranslate='';domain.dataset.noTranslate='';names.append(title,domain);summary.append(check,names);
       const table=make('div','cookie-details');
       detailRow(table,'Сайт',cookie.domain);detailRow(table,'Имя',cookie.name);detailRow(table,'Путь',cookie.path);
-      detailRow(table,'Срок',cookie.session?t('До закрытия сеанса'):cookie.expires?new Date(cookie.expires*1000).toLocaleString(document.documentElement.lang==='en'?'en-US':'ru-RU'):t('Не указан'));
+      detailRow(table,'Срок',cookie.session?t('До закрытия сеанса'):cookie.expires?new Date(cookie.expires*1000).toLocaleString(document.documentElement.lang):t('Не указан'));
       detailRow(table,'Secure',cookie.secure?t('Да'):t('Нет'));detailRow(table,'HttpOnly',cookie.httpOnly?t('Да'):t('Нет'));
       card.append(summary,table);list.append(card);
     }

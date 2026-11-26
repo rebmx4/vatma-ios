@@ -143,9 +143,13 @@ def validate_icons(root):
             require(png_header(folder / row["filename"]) == (1024, 1024, 8, icon_types[appearance]), "Wrong PNG dimensions or color type for icon appearance")
 
 
-def validate_plist(info):
+def validate_plist(info, root=ROOT):
     require(info["UIDeviceFamily"] == [1, 2], "Plist must support iPhone and iPad")
-    require(info["CFBundleLocalizations"] == ["ru", "en"], "Only Russian and English are supported")
+    languages = ("ru", "en", "es", "de", "fr", "pt-BR", "it")
+    require(tuple(info["CFBundleLocalizations"]) == languages, "Unexpected supported languages")
+    for language in languages:
+        require((root / "BrowserResources" / f"{language}.lproj" / "InfoPlist.strings").is_file(),
+                f"Missing iOS permission strings for {language}")
     for key in ("UIApplicationSceneManifest", "WKAppBoundDomains", "CFBundleURLTypes"):
         require(key not in info, "Legacy scene/domain/scheme restriction remains")
     require(info.get("UIBackgroundModes") == ["audio"], "Only background audio is allowed")
@@ -162,7 +166,7 @@ def validate(root=ROOT):
         validate_github_workflow(load_json(root / ".github/workflows" / filename),
                                  signing=filename == "atma-testflight.yml")
     info = plistlib.loads((root / "BrowserResources/Info.plist").read_bytes())
-    validate_plist(info)
+    validate_plist(info, root)
     plistlib.loads((root / "BrowserResources/PrivacyInfo.xcprivacy").read_bytes())
     validate_certificates(root / "assets/certificates")
     validate_icons(root)

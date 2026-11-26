@@ -330,7 +330,7 @@ final class BrowserController: UIViewController {
                 "canGoBack": mode == "browse" && currentRenderer?.canGoBack == true,
                 "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),
-                "translationStatus": pageTranslation.status,
+                "translationStatus": pageTranslation.status, "translationOffered": pageTranslation.offered,
                 "capabilities": ["incognito": true, "cookies": true, "downloads": true, "tabs": true,
                                  "persistentProfiles": false, "contentBlocking": blocker.available, "media": true,
                                  "pageTranslation": BrowserPageTranslation.available,
@@ -338,8 +338,9 @@ final class BrowserController: UIViewController {
                                  "timezoneEmulation": false, "sync": false, "push": false,
                                  "messageBadges": true,
                                  "translation": false, "googleAccount": false, "probe": false],
-                "searchEngine": model.preferences.searchEngine, "locale": model.preferences.locale,
-                "timezone": model.preferences.timezone, "profiles": model.profiles,
+                "searchEngine": model.preferences.searchEngine, "locale": Locale.autoupdatingCurrent.identifier.replacingOccurrences(of: "_", with: "-"),
+                "preferredLanguages": Locale.preferredLanguages,
+                "timezone": TimeZone.autoupdatingCurrent.identifier, "profiles": model.profiles,
                 "tabs": tabOverviewState(), "tabPreviewVersion": tabPreviewVersion,
                 "activeTabId": model.activeTabId, "media": media.state]
     }

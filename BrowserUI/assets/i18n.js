@@ -1,37 +1,56 @@
 import english from './locale-en.js';
+import spanish from './locale-es.js';
+import german from './locale-de.js';
+import french from './locale-fr.js';
+import portuguese from './locale-pt-BR.js';
+import italian from './locale-it.js';
+
 export const LANGUAGE_KEY='atma-interface-language';
-export const LANGUAGES=Object.freeze(['ru','en']);
-export const normalizeLanguage=value=>LANGUAGES.includes(value)?value:'ru';
+export const LANGUAGE_NAMES=Object.freeze({
+ ru:'Русский', en:'English', es:'Español', de:'Deutsch', fr:'Français', 'pt-BR':'Português (Brasil)', it:'Italiano',
+});
+const dictionaries={en:english,es:spanish,de:german,fr:french,'pt-BR':portuguese,it:italian};
+const matchingLanguage=value=>{
+ const code=String(value??'').toLowerCase().split(/[-_]/)[0];
+ return code==='pt'?'pt-BR':Object.hasOwn(LANGUAGE_NAMES,code)?code:null;
+};
+export const deviceLanguage=preferred=>preferred.map(matchingLanguage).find(Boolean)||'en';
 const russian=new Map(Object.entries(english).filter(([ru,en])=>ru!==en).map(([ru,en])=>[en,ru]));
-export function translate(value,language){
+const patterns=[
+ [/^Cookie сайтов: (\d+)$/,'Cookie сайтов: {count}','count'],
+ [/^Website cookies: (\d+)$/,'Cookie сайтов: {count}','count'],
+ [/^Открытые вкладки: (\d+)$/,'Открытые вкладки: {count}','count'],
+ [/^Страница (\d+)$/,'Страница {count}','count'],
+ [/^Введено (\d+) из 6 цифр$/,'Введено {count} из 6 цифр','count'],
+ [/^Иконка ATMA: (.+)$/,'Иконка ATMA: {name}','name'],
+ [/^Удалить выбранные \((\d+)\)$/,'Удалить выбранные ({count})','count'],
+ [/^Профиль: (.+)$/,'Профиль: {name}','name'],
+ [/^Выбрать cookie: (.+)$/,'Выбрать cookie: {name}','name'],
+ [/^Открыть вкладку: (.+)$/,'Открыть вкладку: {name}','name'],
+ [/^Закрыть вкладку: (.+)$/,'Закрыть вкладку: {name}','name'],
+ [/^Открыть (.+)$/,'Открыть {name}','name'],
+ [/^Удалить (.+)$/,'Удалить {name}','name'],
+ [/^Расформировать (.+)$/,'Расформировать {name}','name'],
+];
+const substitute=(text,params)=>text.replace(/\{(\w+)\}/g,(key,name)=>Object.hasOwn(params,name)?params[name]:key);
+export function translate(value,language,params={}){
  const text=String(value),trimmed=text.trim();
- const source=russian.get(trimmed)||trimmed.replace(/^Website cookies: (\d+)$/,'Cookie сайтов: $1');
- let result=language==='en'?(english[source]||source):source;
- if(language==='en'&&!english[source]){
-  const patterns=[
-   [/^Cookie сайтов: (\d+)$/,(_,n)=>`Website cookies: ${n}`],
-   [/^Автоматическая · сейчас (тёмная|светлая)$/,(_,theme)=>`Automatic · currently ${theme==='тёмная'?'dark':'light'}`],
-   [/^Открытые вкладки: (\d+)$/,(_,n)=>`Open tabs: ${n}`],
-   [/^Страница (\d+)$/,(_,n)=>`Page ${n}`],
-   [/^Введено (\d+) из 6 цифр$/,(_,n)=>`${n} of 6 digits entered`],
-   [/^Иконка ATMA: (.+)$/,(_,name)=>`ATMA icon: ${name}`],
-   [/^Удалить выбранные \((\d+)\)$/,(_,n)=>`Delete selected (${n})`],
-   [/^Профиль: (.+)$/,(_,name)=>`Profile: ${name}`],
-   [/^Выбрать cookie: (.+)$/,(_,name)=>`Select cookie: ${name}`],
-   [/^Открыть вкладку: (.+)$/,(_,name)=>`Open tab: ${name}`],
-   [/^Закрыть вкладку: (.+)$/,(_,name)=>`Close tab: ${name}`],
-   [/^Открыть (.+)$/,(_,name)=>`Open ${name}`],
-   [/^Удалить (.+)$/,(_,name)=>`Delete ${name}`],
-   [/^Расформировать (.+)$/,(_,name)=>`Ungroup ${name}`],
-  ];
-  for(const [pattern,replacement]of patterns)if(pattern.test(source)){result=source.replace(pattern,replacement);break;}
+ let source=Object.hasOwn(english,trimmed)?trimmed:russian.get(trimmed)||trimmed;
+ if(!Object.hasOwn(english,source)){
+  for(const [pattern,key,name] of patterns){
+   const match=source.match(pattern);
+   if(match){source=key;params={[name]:match[1],...params};break;}
+  }
  }
+ const result=substitute(dictionaries[language]?.[source]??source,params);
  return trimmed?text.replace(trimmed,()=>result):text;
 }
 // Retain original labels for reversible live switching, including labels rebuilt by the UI.
 // Site content is a separate renderer. User names and cookie data opt out explicitly.
-export function createLocalization(root=document,storage=localStorage){
- let language=normalizeLanguage(storage.getItem(LANGUAGE_KEY));
+export function createLocalization(root=document,storage=localStorage,preferred=navigator.languages){
+ let system=deviceLanguage(preferred);
+ let preference=matchingLanguage(storage.getItem(LANGUAGE_KEY))||'auto';
+ let language=preference==='auto'?system:preference;
  const texts=new WeakMap(),attributes=new WeakMap();
  const excluded=element=>!element||element.closest('[data-no-translate],script,style,pre,textarea');
  function apply(element=root.documentElement){
@@ -62,6 +81,18 @@ export function createLocalization(root=document,storage=localStorage){
   queued=true;queueMicrotask(()=>{queued=false;apply();});
  });
  observer.observe(root.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['aria-label','title','placeholder']});
+ const refresh=()=>{
+  const next=preference==='auto'?system:preference;
+  if(language===next)return false;
+  language=next;apply();return true;
+ };
  apply();
- return{get language(){return language;},set(value){language=normalizeLanguage(value);storage.setItem(LANGUAGE_KEY,language);apply();},apply,t:value=>translate(value,language)};
+ return{
+  get language(){return language;},
+  get preference(){return preference;},
+  set(value){preference=matchingLanguage(value)||'auto';storage.setItem(LANGUAGE_KEY,preference);return refresh();},
+  updateSystem(languages){system=deviceLanguage(languages);return refresh();},
+  apply,
+  t:(value,params)=>translate(value,language,params),
+ };
 }

@@ -9,7 +9,7 @@ import {previewCookieRequest} from './assets/cookie-rpc.js';
 import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
 import {renderCookieBrowser} from './assets/cookies-ui.js';
-import {createLocalization} from './assets/i18n.js';
+import {createLocalization,LANGUAGE_NAMES} from './assets/i18n.js';
 import {renderLegalInfo} from './assets/legal-ui.js';
 import {createWebsiteIconLoader} from './assets/site-icons.js';
 import {SHORTCUT_ICON_CHOICES,normalizeShortcutIconStyle,shortcutIconArtwork} from './assets/shortcut-artwork.js';
@@ -23,8 +23,19 @@ const context = query.get('context');
 const token = query.get('token');
 const $ = id => document.getElementById(id);
 const escape = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+const interfaceLanguageOptions='<option value="auto">Язык устройства</option>'+Object.entries(LANGUAGE_NAMES)
+  .map(([code,name])=>`<option value="${code}" data-no-translate>${escape(name)}</option>`).join('');
+function bindInterfaceLanguage(select) {
+  select.value=localization.preference;
+  select.addEventListener('change',()=>{
+    localization.set(select.value);
+    renderApps();
+    syncPageTranslationLanguage();
+  });
+}
 const paths = {
   search: '<circle cx="10.7" cy="10.7" r="6.7"/><path d="m16 16 4.8 4.8"/>',
+  translate: '<path d="M2 6h11M7.5 3v3m3.5 0c-1 5-4 8-9 10m2-7c1 3 3 5 6 6m3 6 4.5-10L22 21m-7.5-3h6"/>',
   left: '<path d="m14.5 5-7 7 7 7"/>', right: '<path d="m9.5 5 7 7-7 7"/>',
   up: '<path d="m7 14 5-5 5 5"/>', down: '<path d="m7 10 5 5 5-5"/>',
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
@@ -50,6 +61,7 @@ const paths = {
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.phone}</svg>`;
 $('lock-private').innerHTML=icon('lock');
 $('share-page').innerHTML=icon('share');
+$('show-original').innerHTML=icon('translate');
 $('incognito-mark').innerHTML=icon('incognito');
 $('go-home').innerHTML=`<span class="home-glyph">${icon('home')}</span>`;
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
@@ -169,10 +181,8 @@ function renderAppearance() {
   root.append(theme);for(const input of theme.querySelectorAll('input'))input.addEventListener('change',()=>changeAppearance({theme:input.value}));
   const languageRow=document.createElement('label');
   languageRow.className='setting-row';
-  languageRow.innerHTML='<span>Язык интерфейса</span><select aria-label="Язык интерфейса"><option value="ru">Русский</option><option value="en">English</option></select>';
-  const language=languageRow.querySelector('select');
-  language.value=localization.language;
-  language.addEventListener('change',()=>{localization.set(language.value);syncPageTranslationLanguage();});
+  languageRow.innerHTML=`<span>Язык интерфейса</span><select aria-label="Язык интерфейса">${interfaceLanguageOptions}</select>`;
+  bindInterfaceLanguage(languageRow.querySelector('select'));
   root.append(languageRow);
   const text=document.createElement('section');text.className='appearance-section';
   text.innerHTML='<div class="text-size-card"><label for="text-size" class="text-size-heading"><span>Размер текста</span><output id="text-size-value" for="text-size"></output></label><div class="text-size-slider"><span class="small-a" aria-hidden="true">А</span><input id="text-size" type="range" min="85" max="130" step="5" value="100" aria-label="Размер текста интерфейса"><span class="large-a" aria-hidden="true">А</span></div></div>';
@@ -326,6 +336,8 @@ function consume(next) {
   const previousTranslation=state?.translationStatus;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
   state = next;
+  const languageChanged=Array.isArray(next.preferredLanguages)&&localization.updateSystem(next.preferredLanguages);
+  if(languageChanged)syncPageTranslationLanguage();
   if(Array.isArray(next.profiles))profiles=next.profiles;
   if(previousMode===undefined&&next.mode==='home')chooseDesktopSurface(next.activeTabId);
   document.body.dataset.mode = next.mode;
@@ -345,7 +357,14 @@ function consume(next) {
   $('share-page').hidden = next.canGoForward === true;
   $('share-page').disabled = next.mode !== 'browse' || !next.url;
   $('refresh').disabled = next.mode !== 'browse';
-  $('show-original').hidden = next.mode !== 'browse' || next.translationStatus !== 'translated';
+  const translateButton=$('show-original');
+  const translated=next.translationStatus==='translated';
+  translateButton.hidden=next.mode!=='browse'||!(next.translationOffered||translated||next.translationStatus==='translating');
+  translateButton.disabled=next.translationStatus==='translating';
+  const translationLabel=translated?'Показать оригинал':translateButton.disabled?'Перевод страницы…':'Перевести страницу';
+  translateButton.setAttribute('aria-label',translationLabel);
+  translateButton.setAttribute('title',translationLabel);
+  translateButton.setAttribute('aria-pressed',String(translated));
   if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
     reportError(localization.t('Перевод страницы сейчас недоступен.'));
   }
@@ -358,7 +377,7 @@ function consume(next) {
     panel = next.panel;
     renderPanel();
   }
-  if(previousMode!==next.mode||geometryChanged)renderApps();
+  if(previousMode!==next.mode||geometryChanged||languageChanged)renderApps();
   const count=next.tabs?.length||0,button=$('tabs-button');
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
   if(panel==='tabs')renderTabs();
@@ -935,7 +954,10 @@ function settingButton(text, glyph, handler) {
   const button = document.createElement('button'); button.className = 'setting-row'; button.innerHTML = `${icon(glyph)}<span>${escape(text)}</span>${icon('right')}`;
   button.addEventListener('click', handler); return button;
 }
-const fileSize=bytes=>bytes<1024?`${bytes} ${localization.language==='en'?'B':'Б'}`:bytes<1048576?`${(bytes/1024).toFixed(1)} ${localization.language==='en'?'KB':'КБ'}`:`${(bytes/1048576).toFixed(1)} ${localization.language==='en'?'MB':'МБ'}`;
+function fileSize(bytes) {
+  const [value,unit]=bytes<1024?[bytes,'byte']:bytes<1048576?[bytes/1024,'kilobyte']:[bytes/1048576,'megabyte'];
+  return new Intl.NumberFormat(localization.language,{style:'unit',unit,maximumFractionDigits:1}).format(value);
+}
 function fileSymbol(file){return `<span class="file-symbol ${file.kind}"><svg viewBox="0 0 36 44" aria-hidden="true"><path d="M6 1h17l9 9v30a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3Z" fill="currentColor" opacity=".12"/><path d="M23 1v10h9M10 24h16M10 30h16" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><b>${escape(file.extension.slice(1,5).toUpperCase()||'ФАЙЛ')}</b></span>`;}
 async function renderFiles(){
   $('sheet-content').classList.remove('cookie-browser');
@@ -951,7 +973,7 @@ async function renderFiles(){
       if(!visible.length){$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
       for(const file of visible){
         const button=document.createElement('button');button.className='file-row';button.dataset.file=file.id;
-        button.innerHTML=`${fileSymbol(file)}<span class="file-details"><strong data-no-translate>${escape(file.name)}</strong><small>${new Date(file.modified).toLocaleDateString(localization.language==='en'?'en-US':'ru-RU')} · ${fileSize(file.size)}</small></span>${icon('right')}`;
+        button.innerHTML=`${fileSymbol(file)}<span class="file-details"><strong data-no-translate>${escape(file.name)}</strong><small>${new Date(file.modified).toLocaleDateString(localization.language)} · ${fileSize(file.size)}</small></span>${icon('right')}`;
         button.addEventListener('click',()=>showFile(file.id));$('file-list').append(button);
       }
     }
@@ -1062,7 +1084,7 @@ function renderDesktopMenu() {
 function renderSettings() {
   const card = document.createElement('div'); card.className = 'setting-card';
   if (state?.mode === 'browse' && state.capabilities?.pageTranslation) {
-    const label = state.translationStatus === 'translated' ? 'Показать оригинал' : 'Перевести на русский';
+    const label = state.translationStatus === 'translated' ? 'Показать оригинал' : 'Перевести страницу';
     const translation = settingButton(label, 'globe', () => action('translation/toggle').catch(() => {}));
     translation.disabled = state.loading || state.translationStatus === 'translating';
     card.append(translation);
@@ -1082,23 +1104,32 @@ function renderSettings() {
   card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; renderApps(); }));
   $('sheet-content').append(card);
   const preferences = document.createElement('div'); preferences.className = 'setting-card';
-  preferences.innerHTML = `<div class="setting-row">${icon('globe')}<span>Язык интерфейса</span><select id="interface-language" aria-label="Язык интерфейса"><option value="ru">Русский</option><option value="en">English</option></select></div><div class="setting-row">${icon('search')}<span>Поисковик</span><select id="search-engine" aria-label="Поисковик"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option></select></div><div class="setting-row">${icon('globe')}<span>Язык сайта</span><select id="site-language" aria-label="Язык сайта"><option value="ru-RU">Русский</option><option value="en-US">English</option></select></div><div class="setting-row">${icon('globe')}<span>Часовой пояс</span><select id="site-timezone" aria-label="Часовой пояс"><option value="Europe/Moscow">Москва</option><option value="UTC">UTC</option><option value="Europe/Berlin">Берлин</option><option value="America/New_York">Нью-Йорк</option><option value="Asia/Dubai">Дубай</option></select></div>`;
+  const useDeviceLanguage=state?.capabilities?.localeEmulation===false;
+  const useDeviceTimezone=state?.capabilities?.timezoneEmulation===false;
+  const siteLanguage=state?.preferredLanguages?.[0]||navigator.language;
+  const timezone=state?.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone;
+  preferences.innerHTML = `
+    <div class="setting-row">${icon('globe')}<span>Язык интерфейса</span><select id="interface-language" aria-label="Язык интерфейса">${interfaceLanguageOptions}</select></div>
+    <div class="setting-row">${icon('search')}<span>Поисковик</span><select id="search-engine" aria-label="Поисковик"><option value="google">Google</option><option value="yandex">Яндекс</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option></select></div>
+    <div class="setting-row">${icon('globe')}<span>Язык сайта</span>${useDeviceLanguage?
+      `<small data-no-translate>${escape(siteLanguage)}</small>`:
+      '<select id="site-language" aria-label="Язык сайта"><option value="ru-RU">Русский</option><option value="en-US">English</option></select>'}</div>
+    <div class="setting-row">${icon('globe')}<span>Часовой пояс</span>${useDeviceTimezone?
+      `<small data-no-translate>${escape(timezone.replaceAll('_',' '))}</small>`:
+      '<select id="site-timezone" aria-label="Часовой пояс"><option value="Europe/Moscow">Москва</option><option value="UTC">UTC</option><option value="Europe/Berlin">Берлин</option><option value="America/New_York">Нью-Йорк</option><option value="Asia/Dubai">Дубай</option></select>'}</div>`;
   $('sheet-content').append(preferences);
   $('search-engine').value = searchEngine;
-  $('interface-language').value=localization.language;
-  $('interface-language').addEventListener('change', event => {
-    localization.set(event.target.value);
-    renderApps();
-    syncPageTranslationLanguage();
-  });
-  $('site-language').value = ['ru-RU','en-US'].includes(state?.locale)?state.locale:'ru-RU';
-  $('site-timezone').value = state?.timezone || 'Europe/Moscow';
-  $('site-language').disabled=state?.capabilities?.localeEmulation===false;
-  $('site-timezone').disabled=state?.capabilities?.timezoneEmulation===false;
-  if($('site-language').disabled||$('site-timezone').disabled){const note=document.createElement('p');note.className='sheet-note';note.textContent='Язык и часовой пояс сайтов определяет iOS.';$('sheet-content').append(note);}
+  bindInterfaceLanguage($('interface-language'));
+  if(useDeviceLanguage||useDeviceTimezone){const note=document.createElement('p');note.className='sheet-note';note.textContent='Язык и часовой пояс сайтов определяет iOS.';$('sheet-content').append(note);}
   $('search-engine').addEventListener('change', async event => { searchEngine = event.target.value; localStorage.setItem('atma-preview-search', searchEngine); try { await action('preferences', { searchEngine }); } catch {} });
-  $('site-language').addEventListener('change', async event => { try { await action('preferences', { locale: event.target.value }); } catch {} });
-  $('site-timezone').addEventListener('change', async event => { try { await action('preferences', { timezone: event.target.value }); } catch {} });
+  if(!useDeviceLanguage){
+    $('site-language').value = ['ru-RU','en-US'].includes(state?.locale)?state.locale:'ru-RU';
+    $('site-language').addEventListener('change', async event => { try { await action('preferences', { locale: event.target.value }); } catch {} });
+  }
+  if(!useDeviceTimezone){
+    $('site-timezone').value = state?.timezone || 'Europe/Moscow';
+    $('site-timezone').addEventListener('change', async event => { try { await action('preferences', { timezone: event.target.value }); } catch {} });
+  }
   settingsPickers(preferences);
   $('sheet-content').append(settingButton(window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре', 'info', () => setPanel('about')));
 }
@@ -1327,7 +1358,7 @@ for (const [inputId, listId] of [['address','address-suggestions'],['incognito-a
   let editingTabID;
   const reset = installAddressSuggestions($(inputId), $(listId), {
     suggest: value => addressSuggestions(value, state, flattenApps(apps).filter(app => app.type !== 'system')),
-    searchLabel: value => localization.language === 'en' ? `Search for “${value}”` : `Искать «${value}»`,
+    searchLabel: value => localization.t('Искать «{value}»',{value}),
     select: result => {
       if (result.kind === 'tab') selectBrowserTab(result.entry.id);
       else if (result.kind === 'shortcut') launchShortcut(result.entry);
@@ -1395,7 +1426,7 @@ $('share-page').addEventListener('click', async () => {
   } catch (error) { if (error.name!=='AbortError') reportError('Не удалось поделиться ссылкой'); }
 });
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));
-$('show-original').addEventListener('click', () => action('translation/toggle').catch(() => {}));
+$('show-original').addEventListener('click', () => action('translation/toggle').catch(() => reportError('Не удалось запустить перевод страницы')));
 $('scrim').addEventListener('click', () => setPanel(null)); $('sheet-close').addEventListener('click', () => setPanel(null));
 document.addEventListener('keydown', event => {
   if(panel==='pin'&&(/^\d$/.test(event.key)||event.key==='Backspace')){event.preventDefault();pinKey(event.key==='Backspace'?'back':event.key);return;}
@@ -1403,6 +1434,13 @@ document.addEventListener('keydown', event => {
 });
 window.addEventListener('message', event => { if (event.source === parent && event.data?.type === 'atma-state' && event.data.state.id === context) consume(event.data.state); });
 window.addEventListener('atma-native-state',event=>{if(window.webkit?.messageHandlers?.atma)consume(event.detail);});
+window.addEventListener('languagechange',()=>{
+  if(localization.updateSystem(state?.preferredLanguages||navigator.languages)){
+    renderApps();
+    if(panel)renderPanel();
+    syncPageTranslationLanguage();
+  }
+});
 
 function syncPageTranslationLanguage() {
   if (state?.capabilities?.pageTranslation) {

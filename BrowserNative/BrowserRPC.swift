@@ -80,9 +80,10 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "home": returnHome()
         case "translation/language":
             let language = try string("language", body)
-            guard ["ru", "en"].contains(language) else { throw BrowserFailure.invalid("Unsupported interface language.") }
-            pageTranslation.prefersRussian = language == "ru"
-            pageTranslation.reconcile()
+            guard BrowserPageTranslation.interfaceLanguages.contains(language) else {
+                throw BrowserFailure.invalid("Unsupported interface language.")
+            }
+            pageTranslation.setTarget(language)
         case "translation/toggle":
             guard BrowserPageTranslation.available, mode == "browse" else {
                 throw BrowserFailure.invalid("Перевод страницы сейчас недоступен.")

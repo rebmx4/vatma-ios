@@ -2,7 +2,7 @@ import legal from './legal.js';
 
 // Bundled and public pages use the same copy, including when the device is offline.
 export function renderLegalInfo(container,{kind='privacy',language='ru',onOpen}={}){
- const locale=language==='en'?'en':'ru',copy=legal.locales[locale];
+ const locale=language==='ru'?'ru':'en',copy=legal.locales[locale];
  const article=document.createElement('article');
  article.dataset.noTranslate='';article.style.padding='4px 4px 24px';article.style.lineHeight='1.55';
  const add=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;article.append(node);return node;};

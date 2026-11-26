@@ -62,7 +62,7 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
     xcodegen generate --spec project.yml
     xcodebuild -list -project ATMA.xcodeproj > out/project-targets.log
     plutil -lint BrowserResources/Info.plist BrowserResources/PrivacyInfo.xcprivacy
-    plutil -lint BrowserResources/ru.lproj/InfoPlist.strings BrowserResources/en.lproj/InfoPlist.strings
+    plutil -lint BrowserResources/*.lproj/InfoPlist.strings
     ;;
   smoke)
     test -d ATMA.xcodeproj

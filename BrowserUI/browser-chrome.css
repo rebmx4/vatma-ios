@@ -43,16 +43,36 @@ body[data-theme][data-mode=home][data-surface=home] .browser-bar {
 }
 body[data-theme][data-mode=home][data-surface=home]:not([data-desktop-search],.address-submit-hold,:has(#address:focus)) {
   --desktop-bar-safe-bottom:max(var(--native-safe-area-bottom,0px),env(safe-area-inset-bottom,0px));
-  --desktop-bar-side:clamp(16px,7.5vw,34px);
-  --bar-height:calc(60px + var(--desktop-bar-safe-bottom));
+  --desktop-bar-side:clamp(20px,5.6vw,34px);
+  --desktop-address-height:54px;
+  --bar-height:calc(var(--desktop-address-height) + 16px + var(--desktop-bar-safe-bottom));
 
   .browser-bar {
+    gap:5px;
     padding-inline:max(var(--desktop-bar-side),env(safe-area-inset-left,0px)) max(var(--desktop-bar-side),env(safe-area-inset-right,0px));
     padding-bottom:calc(5px + var(--desktop-bar-safe-bottom));
   }
+
+  .browser-bar :is(#tabs-button,#settings) {
+    width:var(--desktop-address-height);
+    height:var(--desktop-address-height);
+    padding:0;
+  }
+
+  .browser-bar #settings > svg {
+    display:block;
+    width:26px;
+    height:26px;
+  }
+
+  .browser-bar #tabs-button .tab-counter {
+    min-width:28px;
+    height:28px;
+    font-size:15px;
+  }
 }
-body[data-surface=home] .browser-bar .address-form { flex:1; min-width:0; margin:0; height:44px }
-body[data-surface=home] .address-entry { height:44px }
+body[data-surface=home] .browser-bar .address-form { flex:1; min-width:0; margin:0; height:var(--desktop-address-height,44px) }
+body[data-surface=home] .address-entry { height:var(--desktop-address-height,44px) }
 body[data-surface=home] .browser-nav { display:contents }
 body[data-surface=home] .browser-nav > button { display:none }
 body[data-surface=home] #go-home { display:none }

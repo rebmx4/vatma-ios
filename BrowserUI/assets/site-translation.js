@@ -9,27 +9,39 @@
     return visibility === 'hidden' || visibility === 'collapse';
   }
 
-  function collect(ticket) {
-    const language = document.documentElement.lang.trim().toLowerCase().split(/[-_]/)[0];
-    if (!document.body || (language && language !== 'en')) return {language, texts: []};
+  function collectNodes(language, maxNodes, maxLength) {
+    if (!document.body) return [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const nodes = [];
     let visited = 0;
     let length = 0;
     let node;
-    while (visited < 12000 && nodes.length < 380 && (node = walker.nextNode())) {
+    while (visited < 12000 && nodes.length < maxNodes && (node = walker.nextNode())) {
       visited++;
       const original = node.data;
       const text = original.trim();
-      if (!text || text.length > 4000 || !/[A-Za-z]{2}/.test(text) || /\p{Script=Cyrillic}/u.test(text)) continue;
+      if (!text || text.length > 4000 || !/\p{L}/u.test(text)) continue;
       const element = node.parentElement;
       if (isExcluded(element)) continue;
       const nodeLanguage = element.closest('[lang]')?.lang.toLowerCase().split(/[-_]/)[0];
-      if (nodeLanguage && nodeLanguage !== 'en') continue;
-      if (length + text.length > 48000) break;
+      if (language && nodeLanguage && nodeLanguage !== language) continue;
+      if (length + text.length > maxLength) continue;
       nodes.push({node, original, text});
       length += text.length;
     }
+    return nodes;
+  }
+
+  function languageSample() {
+    return {
+      language: document.documentElement.lang.trim(),
+      sample: collectNodes('', 40, 5000).map(({text}) => text).join(' ')
+    };
+  }
+
+  function collect(ticket, source = document.documentElement.lang) {
+    const language = source.trim().toLowerCase().split(/[-_]/)[0];
+    const nodes = collectNodes(language, 380, 48000);
     pending = {ticket, nodes};
     return {language, texts: nodes.map(({text}) => text)};
   }
@@ -57,5 +69,5 @@
     pending = undefined;
   }
 
-  return {collect, apply, restore};
+  return {languageSample, collect, apply, restore};
 })()
