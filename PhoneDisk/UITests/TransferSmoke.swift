@@ -71,10 +71,16 @@ final class TransferSmoke: XCTestCase {
         for filename in bulkNames {
             XCTAssertTrue(app.cells.containing(.staticText,identifier:filename).firstMatch.waitForExistence(timeout:10))
         }
-        app.cells.containing(.staticText,identifier:bulkNames[2]).firstMatch.swipeLeft()
+        let swipedRow = app.cells.containing(.staticText, identifier: bulkNames[2]).firstMatch
+        swipedRow.swipeLeft()
         app.buttons["Удалить"].tap()
-        app.alerts.buttons["Удалить"].tap()
-        XCTAssertFalse(app.staticTexts[bulkNames[2]].exists)
+        let confirmation = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.staticTexts[bulkNames[2]].waitForExistence(timeout: 8), app.debugDescription)
+        confirmation.buttons["Удалить"].tap()
+        XCTAssertTrue(swipedRow.waitForNonExistence(timeout: 12), app.debugDescription)
+        for remaining in bulkNames.prefix(2) {
+            XCTAssertTrue(app.cells.containing(.staticText, identifier: remaining).firstMatch.exists)
+        }
 
         app.buttons["Выбрать"].tap()
         XCTAssertTrue(filesTab.isHittable)
