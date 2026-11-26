@@ -97,7 +97,13 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         #else
         configuration = .background(withIdentifier:key)
         #endif
-        if key == route.identifier { configuration.proxyConfigurations = route.proxy }
+        if key == route.identifier {
+            configuration.proxyConfigurations = route.proxy
+        } else {
+            configuration.proxyConfigurations = []
+            configuration.connectionProxyDictionary = [:]
+        }
+        configuration.allowsCellularAccess = !route.isLocal
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         configuration.httpShouldSetCookies = false
@@ -120,7 +126,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
 
     private func isObsolete(_ session: URLSession) -> Bool {
         guard let identifier = session.configuration.identifier, let route = DiskRoute.restore(identifier) else { return false }
-        return identifier == route.identifier
+        return identifier == route.identifier || (route == .internet && Transfers.base.host != "127.0.0.1")
     }
 
     @MainActor func recover() async -> Set<String> {
@@ -367,14 +373,18 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
                 throw error
             }
         }.value
-        guard isRunnable?(job.id) != false else {
+        let transferRoute: DiskRoute
+        do {
+            transferRoute = try await routes.resolve()
+            guard isRunnable?(job.id) != false else { throw CancellationError() }
+        } catch {
             for file in files { try? FileManager.default.removeItem(at:file.url) }
-            throw CancellationError()
+            throw error
         }
-        let session = background(route)
+        let session = background(transferRoute)
         for file in files {
             var request = probe
-            request.url = route.backgroundURL(Transfers.address("/api/v2/uploads/\(manifest.id)/parts/\(file.number)"))
+            request.url = transferRoute.backgroundURL(Transfers.address("/api/v2/uploads/\(manifest.id)/parts/\(file.number)"))
             request.setValue("application/octet-stream",forHTTPHeaderField:"Content-Type")
             request.setValue(file.checksum,forHTTPHeaderField:"X-Part-SHA256")
             startTask(session.uploadTask(with:request,fromFile:file.url),job.id,file.number,attempt:attempt)
@@ -421,7 +431,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
               etag == "\"" + hash + "\"", let value = header.value(forHTTPHeaderField:"X-File-Size"),
               let size = Int64(value),size >= 0 else { throw DiskFailure.rejected }
         let old = try ledger.read(job.id)
-        var receipt = TransferReceipt(size:size,sha256:hash,partSize:route.isLocal ? 16 * 1024 * 1024 : 4 * 1024 * 1024,etag:etag)
+        var receipt = TransferReceipt(size:size,sha256:hash,partSize:route.isTailnet ? 32 * 1024 * 1024 : 16 * 1024 * 1024,etag:etag)
         if let old, old.etag == etag { receipt = old }
         else { try? FileManager.default.removeItem(at:resumeFile(job.id)) }
         if !FileManager.default.fileExists(atPath:progress.path) {
@@ -439,17 +449,21 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         if receipt.confirmed == size { return try await finishLocalDownload(job) }
         let fileURL = Transfers.address("/api/v2/file",query)
         var request = try await self.request(fileURL,"GET",route:route)
+        let transferRoute = try await routes.resolve()
         guard isRunnable?(job.id) != false else { throw CancellationError() }
-        request.url = route.backgroundURL(fileURL)
-        let end = receipt.boundedDownload == true ? String(min(size,receipt.confirmed + receipt.partSize)-1) : ""
+        request.url = transferRoute.backgroundURL(fileURL)
+        let bounded = transferRoute.isTailnet || receipt.boundedDownload == true
+        let end = bounded ? String(min(size,receipt.confirmed + receipt.partSize)-1) : ""
         request.setValue("bytes=\(receipt.confirmed)-\(end)",forHTTPHeaderField:"Range")
         request.setValue(etag,forHTTPHeaderField:"If-Range")
-        let session = background(route)
+        let session = background(transferRoute)
+        report(job.id,receipt,transferRoute)
         let task: URLSessionDownloadTask
         let isResume: Bool
         if let saved = try? Data(contentsOf:resumeFile(job.id)),
            let resume = try? PropertyListDecoder().decode(DownloadResume.self,from:saved),
            resume.url == request.url, resume.etag == etag, resume.start == receipt.confirmed,
+           resume.range == request.value(forHTTPHeaderField:"Range") || (resume.range == nil && !transferRoute.isTailnet),
            resume.authorization == request.value(forHTTPHeaderField:"Authorization").map(Self.authorizationFingerprint) {
             task = session.downloadTask(withResumeData:resume.data)
             isResume = true
@@ -468,6 +482,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let url: URL
         let etag: String
         let start: Int64
+        let range: String?
         let authorization: String?
         let data: Data
     }
@@ -494,7 +509,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let speed = speeds[id].map { ProcessInfo.processInfo.systemUptime - $0.0 < 8 ? $0.2 : 0 } ?? 0
         onReading?(id,TransferReading(confirmed:receipt.confirmed,total:receipt.size,bytesPerSecond:speed,
                                      inFlight:bytesInFlight[id]?.values.reduce(0,+) ?? 0,
-                                     connection:route.isLocal ? "Домашняя сеть" : routes.network))
+                                     connection:route.label))
     }
 
     private func speed(_ session: URLSession,_ task: URLSessionTask,_ bytes: Int64) {
@@ -519,28 +534,14 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                     totalBytesWritten: Int64,totalBytesExpectedToWrite: Int64) { speed(session,downloadTask,totalBytesWritten) }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        guard !isObsolete(session), let route = route(for:session),
-              let response = task.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { return }
-        let bytes = max(task.countOfBytesSent,task.countOfBytesReceived)
-        routes.record(route,bytes:bytes,duration:metrics.taskInterval.duration)
-    }
-
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        guard !isObsolete(session), let route = route(for:session), let address = route.address,
-              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
-            completionHandler(.performDefaultHandling,nil)
-            return
-        }
-        guard challenge.protectionSpace.host == address, challenge.protectionSpace.port == DiskRoute.backgroundPort,
-              let trust = challenge.protectionSpace.serverTrust, let host = Transfers.base.host,
-              SecTrustSetPolicies(trust,SecPolicyCreateSSL(true,host as CFString)) == errSecSuccess,
-              SecTrustEvaluateWithError(trust,nil) else {
+        guard !isObsolete(session), let route = route(for:session) else {
             completionHandler(.cancelAuthenticationChallenge,nil)
             return
         }
-        completionHandler(.useCredential,URLCredential(trust:trust))
+        let (disposition, credential) = route.evaluate(challenge)
+        completionHandler(disposition,credential)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
@@ -552,7 +553,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
                   let reply = downloadTask.response as? HTTPURLResponse, route.acceptsBackgroundURL(reply.url)
             else { throw DiskFailure.rejected }
             guard reply.value(forHTTPHeaderField:"ETag") == receipt.etag else { throw DiskFailure.response(412) }
-            let end = slice.attempt == nil || receipt.boundedDownload == true
+            let end = slice.attempt == nil || route.isTailnet || receipt.boundedDownload == true
                 ? min(receipt.size,receipt.confirmed + receipt.partSize) : receipt.size
             if reply.statusCode == 206 {
                 let replyRange = reply.value(forHTTPHeaderField:"Content-Range") ?? ""
@@ -637,7 +638,6 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         }
         if let error = error as? URLError, error.code != .cancelled, isRunnable?(slice.id) != false {
             log.notice("Network transfer ended with code \(error.code.rawValue) and background cancellation \(String(describing:error.backgroundTaskCancelledReason),privacy:.public)")
-            routes.failed(route)
         }
         if let result {
             bytesInFlight[slice.id]?.removeValue(forKey:key)
@@ -648,6 +648,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         guard reconciling.insert(slice.id).inserted else { return }
         if let identifier { work[identifier,default:0] += 1 }
         Task { @MainActor in
+            if error is URLError, (error as? URLError)?.code != .cancelled { routes.failed(route) }
             // The first callback after a cold wake may not represent the only task.
             // Reconcile the daemon before asking the server to plan another batch.
             _ = await recover()
@@ -668,7 +669,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         guard let request = task.originalRequest, let url = request.url,
               let receipt = try? ledger?.read(slice.id), let etag = receipt.etag,
               receipt.confirmed == slice.start else { return }
-        let value = DownloadResume(url:url,etag:etag,start:slice.start,
+        let value = DownloadResume(url:url,etag:etag,start:slice.start,range:request.value(forHTTPHeaderField:"Range"),
             authorization:request.value(forHTTPHeaderField:"Authorization").map(Self.authorizationFingerprint),data:blob)
         if let data = try? PropertyListEncoder().encode(value) {
             try? data.write(to:resumeFile(slice.id),options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])

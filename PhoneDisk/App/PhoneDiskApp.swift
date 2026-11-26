@@ -31,19 +31,20 @@ struct PhoneDiskApp: App {
                 .tint(DiskPalette.accent)
                 .background(Color.black.ignoresSafeArea())
                 .task {
-                    #if DEBUG && targetEnvironment(simulator)
-                    if ProcessInfo.processInfo.environment["PHONE_DISK_FIXTURE"] != "1" { DiskRoutes.shared.start() }
-                    #else
                     DiskRoutes.shared.start()
-                    #endif
+                    if let route = DiskRoutes.shared.selected { disk.changeRoute(route) }
                     transfers.recover()
                 }
                 .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
-                    transfers.routeChanged()
                     disk.changeRoute(route)
+                    if route != nil { transfers.routeChanged() }
                 }
                 .onChange(of:phase) { _, state in
-                    if state == .active { transfers.recover(); Task { try? await transfers.scan() } }
+                    if state == .active {
+                        DiskRoutes.shared.refresh()
+                        transfers.recover()
+                        Task { try? await transfers.scan() }
+                    }
                     if state == .background { Transfers.schedule() }
                 }
         }
@@ -113,10 +114,10 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     let openTransfers = PassthroughSubject<Void,Never>()
     private let bridge = "phoneDiskNative"
     private var webTab: DiskTab = .files
+    private var pageRoute: DiskRoute?
     lazy var view:WKWebView = {
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        config.websiteDataStore.proxyConfigurations = DiskRoutes.shared.selected.proxy
         config.allowsInlineMediaPlayback=true
         let nativeTabs = """
         window.phoneDiskNativeTabVersion = 1;
@@ -154,11 +155,26 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         view.navigationDelegate=self
         view.uiDelegate=self
         view.allowsBackForwardNavigationGestures=true
-        view.load(URLRequest(url:Transfers.base))
+        if Transfers.base.host == "127.0.0.1" {
+            config.websiteDataStore.proxyConfigurations = []
+            view.load(URLRequest(url: Transfers.base))
+        }
         return view
     }()
 
-    func reload() { offline=false; view.load(URLRequest(url:Transfers.base)) }
+    func reload() {
+        Task { @MainActor in
+            do { load(try await DiskRoutes.shared.resolve()) }
+            catch { offline = true }
+        }
+    }
+
+    private func load(_ route: DiskRoute) {
+        pageRoute = route
+        view.configuration.websiteDataStore.proxyConfigurations = route.proxy
+        offline = false
+        view.load(URLRequest(url: Transfers.base))
+    }
 
     fileprivate func selectWebTab(_ tab: DiskTab) {
         guard tab != .transfers else { return }
@@ -182,9 +198,14 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         view.evaluateJavaScript(script, completionHandler: nil)
     }
 
-    func changeRoute(_ route: DiskRoute) {
-        WKWebsiteDataStore.default().proxyConfigurations = route.proxy
-        if offline { reload() }
+    func changeRoute(_ route: DiskRoute?) {
+        guard let route else {
+            pageRoute = nil
+            view.stopLoading()
+            offline = true
+            return
+        }
+        if pageRoute != route || offline { load(route) }
     }
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
@@ -260,7 +281,6 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
         if (error as NSError).code != NSURLErrorCancelled { offline=true }
-        if let error = error as? URLError, error.code != .cancelled { DiskRoutes.shared.failed(DiskRoutes.shared.selected) }
     }
     func webViewWebContentProcessDidTerminate(_ webView:WKWebView) { reload() }
 }

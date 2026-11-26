@@ -28,6 +28,16 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
         GENERATE_INFOPLIST_FILE: "NO"
 
+  PhoneDiskRouteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests/Routes]
+    dependencies:
+      - target: PhoneDisk
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+
   PhoneDiskUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -45,4 +55,5 @@ schemes:
         PhoneDisk: all
     test:
       targets:
+        - PhoneDiskRouteTests
         - PhoneDiskUITests

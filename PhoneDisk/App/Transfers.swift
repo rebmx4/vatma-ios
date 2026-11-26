@@ -407,7 +407,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),!job.isFinished,!job.isStopped else { return }
         active.insert(id)
         update(id){$0.phase=job.downloadURL == nil ? "Подготовка" : "Подготовка файла"}
-        let route = DiskRoutes.shared.transferRoute
+        var attemptedRoute: DiskRoute?
         do {
             try Task.checkCancellation()
             if try await resumable.finishLocalDownload(job) {
@@ -415,6 +415,9 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 done(id)
                 return
             }
+            let route = try await DiskRoutes.shared.resolve()
+            attemptedRoute = route
+            guard isRunnable(id) else { throw CancellationError() }
             if !job.uploaded {
                 let usesV2 = resumable.contains(id)
                 let capability = try await DiskRoutes.shared.capabilities(route)
@@ -460,7 +463,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             markInactive(id)
             if isRunnable(id) { update(id){$0.phase=DiskJob.waiting} }
         } catch {
-            if isRunnable(id), error is URLError { DiskRoutes.shared.failed(route) }
+            if isRunnable(id), error is URLError, let attemptedRoute { DiskRoutes.shared.failed(attemptedRoute) }
             waitForTransfer(id,error)
         }
     }
@@ -532,8 +535,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         if job.asset != nil, let destination = job.destination {
             active.insert(id)
-            let route = DiskRoutes.shared.transferRoute
             do {
+                let route = try await DiskRoutes.shared.resolve()
                 let enabled = defaults.bool(forKey:"photo-auto")
                 let settings = enabled ? try await readBackupSettings(route) : [:]
                 if !enabled || !backupSettingsAllow(destination,settings:settings) {
@@ -742,7 +745,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         let revision=backupSettingsRevision
         await restoreTasks()
-        let route = DiskRoutes.shared.transferRoute
+        let route = try await DiskRoutes.shared.resolve()
         let settings = try await readBackupSettings(route)
 
         func destination(for type:String, folder:String) -> Destination? {

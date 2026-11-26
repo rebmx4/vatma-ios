@@ -25,7 +25,10 @@ https://:18117 {
     route {
         log_append phonedisk_method {http.request.method}
         log_append phonedisk_path {http.request.uri.path}
-        @transfers path /api/v2/file /api/v2/uploads /api/v2/uploads/* /api/v2/capabilities
+        log_append phonedisk_peer {http.request.remote.host}
+        log_append phonedisk_range {http.response.header.Content-Range}
+        log_append phonedisk_file_size {http.response.header.X-File-Size}
+        @transfers path /api/v2/file /api/v2/uploads /api/v2/uploads/* /api/v2/capabilities /api/v2/device /api/v2/backup-settings
         reverse_proxy @transfers 127.0.0.1:18115 {
             header_up X-PhoneDisk-Lan 1
         }

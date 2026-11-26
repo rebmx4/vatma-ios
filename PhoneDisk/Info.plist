@@ -20,6 +20,8 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>PhoneDiskTailnetIPv4</key>
+    <string>100.91.167.126</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Домашнее подключение открывает твои папки через Wi-Fi.</string>
     <key>NSBonjourServices</key>

@@ -1,0 +1,39 @@
+{
+    admin off
+    auto_https off
+    persist_config off
+    default_sni files.rynpro.ru
+    servers {
+        protocols h1 h2
+    }
+}
+
+https://:18117 {
+    bind __TAILNET_ADDRESS__
+    tls C:/Luffi/Server/ingress/tls/certificates/acme-v02.api.letsencrypt.org-directory/files.rynpro.ru/files.rynpro.ru.crt C:/Luffi/Server/ingress/tls/certificates/acme-v02.api.letsencrypt.org-directory/files.rynpro.ru/files.rynpro.ru.key
+    log {
+        output file C:/PhoneDisk/Server/logs/tailnet-requests.log {
+            roll_size 1MiB
+            roll_keep 1
+        }
+        format filter {
+            wrap json
+            fields {
+                request delete
+                resp_headers delete
+                user_id delete
+            }
+        }
+    }
+    route {
+        @outside not remote_ip 100.64.0.0/10
+        respond @outside 403
+        log_append phonedisk_method {http.request.method}
+        log_append phonedisk_path {http.request.uri.path}
+        @phoneDiskV2 path /api/v2/*
+        reverse_proxy @phoneDiskV2 127.0.0.1:18115 {
+            header_up -X-PhoneDisk-Lan
+        }
+        import C:/PhoneDisk/Server/proxy/common.caddy
+    }
+}
