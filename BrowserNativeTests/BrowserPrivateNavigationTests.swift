@@ -38,8 +38,16 @@ final class BrowserPrivateNavigationTests: XCTestCase {
         _ = try await fixture.start()
         _ = try await fixture.rpc("tabs/new", body: ["privateBrowsing": true])
         try await fixture.wait("document.body.dataset.surface==='incognito'", in: fixture.controller.ui)
-        let start = try await fixture.script("return {white:getComputedStyle(document.body).backgroundColor,title:document.querySelector('.incognito-card h1').textContent,input:!!document.getElementById('incognito-address'),device:!!document.getElementById('incognito-device')};", in: fixture.controller.ui) as? [String: Any]
-        XCTAssertEqual(start?["title"] as? String, "Инкогнито")
+        let start = try await fixture.script("""
+            const {translate} = await import(new URL('/assets/i18n.js', location.href).href);
+            return {
+                title: document.querySelector('.incognito-card h1').textContent,
+                expectedTitle: translate('Инкогнито', document.documentElement.lang),
+                input: !!document.getElementById('incognito-address'),
+                device: !!document.getElementById('incognito-device')
+            };
+            """, in: fixture.controller.ui) as? [String: Any]
+        XCTAssertEqual(start?["title"] as? String, try XCTUnwrap(start?["expectedTitle"] as? String))
         XCTAssertEqual(start?["input"] as? Bool, true)
         XCTAssertEqual(start?["device"] as? Bool, true)
         for theme in ["dark", "light"] {
