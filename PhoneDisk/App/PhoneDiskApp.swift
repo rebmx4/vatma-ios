@@ -1,6 +1,7 @@
 import BackgroundTasks
 import Combine
 import CoreTransferable
+import Photos
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -294,6 +295,7 @@ struct DiskScreen: View {
     @State private var selectingTransfers = false
     @State private var selectedTransfers = Set<String>()
     @State private var transfersToRemove = Set<String>()
+    @State private var savingToPhotos = Set<String>()
     @State private var showDestinations=false
     @State private var pickPhotos=false
     @State private var pickerType="album"
@@ -532,7 +534,58 @@ struct DiskScreen: View {
                     Button("Продолжить") { transfers.start(job.id) }.buttonStyle(.borderless)
                 }
             } else if !selectingTransfers, let name = job.localName {
-                ShareLink(item:Transfers.documents.appendingPathComponent(name))
+                let file = Transfers.documents.appendingPathComponent(name)
+                HStack {
+                    ShareLink(item:file)
+                    if let type = photosResourceType(file,job:job) {
+                        let saving = savingToPhotos.contains(job.id)
+                        Button {
+                            saveToPhotos(job.id,file:file,type:type)
+                        } label: {
+                            Label(saving ? "Сохраняю…" : "Сохранить в Фото",systemImage:"photo.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(saving)
+                    }
+                }
+            }
+        }
+    }
+
+    private func photosResourceType(_ file: URL,job: DiskJob) -> PHAssetResourceType? {
+        guard job.isFinished, job.downloadURL != nil, let name = job.localName,
+              name == file.lastPathComponent, name != ".", name != ".." else { return nil }
+        let ext = file.pathExtension
+        guard !ext.isEmpty, let type = UTType(filenameExtension:ext) else { return nil }
+        if type.conforms(to:.image) { return .photo }
+        if type.conforms(to:.movie) || type.conforms(to:.video) { return .video }
+        return nil
+    }
+
+    @MainActor private func saveToPhotos(_ id: String,file: URL,type: PHAssetResourceType) {
+        guard savingToPhotos.insert(id).inserted else { return }
+        Task { @MainActor in
+            defer { savingToPhotos.remove(id) }
+            let values = try? file.resourceValues(forKeys:[.isRegularFileKey,.isSymbolicLinkKey])
+            guard values?.isRegularFile == true, values?.isSymbolicLink != true,
+                  FileManager.default.isReadableFile(atPath:file.path) else {
+                transfers.message = "Скачанный файл не найден."
+                return
+            }
+            let access = await PHPhotoLibrary.requestAuthorization(for:.addOnly)
+            guard access == .authorized || access == .limited else {
+                transfers.message = "Разрешите «Моему диску» добавлять файлы в «Фото» в настройках iPhone."
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    let options = PHAssetResourceCreationOptions()
+                    options.shouldMoveFile = false
+                    PHAssetCreationRequest.forAsset().addResource(with:type,fileURL:file,options:options)
+                }
+                transfers.message = "Сохранено в «Фото»."
+            } catch {
+                transfers.message = "Не удалось добавить файл в «Фото». Оригинал остался в «Моём диске»."
             }
         }
     }
