@@ -295,17 +295,30 @@ function normalizedSiteUrl(value) {
 function savedSite(url) {return flattenApps(apps).some(app=>normalizedSiteUrl(app.url)===normalizedSiteUrl(url));}
 function updateQuickAdd() {
   const button=$('pin-site'),url=normalizedSiteUrl(state?.url);
-  button.hidden=state?.mode!=='browse'||!url;if(button.hidden)return;
+  button.hidden=state?.mode!=='browse'||!url;
+  if(button.hidden){pinSiteArtKey='';return;}
   const name=state.siteName||state.title||new URL(url).hostname;
   const saved=savedSite(url);button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
   button.setAttribute('aria-label',saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`);
   button.title=button.getAttribute('aria-label');$('pin-site-badge').innerHTML=icon(saved?'check':'plus');
-  const source=state.privateBrowsing===true?'':state.iconUrl||new URL('/favicon.ico',url).href,key=`${state.privateBrowsing===true}|${url}|${source}|${name}`;
+  const key=JSON.stringify([state.activeTabId,url,state.privateBrowsing===true,Boolean(state.loading)]);
   if(key===pinSiteArtKey)return;pinSiteArtKey=key;
-  const art=$('pin-site-art');art.innerHTML=brand({id:'current-site',name,color:'#337b96'});
-  if(!/^(https?:\/\/|data:image\/)/i.test(source))return;
+  const art=$('pin-site-art');art.innerHTML=icon('globe');delete art.dataset.logo;
+  if(state.privateBrowsing===true||state.loading)return;
+  void paintQuickAddLogo(art,key,{url,iconUrl:state.iconUrl||''});
+}
+async function paintQuickAddLogo(art,key,site) {
+  const metadata=await api('current-site').catch(()=>null);
+  if(pinSiteArtKey!==key)return;
+  const iconUrl=await resolveShortcutIcon(normalizedSiteUrl(metadata?.url)===site.url?metadata:site);
+  if(!iconUrl||pinSiteArtKey!==key)return;
   const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';
-  image.addEventListener('load',()=>{if(pinSiteArtKey===key)art.replaceChildren(image);});image.src=source;
+  image.addEventListener('load',()=>{
+    if(pinSiteArtKey!==key)return;
+    art.dataset.logo='true';
+    art.replaceChildren(image);
+  });
+  image.src=iconUrl;
 }
 async function saveCurrentSite() {
   if(pinSiteBusy||state?.mode!=='browse'||state.loading)return;

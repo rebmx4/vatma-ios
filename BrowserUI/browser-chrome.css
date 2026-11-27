@@ -37,6 +37,15 @@ body[data-theme] :is(.address-form input,#incognito-address)::placeholder { colo
 body[data-theme] :is(.address-go,#incognito-form button[type=submit]) { color:#fff; background:#ffffff20 }
 body[data-theme] #incognito-form .address-clear { color:inherit; background:transparent }
 body[data-theme] #pin-site { order:1 }
+body[data-theme] .site-add-art {
+  background:var(--chrome-glass); color:var(--chrome-text);
+  box-shadow:var(--chrome-rim); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+}
+body[data-theme] .site-add-art[data-logo] { background:#fbfbfc }
+.site-add-art > svg { width:24px; height:24px }
+body[data-theme] .site-add-badge { background:#e6e6eb; color:#28282e; opacity:1 }
+body[data-theme=light] .site-add-badge { background:#3d4048; color:#fff }
+body[data-theme] .pin-site[data-saved=true] .site-add-badge { background:#087f65; color:#fff }
 .browser-nav { grid-template-columns:repeat(6,minmax(0,1fr)) }
 .browser-nav #share-page { grid-column:2 }
 body[data-web-app=true] #share-page { display:grid; width:36px; height:36px }
