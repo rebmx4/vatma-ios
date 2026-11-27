@@ -82,7 +82,7 @@ def configure_window(root):
         ("Remove", CONTROL, OUTLINE, DANGER),
     ):
         face = f"Disk.{name}"
-        element(face, 16, SURFACE, border, fill, (12, 7), (
+        element(face, 11, SURFACE, border, fill, (12, 7), (
             ("disabled", "#2c2c2c", "#212121"),
             ("focus", ACCENT, fill),
             ("pressed", border, "#303c34"),
@@ -431,10 +431,10 @@ def verify(root, video):
             app = DesktopWindow(root, server)
             server.admin({"action": "add", "path": str(folder), "backup": False})
             app.refresh()
-            root.update()
+            root.update_idletasks()
             assert app.folder_list.get_children(), "Folder controls are unavailable"
             app.open_invitation()
-            root.update()
+            root.update_idletasks()
             assert server.admin({"action": "state"})["inviting"], "Unable to create a pairing QR code"
             server.admin({"action": "cancel"})
             if sys.platform == "darwin":
