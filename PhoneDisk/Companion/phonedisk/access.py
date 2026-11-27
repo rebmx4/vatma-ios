@@ -33,11 +33,11 @@ class Access:
                 photo INTEGER NOT NULL DEFAULT 0, video INTEGER NOT NULL DEFAULT 0)""")
 
     def invite(self, name, port):
-        addresses = self.network.local
-        if not addresses:
+        host = self.network.pairing_host()
+        if not host:
             raise TransferError(409, "wifi-unavailable")
         code = secrets.token_urlsafe(32)
-        payload = {"v": 1, "id": self.journal.server_id, "host": addresses[0], "port": port,
+        payload = {"v": 1, "id": self.journal.server_id, "host": host, "port": port,
                    "pin": self.fingerprint, "code": code}
         if self.network.tailnet:
             payload["tailnet"] = self.network.tailnet

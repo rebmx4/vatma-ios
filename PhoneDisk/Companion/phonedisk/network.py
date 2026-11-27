@@ -1,8 +1,11 @@
 import hashlib
 import ipaddress
 import os
+import shutil
 import socket
 import ssl
+import subprocess
+import sys
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -46,6 +49,18 @@ def identity(state, server_id):
     return tls, fingerprint, dns
 
 
+def macos_tailnet_address(candidates):
+    binary = shutil.which("tailscale") or "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+    if not os.path.isfile(binary):
+        return None
+    try:
+        response = subprocess.run([binary, "ip", "-4"], capture_output=True, text=True, timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    address = response.stdout.strip()
+    return address if response.returncode == 0 and address in candidates else None
+
+
 class Network:
     def __init__(self, loopback):
         self.loopback = loopback
@@ -59,21 +74,40 @@ class Network:
             self.adapters = {"127.0.0.1": ipaddress.ip_network("127.0.0.0/8")}
             return
         adapters, tailnet = {}, None
+        tailnet_candidates = set()
         for adapter in ifaddr.get_adapters():
             for item in adapter.ips:
                 if not item.is_IPv4 or item.network_prefix <= 0:
                     continue
                 address = ipaddress.ip_address(item.ip)
                 name = (str(adapter.name) + " " + str(adapter.nice_name) + " " + str(item.nice_name)).casefold()
-                if address in TAILNET and "tailscale" in name:
-                    tailnet = str(address)
+                if address in TAILNET:
+                    tailnet_candidates.add(str(address))
+                    if "tailscale" in name:
+                        tailnet = str(address)
                 if any(address in network for network in PRIVATE):
                     adapters[str(address)] = ipaddress.ip_network(f"{address}/{item.network_prefix}", strict=False)
+        # macOS can expose the Tailscale address on a generically named utun interface.
+        if sys.platform == "darwin" and tailnet is None and tailnet_candidates:
+            tailnet = macos_tailnet_address(tailnet_candidates)
         self.adapters, self.tailnet = adapters, tailnet
 
     @property
     def local(self):
         return list(self.adapters)
+
+    def pairing_host(self):
+        addresses = self.local
+        if len(addresses) <= 1:
+            return next(iter(addresses), None)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+                # Resolve the default IPv4 route without sending a datagram.
+                route.connect(("192.0.2.1", 9))
+                preferred = route.getsockname()[0]
+        except OSError:
+            return addresses[0]
+        return preferred if preferred in addresses else addresses[0]
 
     def classify(self, target, peer):
         address = ipaddress.ip_address(peer)

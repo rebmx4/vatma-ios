@@ -1,0 +1,87 @@
+name: PhoneDisk desktop packages
+
+on:
+  push:
+    branches: [phone-disk/desktop-unix-beta]
+    paths:
+      - 'PhoneDisk/Companion/**'
+      - '.github/workflows/phone-disk-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build and install the Debian package on Ubuntu
+        run: |
+          set -euo pipefail
+          python3 PhoneDisk/Companion/linux/build.py out/PhoneDisk-Linux-test.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth ./out/PhoneDisk-Linux-test.deb
+          /usr/bin/python3 PhoneDisk/Companion/Tests/connection.py --wheels . --ffmpeg /usr/bin/ffmpeg
+          xvfb-run -a /opt/phonedisk/desktop --verify --verify-video "$PWD/PhoneDisk/Companion/Tests/desktop-preview.mp4"
+          dpkg-deb --info out/PhoneDisk-Linux-test.deb
+      - name: Verify installation and pairing controls on Debian 12
+        run: |
+          docker run --rm --mount "type=bind,src=$PWD,dst=/project,readonly" debian:12-slim sh -ec '
+            apt-get update
+            apt-get install -y --no-install-recommends xvfb xauth /project/out/PhoneDisk-Linux-test.deb
+            xvfb-run -a /opt/phonedisk/desktop --verify --verify-video /project/PhoneDisk/Companion/Tests/desktop-preview.mp4
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonedisk-linux
+          path: out/PhoneDisk-Linux-test.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            model: Apple-Silicon
+          - runner: macos-15-intel
+            model: Intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Python with native Tk
+        run: |
+          set -euo pipefail
+          installer="$RUNNER_TEMP/python-3.13.17.pkg"
+          curl --fail --silent --show-error --location \
+            https://www.python.org/ftp/python/3.13.17/python-3.13.17-macos11.pkg -o "$installer"
+          printf '%s  %s\n' '3053592af66128269efab37fe7851a4894920b27c442aeec99ce4d34d17c07e3' "$installer" |
+            shasum -a 256 -c -
+          sudo installer -pkg "$installer" -target /
+          /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 -m venv "$RUNNER_TEMP/phonedisk"
+          printf '%s\n' "$RUNNER_TEMP/phonedisk/bin" >> "$GITHUB_PATH"
+      - name: Test the service and build the Mac disk image
+        run: |
+          set -euo pipefail
+          options=(--only-binary=:all:)
+          if test "$(uname -m)" = x86_64; then
+            export OPENSSL_DIR="$(brew --prefix openssl@3)"
+            test -f "$OPENSSL_DIR/lib/libcrypto.a" || brew install openssl@3
+            export OPENSSL_STATIC=1
+            options+=(--no-binary=cryptography,zeroconf)
+          fi
+          python -m pip install --disable-pip-version-check "${options[@]}" \
+            'PyInstaller==6.22.2' 'cryptography==50.0.2' 'cffi==2.1.1' 'pycparser==3.12' \
+            'ifaddr==0.2.0' 'qrcode==8.2' 'zeroconf==0.154.0'
+          python -c 'import tkinter; print(tkinter.TkVersion)'
+          python PhoneDisk/Companion/Tests/connection.py --wheels .
+          bash PhoneDisk/Companion/macos/build.sh "$PWD/out" "$PWD/PhoneDisk/Companion/Tests/desktop-preview.mp4"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonedisk-macos-${{ matrix.model }}
+          path: out/PhoneDisk-macOS-${{ matrix.model }}-test.dmg
+          if-no-files-found: error
+          retention-days: 7

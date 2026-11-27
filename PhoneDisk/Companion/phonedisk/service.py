@@ -26,13 +26,14 @@ POLICY = ("default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-s
 
 
 class CompanionServer(TransferServer):
-    def __init__(self, state, assets, ffmpeg=None, *, loopback=False, port=PORT):
+    def __init__(self, state, assets, ffmpeg=None, *, loopback=False, port=PORT, thumbnailer=None):
         folders = SharedFolders(state)
         journal = Journal(state, folders)
         self.tls, self.fingerprint, dns = identity(state, journal.server_id)
         self.network = Network(loopback)
         self.assets = assets
         self.ffmpeg = ffmpeg
+        self.thumbnailer = thumbnailer
         self.covers = state / "covers"
         self.covers.mkdir(exist_ok=True)
         self.cover_slots = threading.BoundedSemaphore(2)
@@ -56,7 +57,7 @@ class CompanionServer(TransferServer):
         target = self.covers / (cache_key + ".jpg")
         if target.is_file():
             return target
-        if not self.ffmpeg:
+        if not self.ffmpeg and not self.thumbnailer:
             raise TransferError(404, "preview-unavailable")
         if not self.cover_slots.acquire(timeout=12):
             raise TransferError(429, "busy")
@@ -64,11 +65,15 @@ class CompanionServer(TransferServer):
         try:
             if target.is_file():
                 return target
+            if self.thumbnailer:
+                command = [str(self.thumbnailer), str(path), str(temporary)]
+            else:
+                command = [str(self.ffmpeg), "-nostdin", "-loglevel", "error", "-protocol_whitelist",
+                           "file,pipe", "-i", str(path), "-map", "0:v:0", "-frames:v", "1",
+                           "-threads", "1", "-vf", "scale=360:360:force_original_aspect_ratio=decrease",
+                           str(temporary)]
             with checked_file(path):
-                result = subprocess.run([str(self.ffmpeg), "-nostdin", "-loglevel", "error", "-protocol_whitelist",
-                                         "file,pipe", "-i", str(path), "-map", "0:v:0", "-frames:v", "1",
-                                         "-threads", "1", "-vf", "scale=360:360:force_original_aspect_ratio=decrease",
-                                         str(temporary)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL, timeout=20,
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if result.returncode or not temporary.is_file() or version(file_info(path)) != version(info):
