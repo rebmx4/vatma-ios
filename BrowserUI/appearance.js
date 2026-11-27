@@ -24,6 +24,7 @@ export function normalizeAppearance(value) {
   const source=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
   const number=Number(source.textSize??100);
   return {
+    showDock:source.showDock!==false,
     theme:['auto','light','dark'].includes(source.theme)?source.theme:'auto',
     textSize:Number.isFinite(number)?Math.min(130,Math.max(85,Math.round(number/5)*5)):100,
     icon:ICON_CHOICES.some(icon=>icon.id===source.icon)?source.icon:'default',

@@ -179,6 +179,8 @@ body[data-wallpaper-tone=dark] :is(.desktop-pages, .drag-ghost) .app-name {
   background: #202022;
 }
 
+.app-item:is([data-app=vtb], [data-app=tbank]) .shortcut-brand-icon { width: 100%; height: 100%; }
+
 .app-item:is([data-app=vtb], [data-app=tbank]) .app-tile:has(.shortcut-brand-icon) {
   background: #f7f9ff;
 }
@@ -416,6 +418,8 @@ body[data-wallpaper=solid] .desktop-controls {
   padding: 8px 5px;
   background: var(--desktop-surface);
 }
+
+.desktop-dock[hidden] { display: none; }
 
 .desktop-dock::before {
   content: '';

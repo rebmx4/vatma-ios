@@ -1,4 +1,5 @@
 export default {
+  "Нижняя панель": "Bottom dock",
  'Поделиться':'Share','Не удалось поделиться ссылкой':"Couldn't share the link",
  'Меню браузера':'Browser menu','Оформление и язык':'Appearance and language',
  'Инкогнито':'Incognito','Приватная вкладка':'Private tab','Поиск или адрес в инкогнито':'Search or address in Incognito','Перейти в инкогнито':'Go in Incognito','Завершить сеанс инкогнито':'End Incognito session',

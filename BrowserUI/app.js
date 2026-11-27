@@ -1,4 +1,5 @@
 import {APPEARANCE_KEY,ICON_CHOICES,WALLPAPERS,wallpaperForTheme,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
+import {createInitialDesktop,bundledShortcutArtwork,hasTranslatedDesktopLabel} from './desktop-defaults.js';
 import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry } from './workspace-model.js';
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview,showTabsHistory} from './tabs-view.js';
@@ -16,7 +17,7 @@ import {SHORTCUT_ICON_CHOICES,normalizeShortcutIconStyle,shortcutIconArtwork} fr
 import {messageProvider,messagesEnabled,enabledMessageProviders,shortcutMessageCount,badgeLabel} from './assets/message-badges.js';
 const localization=createLocalization();
 document.body.dataset.runtime=window.webkit?.messageHandlers?.atma?'ios':'preview';
-const usesTranslatedShortcutLabel=app=>app.type==='system'||!app.custom&&DEFAULT_APPS.some(entry=>entry.id===app.id&&entry.name===app.name&&entry.url===app.url);
+const usesTranslatedShortcutLabel=app=>app.type==='system'||hasTranslatedDesktopLabel(app);
 const appLabel=app=>usesTranslatedShortcutLabel(app)?localization.t(app.name):app.name;
 const query = new URLSearchParams(location.search);
 const context = query.get('context');
@@ -66,16 +67,6 @@ $('incognito-mark').innerHTML=icon('incognito');
 $('go-home').innerHTML=`<span class="home-glyph">${icon('home')}</span>`;
 for (const [id, name] of Object.entries({ 'edit-apps': 'edit', 'search-symbol': 'search', 'address-go': 'arrow', 'go-back': 'left', 'go-forward': 'right', 'refresh': 'refresh', 'tabs-button': 'plus', 'new-tab-button': 'plus', 'settings': 'dots', 'sheet-close': 'close' })) $(id).innerHTML = icon(name);
 
-const DEFAULT_APPS = [
-  { id: 'vk', name: 'ВКонтакте', url: 'https://vk.com/', color: '#087fff' },
-  { id: 'dzen', name: 'Дзен', url: 'https://dzen.ru/', color: '#1c1c1c' },
-  { id: 'avito', name: 'Авито', url: 'https://www.avito.ru/', color: '#fff' },
-  { id: 'youtube', name: 'YouTube', url: 'https://www.youtube.com/', color: '#fff' },
-  { id: 'rutube', name: 'RUTUBE', url: 'https://rutube.ru/', color: '#111729' },
-  { id: 'vtb', name: 'ВТБ', url: 'https://online.vtb.ru/', color: '#0b48b2' },
-  { id: 'tbank', name: 'Т-Банк', url: 'https://www.tbank.ru/', color: '#ffdf00' },
-  { id: 'mail', name: 'Почта Mail', url: 'https://e.mail.ru/', color: '#087cf1' },
-];
 const SYSTEM_APPS=[{id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'},{id:'atma-settings',type:'system',action:'settings',name:'Настройки',color:'#c4c7ce'},{id:'atma-cookies',type:'system',action:'cookies',name:'Куки',color:'#fff'},{id:'atma-private-desktop',type:'system',action:'private-desktop',name:'Приватный стол',color:'#183747'}];
 const RETIRED_DEFAULTS=new Map([
   ['ozonbank',['Ozon Банк','https://finance.ozon.ru/']],
@@ -99,8 +90,8 @@ try { apps = JSON.parse(localStorage.getItem('atma-preview-apps')); } catch {}
 const desktopLayoutKey='atma-preview-desktop-layout';
 const usesLegacyDesktopRows=Array.isArray(apps)&&localStorage.getItem(desktopLayoutKey)!=='five-rows';
 if(!Array.isArray(apps)){
-  const dockIds=['vk','dzen','youtube','mail'];
-  apps=DEFAULT_APPS.map(app=>dockIds.includes(app.id)?{...app,dockSlot:dockIds.indexOf(app.id)}:{...app});
+  const previewLocale=document.body.dataset.runtime==='preview'?navigator.language:undefined;
+  apps=createInitialDesktop(query.get('desktopRegion'),previewLocale);
   try{localStorage.setItem(desktopLayoutKey,'five-rows');}catch{}
 }
 apps=collapseSingletonFolders(withoutRetiredDefaults(apps));
@@ -144,6 +135,7 @@ function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
+  $('desktop-dock').hidden=!appearance.showDock;
   applyWallpaper();
   if (panel === 'wallpaper') renderWallpapers();
   renderToolbarMessageBadge();
@@ -158,7 +150,7 @@ async function changeAppearance(patch) {
   const previous=appearance;next=normalizeAppearance({...appearance,...patch});
   try{localStorage.setItem(APPEARANCE_KEY,JSON.stringify(next));}catch{reportError('Не удалось сохранить оформление');return;}
   appearance=next;applyAppearance();
-  if(previous.icon!==next.icon){renderApps();if(panel==='folder')renderFolder();}
+  if(previous.icon!==next.icon||previous.showDock!==next.showDock){renderApps();if(panel==='folder')renderFolder();}
   updateAppearanceControls();if(panel==='app-icon')renderAppIconPicker();
 }
 function updateAppearanceControls() {
@@ -189,6 +181,16 @@ function renderAppearance() {
   languageRow.innerHTML=`<span>Язык интерфейса</span><select aria-label="Язык интерфейса">${interfaceLanguageOptions}</select>`;
   bindInterfaceLanguage(languageRow.querySelector('select'));
   root.append(languageRow);
+  const dockRow=document.createElement('label');
+  dockRow.className='dock-appearance-switch';
+  dockRow.innerHTML='<span>Нижняя панель</span><input type="checkbox" role="switch">';
+  const toggle=dockRow.querySelector('input');
+  toggle.checked=appearance.showDock;
+  toggle.addEventListener('change',async()=>{
+    await changeAppearance({showDock:toggle.checked});
+    toggle.checked=appearance.showDock;
+  });
+  root.append(dockRow);
   const text=document.createElement('section');text.className='appearance-section';
   text.innerHTML='<div class="text-size-card"><label for="text-size" class="text-size-heading"><span>Размер текста</span><output id="text-size-value" for="text-size"></output></label><div class="text-size-slider"><span class="small-a" aria-hidden="true">А</span><input id="text-size" type="range" min="85" max="130" step="5" value="100" aria-label="Размер текста интерфейса"><span class="large-a" aria-hidden="true">А</span></div></div>';
   root.append(text);$('text-size').addEventListener('input',event=>changeAppearance({textSize:Number(event.target.value)}));
@@ -224,11 +226,12 @@ function brand(app, useStoredIcon = false) {
   if(app.type!=='system'){
     const customArtwork=shortcutIconArtwork(app.iconStyle);
     if(customArtwork)return customArtwork;
+    const artwork=bundledShortcutArtwork(app);
+    if(artwork){
+      return `<img class="shortcut-brand-icon" src="${artwork}" alt="" draggable="false">`;
+    }
     if(useStoredIcon&&/^data:image\/png;base64,/i.test(app.iconUrl||''))
       return `<img src="${escape(app.iconUrl)}" alt="" draggable="false">`;
-  }
-  if(!app.custom&&!app.iconUrl&&app.url&&DEFAULT_APPS.some(entry=>entry.id===app.id&&entry.url===app.url)){
-    return `<img class="shortcut-brand-icon" src="/assets/desktop-icons/${app.id}.png" alt="" draggable="false">`;
   }
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
@@ -289,7 +292,7 @@ const shortcutIcons=createWebsiteIconLoader((kind,url)=>api('site-resource',{kin
 window.addEventListener('online',()=>{shortcutIcons.retryFailed();renderApps();});
 function resolveShortcutIcon(site){return shortcutIcons.resolve(site);}
 function paintShortcutIcon(target,app,scope){
-  if((!app.custom&&!app.iconStyle&&!app.iconUrl)||normalizeShortcutIconStyle(app.iconStyle)!=='site')return;
+  if(bundledShortcutArtwork(app)||normalizeShortcutIconStyle(app.iconStyle)!=='site')return;
   const source=app.iconUrl||'',url=app.url,id=app.id,key=vaultKey;
   const paint=source=>{if(!source)return;const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';image.addEventListener('load',()=>target.replaceChildren(image));image.src=source;};
   if(/^data:image\/png;base64,/i.test(source)){paint(source);return;}
@@ -579,7 +582,15 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
   if (editing&&!quickAccess&&app.type!=='system') {
     const remove = document.createElement('button'); remove.className = 'app-remove'; remove.innerHTML=icon('minus');
     remove.setAttribute('aria-label', isFolder(app) ? `Расформировать ${app.name}` : `Удалить ${app.name}`);
-    remove.addEventListener('click', () => updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),app.id))); item.append(remove);
+    remove.type='button';
+    remove.addEventListener('pointerdown',event=>event.stopPropagation());
+    remove.addEventListener('click',event=>{
+      event.stopPropagation();
+      if(scope==='private'&&!vaultKey)return;
+      if(scope==='public'&&pendingVaultMove===app.id)pendingVaultMove=null;
+      updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),app.id));
+    });
+    item.append(remove);
   }
   return item;
 }
@@ -690,20 +701,33 @@ function updateQuickAccessExpansion() {
 }
 function renderDesktopQuickAccess() {
   const scope=vaultKey?currentScope():'public', entries=poolFor(scope);
-  const grid=arrangeEntries(entries,gridMetrics().columns).sort((first,second)=>first.slot-second.slot);
-  const ordered=[...arrangeDock(entries).filter(Boolean),...grid.map(position=>position.entry)];
-  const needle=$('address').value.trim().toLocaleLowerCase();
-  const matches=app=>[app.name,appLabel(app),app.url].some(value=>value?.toLocaleLowerCase().includes(needle));
-  const suggested=(needle?ordered.flatMap(app=>matches(app)?[app]:isFolder(app)?app.children.filter(matches):[]):ordered).slice(0,8);
+  const {columns,rows:pageRows}=gridMetrics();
+  const grid=arrangeEntries(entries,columns).sort((first,second)=>first.slot-second.slot);
+  let visibleRows;
+  if(appearance.showDock){
+    const ordered=[...arrangeDock(entries).filter(Boolean),...grid.map(position=>position.entry)];
+    const needle=$('address').value.trim().toLocaleLowerCase();
+    const matches=app=>[app.name,appLabel(app),app.url].some(value=>value?.toLocaleLowerCase().includes(needle));
+    const suggested=needle?ordered.flatMap(app=>matches(app)?[app]:isFolder(app)?app.children.filter(matches):[]):ordered;
+    visibleRows=[suggested.slice(0,4),suggested.slice(4,8)];
+  }else{
+    const pageIndex=scope==='private'?desktopPage-privatePageStart:desktopPage;
+    const firstSlot=pageIndex*pageRows*columns;
+    visibleRows=[0,1].map(row=>{
+      const start=firstSlot+row*columns;
+      return grid.filter(({slot})=>slot>=start&&slot<start+4).map(({entry})=>entry);
+    });
+  }
   const host=$('desktop-focus-dock'), suggestions=$('desktop-suggested-apps');
   host.dataset.scope=scope;
-  host.hidden=suggested.length===0;
+  host.hidden=visibleRows.every(row=>!row.length);
   const rows=[];
-  for(let start=0;start<suggested.length;start+=4) {
+  for(const [index,entries] of visibleRows.entries()) {
+    if(!entries.length&&(index>0||!visibleRows[1].length))continue;
     const row=document.createElement('div');
     row.className='desktop-suggestion-row';
-    row.hidden=start!==0;
-    row.append(...suggested.slice(start,start+4).map((app,index)=>createItem(app,null,start+index,scope,true)));
+    row.hidden=index>0;
+    row.append(...entries.map((app,index)=>createItem(app,null,index,scope,true)));
     rows.push(row);
   }
   suggestions.replaceChildren(...rows);
@@ -942,10 +966,22 @@ async function endGesture(event, cancelled = false) {
     if (current.held || current.wasEditing) suppressClickUntil=Date.now()+350;
     if (!cancelled && !current.held && (current.wasEditing || shortTap)) {
       const app=findEntry(poolFor(current.scope),current.id)?.entry;
-      if(app) activate(app,current.scope);
+      if(app){
+        suppressReleaseClick=current.wasEditing;
+        activate(app,current.scope);
+      }
     }
   }
 }
+let suppressReleaseClick=false;
+// Editing opens a sheet on pointerup. Ignore its trailing click until the next actual press.
+document.addEventListener('pointerdown',()=>{suppressReleaseClick=false;},true);
+document.addEventListener('click',event=>{
+  if(!suppressReleaseClick||event.detail===0)return;
+  suppressReleaseClick=false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+},true);
 document.addEventListener('pointerup', event=>endGesture(event));
 document.addEventListener('pointercancel', event=>endGesture(event,true));
 async function openFolder(id,scope='public') { openFolderId=id;folderScope=scope;await setPanel('folder'); }
@@ -1277,7 +1313,7 @@ function renderAppForm(app) {
   const scope=editorScope,key=vaultKey;
   const submitLabel=app?'Сохранить':scope==='private'?'Добавить на приватный стол':'Добавить на рабочий стол';
   const selectedIcon=normalizeShortcutIconStyle(app?.iconStyle);
-  const siteArtwork=/^data:image\/png;base64,/i.test(app?.iconUrl||'')?'<img src="'+escape(app.iconUrl)+'" alt="">':brand({...app,id:app?.id||'site-preview',name:app?.name||'Сайт',iconStyle:'site'});
+  const siteArtwork=brand({...app,id:app?.id||'site-preview',name:app?.name||'Сайт',iconStyle:'site'},true);
   const iconChoices='<fieldset class="shortcut-icon-picker"><legend>Иконка ярлыка</legend><div class="shortcut-icon-options">'+SHORTCUT_ICON_CHOICES.map(choice=>'<label class="shortcut-icon-option"><input type="radio" name="iconStyle" value="'+choice.id+'" '+(selectedIcon===choice.id?'checked':'')+'><span class="shortcut-icon-art">'+(choice.id==='site'?siteArtwork:shortcutIconArtwork(choice.id))+'</span><span>'+choice.label+'</span></label>').join('')+'</div></fieldset>';
   const messageChoice=`<label class="message-choice" id="message-choice" hidden><input type="checkbox" name="messageNotifications" ${!app||messagesEnabled(app)?'checked':''}><span><strong>Счётчик сообщений</strong><small>Появится, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</small></span></label>`;
   $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}${messageChoice}<button class="primary-button" type="submit">${submitLabel}</button></form>`;
@@ -1292,7 +1328,8 @@ function renderAppForm(app) {
     const submit=event.currentTarget.querySelector?.('[type="submit"]');
     if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
     const iconStyle=normalizeShortcutIconStyle(form.get('iconStyle')),sameURL=app?.url===url.href;
-    const iconUrl=iconStyle==='site'?await resolveShortcutIcon({url:url.href,iconUrl:sameURL?app.iconUrl:''}):sameURL?app.iconUrl||'':'';
+    const stockArtwork=sameURL&&bundledShortcutArtwork(app);
+    const iconUrl=iconStyle==='site'&&!stockArtwork?await resolveShortcutIcon({url:url.href,iconUrl:sameURL?app.iconUrl:''}):sameURL?app.iconUrl||'':'';
     if(panel!==editorPanel||version!==appEditorVersion||scope==='private'&&(!vaultKey||vaultKey!==key))return;
     const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${crypto.randomUUID()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL), messageNotifications: scope==='public'&&Boolean(messageProvider(url.href)&&form.get('messageNotifications')) };
     delete entry.profileId;
@@ -1301,11 +1338,33 @@ function renderAppForm(app) {
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
     try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=submitLabel;}}
   });
-  if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
-    if(editorScope==='private') {
-      apps.push(detachFromLayout(app));await saveApps();vaultApps=removeEntry(vaultApps,app.id);await saveApps('private');await setPanel(null);showDesktopPage(0);
-    } else {pendingVaultMove=app.id;if(vaultKey)await finishVaultUnlock();else requestVault();}
-  }));
+  if(!app)return;
+  let pressedMove=false;
+  const moveButton=settingButton(scope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async event=>{
+    // A touch released on the desktop can also produce a click after the editor opens.
+    if(event.detail>0&&!pressedMove)return;
+    pressedMove=false;
+    if(panel!==editorPanel||version!==appEditorVersion||!findEntry(poolFor(scope),app.id))return;
+    moveButton.disabled=true;
+    try{
+      if(scope==='private'){
+        if(!vaultKey||vaultKey!==key)return;
+        apps.push(detachFromLayout(app));
+        await saveApps();
+        vaultApps=removeEntry(vaultApps,app.id);
+        await saveApps('private');
+        await setPanel(null);
+        showDesktopPage(0);
+      }else{
+        pendingVaultMove=app.id;
+        if(vaultKey)await finishVaultUnlock();
+        else await requestVault();
+      }
+    }finally{moveButton.disabled=false;}
+  });
+  moveButton.addEventListener('pointerdown',()=>{pressedMove=true;});
+  moveButton.addEventListener('pointercancel',()=>{pressedMove=false;});
+  $('sheet-content').append(moveButton);
 }
 async function openAppEditor(app,scope='public') { editorScope=scope;await setPanel('edit');renderAppForm(app); }
 async function requestVault() {
@@ -1444,9 +1503,10 @@ async function finishVaultUnlock() {
     return;
   }
   if(pendingVaultMove) {
-    const found=findEntry(apps,pendingVaultMove);
-    if(found){vaultApps.push(detachFromLayout(found.entry));await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),pendingVaultMove);await saveApps();}
+    const moveId=pendingVaultMove;
     pendingVaultMove=null;
+    const found=findEntry(apps,moveId);
+    if(found){vaultApps.push(detachFromLayout(found.entry));await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),moveId);await saveApps();}
   }
   const showHome=document.body.dataset.surface!=='home';
   await setPanel(null,{keepVaultAction:true});

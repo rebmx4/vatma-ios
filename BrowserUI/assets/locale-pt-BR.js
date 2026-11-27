@@ -1,4 +1,5 @@
 export default {
+  "Нижняя панель": "Painel inferior",
   "Поделиться": "Compartilhar",
   "Не удалось поделиться ссылкой": "Não foi possível compartilhar o link",
   "Меню браузера": "Menu do navegador",

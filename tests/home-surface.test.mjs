@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {createInitialDesktop} from '../BrowserUI/desktop-defaults.js';
 
 function browser(){
  const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
@@ -21,19 +22,19 @@ function payload(id,tabs=[{id,url:''}]){return{profileId:'actual-device',mode:'h
 
 function desktopDefaults(){
  const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
- const begin=source.indexOf('const DEFAULT_APPS = [');
+ const begin=source.indexOf('const SYSTEM_APPS=');
  const end=source.indexOf('let apps;',begin);
  assert.ok(begin>0&&end>begin);
  const context={isFolder:entry=>entry?.type==='folder'};
  vm.createContext(context);
- vm.runInContext(source.slice(begin,end)+';this.defaults=DEFAULT_APPS;this.system=SYSTEM_APPS;this.migrate=withoutRetiredDefaults;',context);
+ vm.runInContext(source.slice(begin,end)+';this.system=SYSTEM_APPS;this.migrate=withoutRetiredDefaults;',context);
  return context;
 }
 
 test('a new desktop includes the Incognito shortcut and requested websites',()=>{
- const {defaults,system}=desktopDefaults();
- assert.deepEqual(Array.from(defaults,entry=>entry.id).concat(Array.from(system,entry=>entry.id)),
-  ['vk','dzen','avito','youtube','rutube','vtb','tbank','mail','atma-incognito','atma-settings','atma-cookies','atma-private-desktop']);
+ const {system}=desktopDefaults();
+ assert.deepEqual(createInitialDesktop('RU').map(entry=>entry.id).concat(Array.from(system,entry=>entry.id)),
+  ['vk','dzen','vtb','tbank','rutube','avito','youtube','mail','atma-incognito','atma-settings','atma-cookies','atma-private-desktop']);
  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(system)[0])),
   {id:'atma-incognito',type:'system',action:'incognito',name:'Инкогнито',color:'#fff'});
 });

@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-function tileFixture({editing=true}={}){
+import {freezeSlots,removeEntry} from '../BrowserUI/workspace-model.js';
+function tileFixture({editing=true,app={id:'custom-image',name:'Saved website',type:'website'},scope='public'}={}){
  const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
  class Element{constructor(){this.dataset={};this.events=new Map();this.children=[];this.style={setProperty(){}};this.classList={toggle(){}};}setAttribute(){}addEventListener(name,handler){this.events.set(name,handler);}append(...children){this.children.push(...children);}}
- const app={id:'custom-image',name:'Saved website',type:'website'}, opened=[];
- const page={Element,document:{createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing,suppressClickUntil:0,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),
+ const opened=[];
+ const page={Element,document:{events:new Map(),addEventListener(name,handler){this.events.set(name,handler);},createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing,suppressClickUntil:0,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),
   $:()=>({scrollLeft:0}),isFolder:()=>false,usesTranslatedShortcutLabel:()=>false,appLabel:app=>app.name,brand:()=>'',paintShortcutIcon(){},icon:()=>'',setTimeout:()=>1,navigator:{},shortcutMessageCount:()=>0,messageCounts:{},
   poolFor:()=>[app],findEntry:(apps,id)=>({entry:apps.find(app=>app.id===id)}),activate:app=>opened.push(app.id),
   clearTimeout(){},clearHover(){},removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4})};
@@ -15,7 +16,7 @@ function tileFixture({editing=true}={}){
  const holdBegin=source.indexOf('function beginGesture('),holdEnd=source.indexOf('function clearHover(',holdBegin);
  const releaseBegin=source.indexOf('async function endGesture('),releaseEnd=source.indexOf("document.addEventListener('pointerup', event=>endGesture(event))",releaseBegin);
  vm.runInContext(source.slice(itemBegin,itemEnd)+source.slice(holdBegin,holdEnd)+source.slice(releaseBegin,releaseEnd),page);
- const item=page.createItem(app);
+ const item=page.createItem(app,null,0,scope);
  const event=target=>({button:0,pointerId:1,clientX:20,clientY:30,target:{closest:selector=>selector===target?{}:null},preventDefault(){}});
  return{page,item,event,opened};
 }
@@ -58,4 +59,33 @@ test('a completed drop removes the dragged artwork before rendering its new slot
  f.page.updatePool=()=>{order.push('render');assert.equal(f.page.gesture,null);};
  await f.page.endGesture(f.event('.app-tile'));
  assert.deepEqual(order,['remove','render']);
+});
+
+test('opening the editor consumes its release click and accepts the next deliberate press',async()=>{
+ const f=tileFixture();
+ f.item.events.get('pointerdown')(f.event('.app-tile'));
+ await f.page.endGesture(f.event('.app-tile'));
+ let blocked=0;
+ const click={detail:1,preventDefault(){},stopImmediatePropagation(){blocked++;}};
+ f.page.document.events.get('click')(click);
+ assert.equal(blocked,1);
+ f.page.document.events.get('pointerdown')();
+ f.page.document.events.get('click')(click);
+ assert.equal(blocked,1);
+});
+
+test('removing Mail changes only the current desktop and cancels a pending move of the removed public shortcut',()=>{
+ const mail={id:'mail',name:'Почта Mail',url:'https://e.mail.ru/',dockSlot:3};
+ const privateMail={id:'mail',name:'Личная почта',url:'https://e.mail.ru/'};
+ const f=tileFixture({app:mail}),pools={public:[mail],private:[privateMail]};
+ Object.assign(f.page,{pendingVaultMove:'mail',vaultKey:{},freezeSlots,removeEntry,poolFor:scope=>pools[scope],updatePool:(scope,entries)=>{pools[scope]=entries;}});
+ let stopped=0;
+ const event={stopPropagation(){stopped++;}};
+ f.item.children.at(-1).events.get('pointerdown')(event);
+ f.item.children.at(-1).events.get('click')(event);
+ assert.equal(stopped,2);
+ assert.equal(f.page.pendingVaultMove,null);
+ assert.deepEqual(pools.public,[]);
+ assert.deepEqual(pools.private,[privateMail]);
+ assert.deepEqual(f.opened,[]);
 });

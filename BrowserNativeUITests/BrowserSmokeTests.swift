@@ -23,9 +23,10 @@ final class BrowserSmokeTests: XCTestCase {
         let keyboard = app.keyboards.firstMatch
         let expand = button(["Развернуть", "Show more"])
         let collapse = button(["Свернуть", "Show less"])
-        let secondRow = button(["Открыть RUTUBE", "Open RUTUBE"])
+        let secondRow = button(["Открыть ВКонтакте", "Open VK", "Open ВКонтакте"])
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        XCTAssertFalse(secondRow.isHittable)
 
         expand.tap()
         XCTAssertTrue(collapse.waitForExistence(timeout: 5))

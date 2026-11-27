@@ -63,7 +63,7 @@ final class BrowserPrivacyUITests: XCTestCase {
     func testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu() throws {
         let ui = app.webViews.matching(identifier: "atma.ui").firstMatch
         let incognito = button(["Открыть Инкогнито", "Open Incognito"])
-        let dockShortcut = button(["Открыть ВКонтакте", "Open ВКонтакте"])
+        let dockShortcut = button(["Открыть YouTube", "Open YouTube"])
         let desktopReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             incognito.isHittable && dockShortcut.isHittable && dockShortcut.frame.minY > incognito.frame.maxY + 60
         }, object: nil)

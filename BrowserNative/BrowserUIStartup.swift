@@ -86,7 +86,10 @@ final class BrowserUIStartup {
         clearAttempt()
         browser.ui.stopLoading()
         let id = UUID().uuidString
-        let url = rootURL.appending(queryItems: [URLQueryItem(name: "startup", value: id)])
+        let url = rootURL.appending(queryItems: [
+            URLQueryItem(name: "startup", value: id),
+            URLQueryItem(name: "desktopRegion", value: Locale.autoupdatingCurrent.region?.identifier)
+        ])
         attemptID = id
         navigation = browser.ui.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         timeout = Task { [weak self] in

@@ -32,6 +32,10 @@ final class BrowserUIStartupTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertTrue(browser.uiStartup.isReady)
+        let url = try XCTUnwrap(browser.ui.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.queryItems?.first { $0.name == "desktopRegion" }?.value,
+                       Locale.autoupdatingCurrent.region?.identifier)
         let ready = try await fixture.script("""
             return !!document.body.dataset.mode && [...document.styleSheets].some(sheet => sheet.href?.endsWith('/incognito.css'));
             """, in: browser.ui)
