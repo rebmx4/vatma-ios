@@ -851,10 +851,11 @@ document.addEventListener('pointermove', event => {
 }, { passive:false });
 function updateDropTarget(x,y,current) {
   if(!panel) {
-    const bounds=$('apps').getBoundingClientRect();
-    // The iPad home screen has side gutters outside the scroll grid.
-    if(x>=0&&x<=innerWidth&&y>=bounds.top&&y<=bounds.bottom)
-      x=Math.max(bounds.left+1,Math.min(x,bounds.right-1));
+    const viewport=$('apps'),bounds=viewport.getBoundingClientRect();
+    if(x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom){
+      const padding=getComputedStyle(viewport.parentElement);
+      x=Math.max(bounds.left+parseFloat(padding.paddingLeft)+1,Math.min(x,bounds.right-parseFloat(padding.paddingRight)-1));
+    }
   }
   const hit=document.elementsFromPoint(x,y);
   const dockTarget=hit.map(item=>item.closest('.desktop-dock [data-slot]')).find(item=>item?.dataset.scope===current.scope);

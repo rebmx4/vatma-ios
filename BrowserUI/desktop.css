@@ -58,14 +58,17 @@ body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::aft
 }
 
 .home {
+  --desktop-side-padding: 17px;
+  --desktop-centered-offset: max(0px, (100vw - 1000px) / 2);
+  --desktop-page-gutter: calc(var(--desktop-side-padding) + var(--desktop-centered-offset));
   position: relative;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 17px 0;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) var(--desktop-page-gutter) 0;
   gap: 10px;
-  margin-inline: auto;
-  max-width: 1000px;
 }
 
 .home .desktop-pages {
+  width: auto;
+  margin-inline: calc(-1 * var(--desktop-page-gutter));
   touch-action: pan-x pan-y;
 }
 
@@ -74,7 +77,7 @@ body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::aft
   grid-auto-flow: row;
   align-content: normal;
   gap: 7px;
-  padding: 5px 0;
+  padding: 5px var(--desktop-page-gutter);
   overflow: hidden auto;
   scrollbar-width: none;
 }
@@ -394,7 +397,7 @@ body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
 .desktop-focus-dock {
   position: absolute;
   z-index: 3;
-  inset: calc(12px + env(safe-area-inset-top, 0px)) 17px 10px;
+  inset: calc(12px + env(safe-area-inset-top, 0px)) calc(17px + var(--desktop-centered-offset)) 10px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -449,7 +452,7 @@ body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
 
 @media (min-width: 700px) {
   .home {
-    padding-inline: 45px;
+    --desktop-side-padding: 45px;
   }
 
   .desktop-dock, .desktop-focus-dock {
