@@ -245,14 +245,10 @@ internal sealed class SoftButton : Button
         MouseUp += delegate { Invalidate(); };
     }
 
-    protected override void OnPaintBackground(PaintEventArgs args)
-    {
-        using (var brush = new SolidBrush(BackColor))
-            args.Graphics.FillRectangle(brush, args.ClipRectangle);
-    }
-
     protected override void OnPaint(PaintEventArgs args)
     {
+        using (var brush = new SolidBrush(BackColor))
+            args.Graphics.FillRectangle(brush, ClientRectangle);
         var fill = primary ? Color.FromArgb(38, 54, 44) : Color.FromArgb(37, 37, 37);
         if (hover) fill = Capture ? Color.FromArgb(48, 60, 52) : Color.FromArgb(52, 56, 52);
         var border = Focused && ShowFocusCues ? DesktopPalette.Green :
