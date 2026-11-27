@@ -193,10 +193,12 @@ class DesktopWindow:
 
         def update_scroll(first, last):
             scroll.set(first, last)
-            if float(first) <= 0 and float(last) >= 1:
-                scroll.grid_remove()
-            else:
+            overflow = float(first) > 0 or float(last) < 1
+            mapped = bool(scroll.winfo_manager())
+            if overflow and not mapped:
                 scroll.grid()
+            if not overflow and mapped:
+                scroll.grid_remove()
 
         view.configure(yscrollcommand=update_scroll)
         view.grid(row=0, column=0, sticky="nsew")
