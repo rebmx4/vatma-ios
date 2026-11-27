@@ -145,7 +145,7 @@ def validate_icons(root):
 
 def validate_plist(info, root=ROOT):
     require(info["UIDeviceFamily"] == [1, 2], "Plist must support iPhone and iPad")
-    languages = ("ru", "en", "es", "de", "fr", "pt-BR", "it")
+    languages = ("ru", "en", "es", "de", "fr", "pt-BR", "it", "zh-Hans", "ko", "ja")
     require(tuple(info["CFBundleLocalizations"]) == languages, "Unexpected supported languages")
     for language in languages:
         require((root / "BrowserResources" / f"{language}.lproj" / "InfoPlist.strings").is_file(),

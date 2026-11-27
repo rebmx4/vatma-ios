@@ -6,7 +6,7 @@ import WebKit
 
 @MainActor
 final class BrowserPageTranslation {
-    static let interfaceLanguages: Set<String> = ["ru", "en", "es", "de", "fr", "pt-BR", "it"]
+    static let interfaceLanguages: Set<String> = ["ru", "en", "es", "de", "fr", "pt-BR", "it", "zh-Hans", "ko", "ja"]
     static var available: Bool {
         #if targetEnvironment(simulator)
         return false

@@ -4,14 +4,24 @@ import german from './locale-de.js';
 import french from './locale-fr.js';
 import portuguese from './locale-pt-BR.js';
 import italian from './locale-it.js';
+import chineseSimplified from './locale-zh-Hans.js';
+import korean from './locale-ko.js';
+import japanese from './locale-ja.js';
 
 export const LANGUAGE_KEY='atma-interface-language';
 export const LANGUAGE_NAMES=Object.freeze({
  ru:'Русский', en:'English', es:'Español', de:'Deutsch', fr:'Français', 'pt-BR':'Português (Brasil)', it:'Italiano',
+ 'zh-Hans':'简体中文', ko:'한국어', ja:'日本語',
 });
-const dictionaries={en:english,es:spanish,de:german,fr:french,'pt-BR':portuguese,it:italian};
+const dictionaries={
+ en:english,es:spanish,de:german,fr:french,'pt-BR':portuguese,it:italian,'zh-Hans':chineseSimplified,ko:korean,ja:japanese,
+};
 const matchingLanguage=value=>{
- const code=String(value??'').toLowerCase().split(/[-_]/)[0];
+ const [code,...subtags]=String(value??'').trim().toLowerCase().split(/[-_]/);
+ if(code==='zh'){
+  if(subtags.includes('hans'))return 'zh-Hans';
+  return subtags.some(subtag=>['hant','tw','hk','mo'].includes(subtag))?null:'zh-Hans';
+ }
  return code==='pt'?'pt-BR':Object.hasOwn(LANGUAGE_NAMES,code)?code:null;
 };
 export const deviceLanguage=preferred=>preferred.map(matchingLanguage).find(Boolean)||'en';

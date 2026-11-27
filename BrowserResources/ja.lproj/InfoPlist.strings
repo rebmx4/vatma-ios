@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "開いているサイトにカメラの使用を許可すると、ATMA がカメラへのアクセスを求めます。";
+"NSMicrophoneUsageDescription" = "開いているサイトにマイクの使用を許可すると、ATMA がマイクへのアクセスを求めます。";
+"NSFaceIDUsageDescription" = "この機能を有効にすると、Face ID で ATMA のプライベートホームへのアクセスを保護できます。";
