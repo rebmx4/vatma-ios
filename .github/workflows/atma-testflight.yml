@@ -1,47 +1,28 @@
 {
-  "name": "ATMA — upload signed build 10",
+  "name": "ATMA — distribute build 10 to both tester groups",
   "on": {
     "workflow_dispatch": {}
   },
   "permissions": {
-    "contents": "read",
-    "actions": "read"
+    "contents": "read"
   },
   "concurrency": {
-    "group": "atma-signing",
+    "group": "atma-build-10-testers",
     "cancel-in-progress": false
   },
   "jobs": {
-    "upload": {
-      "runs-on": "macos-26",
-      "timeout-minutes": 20,
+    "distribute": {
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 5,
       "steps": [
         {
-          "name": "Download the signed IPA",
-          "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
-          "with": {
-            "name": "atma-signed-45911747533",
-            "run-id": "45911747533",
-            "github-token": "${{ github.token }}",
-            "path": "signed"
-          }
-        },
-        {
-          "name": "Verify exact IPA and distribution signature",
-          "run": "printf '%s  %s\\n' a70c8dcf31f2ca2e12400951d2d20cb407d362264994c7fff3c45a83b7759bdd signed/ipa/ATMA.ipa | shasum -a 256 -c -\nditto -x -k signed/ipa/ATMA.ipa extracted\ncodesign --verify --deep --strict extracted/Payload/ATMA.app\n/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' extracted/Payload/ATMA.app/Info.plist | grep -x 10"
-        },
-        {
-          "name": "Install Apple upload CLI",
-          "run": "python3 -m venv .upload-tools\n.upload-tools/bin/python -m pip install --disable-pip-version-check codemagic-cli-tools==0.70.0"
-        },
-        {
-          "name": "Upload to App Store Connect",
+          "name": "Assign the existing beta groups and verify",
           "env": {
             "APP_STORE_CONNECT_ISSUER_ID": "${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}",
             "APP_STORE_CONNECT_KEY_IDENTIFIER": "${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}",
             "APP_STORE_CONNECT_PRIVATE_KEY": "${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}"
           },
-          "run": ".upload-tools/bin/app-store-connect publish --path signed/ipa/ATMA.ipa --enable-package-validation"
+          "run": "node - <<'JS'\nconst {createPrivateKey,sign}=require('node:crypto');\nconst env=process.env;\nconst key=createPrivateKey(env.APP_STORE_CONNECT_PRIVATE_KEY.replace(/\\\\n/g,'\\n'));\nconst app='6826668990', build='bfe5c706-0abe-4303-9ec8-6d2547c3d2ea';\nconst encode=value=>Buffer.from(JSON.stringify(value)).toString('base64url');\nfunction token(){\n const now=Math.floor(Date.now()/1000);\n const payload=encode({alg:'ES256',kid:env.APP_STORE_CONNECT_KEY_IDENTIFIER,typ:'JWT'})+'.'+encode({iss:env.APP_STORE_CONNECT_ISSUER_ID,iat:now,exp:now+600,aud:'appstoreconnect-v1'});\n return payload+'.'+sign('sha256',Buffer.from(payload),{key,dsaEncoding:'ieee-p1363'}).toString('base64url');\n}\nasync function request(path,body){\n const res=await fetch('https://api.appstoreconnect.apple.com/v1'+path,{\n  method:body?'POST':'GET',headers:{Authorization:'Bearer '+token(),Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},\n  body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000),redirect:'error'\n });\n if(res.status===204)return null;\n const json=await res.json();\n if(!res.ok)throw Error('Apple HTTP '+res.status+' '+JSON.stringify((json.errors||[]).map(({code,title,detail})=>({code,title,detail}))));\n return json;\n}\nasync function main(){\n const params=new URLSearchParams({'filter[app]':app,'filter[version]':'10',include:'preReleaseVersion',limit:'25'});\n const result=await request('/builds?'+params);\n const candidate=result.data.find(row=>row.id===build);\n const release=result.included?.find(row=>row.type==='preReleaseVersions'&&row.id===candidate?.relationships.preReleaseVersion?.data?.id);\n if(candidate?.attributes.processingState!=='VALID'||candidate.attributes.expired||release?.attributes.version!=='1.0.1'||release.attributes.platform!=='IOS')throw Error('Build 1.0.1 (10) is not a valid ATMA iOS build');\n const groupInfo=await request('/apps/'+app+'/betaGroups?limit=200');\n const groups=groupInfo.data, summarize=items=>items.map(({id,attributes})=>({id,name:attributes.name,internal:attributes.isInternalGroup}));\n console.log('ALL_GROUPS '+JSON.stringify(summarize(groups)));\n if(groups.length!==2||groupInfo.links?.next)throw Error('Expected exactly the two existing ATMA tester groups');\n const before=await request('/builds/'+build+'/betaGroups?limit=200');\n const associated=new Set(before.data.map(row=>row.id));\n for(const group of groups){\n  if(!associated.has(group.id)){\n   await request('/betaGroups/'+group.id+'/relationships/builds',{data:[{type:'builds',id:build}]});\n   console.log('ADDED '+group.attributes.name);\n  }\n }\n const after=await request('/builds/'+build+'/betaGroups?limit=200');\n console.log('BUILD_GROUPS '+JSON.stringify(summarize(after.data)));\n if(!groups.every(group=>after.data.some(row=>row.id===group.id)))throw Error('Both group links have not been confirmed');\n const detail=await request('/builds/'+build+'/buildBetaDetail');\n const {internalBuildState,externalBuildState,autoNotifyEnabled}=detail.data.attributes;\n console.log('BETA_DETAIL '+JSON.stringify({internalBuildState,externalBuildState,autoNotifyEnabled}));\n}\nmain().catch(error=>{console.error(error.message);process.exitCode=1});\nJS"
         }
       ]
     }
