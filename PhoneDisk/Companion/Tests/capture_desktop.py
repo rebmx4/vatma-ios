@@ -84,6 +84,16 @@ def verify_controls(root, window, server):
     assert not server.admin({"action": "state"})["inviting"], "Closed QR remained active"
     root.geometry("790x545+80+80")
     root.update()
+    tree = window.folder_list
+    assert all(tree.bbox(key) for key in tree.get_children()), "The three demo folders must fit in the default window"
+    extras = [tree.insert("", "end", values=(f"Папка {index}", "/tmp", "Файлы")) for index in range(20)]
+    root.update()
+    assert tree.yview()[1] < 1, "The catalog must scroll when it has more folders"
+    tree.yview_moveto(1)
+    assert tree.bbox(extras[-1]), "Scrolling did not reach the last folder"
+    tree.delete(*extras)
+    tree.yview_moveto(0)
+    root.update()
 
 
 def main():

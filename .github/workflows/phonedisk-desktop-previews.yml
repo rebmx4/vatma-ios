@@ -52,8 +52,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends python3-tk python3-cryptography \
             python3-ifaddr python3-qrcode python3-zeroconf xvfb xauth imagemagick openbox
+          sed 's/<name>Clearlooks<\/name>/<name>Onyx<\/name>/' /etc/xdg/openbox/rc.xml > "$RUNNER_TEMP/phonedisk-openbox.xml"
           xvfb-run -a -s '-screen 0 1440x900x24' bash -ec '
-            openbox >/tmp/phonedisk-preview-wm.log 2>&1 &
+            openbox --config-file "$RUNNER_TEMP/phonedisk-openbox.xml" >/tmp/phonedisk-preview-wm.log 2>&1 &
             sleep 1
             /usr/bin/python3 PhoneDisk/Companion/Tests/capture_desktop.py out/linux.png
           '
