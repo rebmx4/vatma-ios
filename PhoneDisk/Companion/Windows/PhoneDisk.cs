@@ -253,7 +253,7 @@ internal sealed class SoftButton : Button
         if (hover) fill = Capture ? Color.FromArgb(48, 60, 52) : Color.FromArgb(52, 56, 52);
         var border = Focused && ShowFocusCues ? DesktopPalette.Green :
             primary ? Color.FromArgb(64, 87, 74) : Color.FromArgb(55, 55, 55);
-        DesktopPalette.Round(args.Graphics, ClientRectangle, 16, fill, border);
+        DesktopPalette.Round(args.Graphics, ClientRectangle, 11, fill, border);
         TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle,
             Enabled ? ForeColor : DesktopPalette.Muted, DesktopPalette.Line | TextFormatFlags.HorizontalCenter);
     }
