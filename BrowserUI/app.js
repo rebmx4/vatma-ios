@@ -368,8 +368,12 @@ function consume(next) {
     translateButton.setAttribute('title',translationLabel);
     translateButton.setAttribute('aria-pressed',String(translated));
   }
-  if (!changedTab && previousTranslation === 'translating' && next.translationStatus === 'unavailable') {
-    reportError(localization.t('Перевод страницы сейчас недоступен.'));
+  if (!changedTab && previousTranslation === 'translating') {
+    if (next.translationStatus === 'languages-not-installed') {
+      reportError(localization.t('Дождитесь загрузки языков для перевода и нажмите «Перевести» ещё раз.'));
+    } else if (next.translationStatus === 'unavailable') {
+      reportError(localization.t('Перевод страницы сейчас недоступен.'));
+    }
   }
   if(changedTab){
     $('address').value=next.mode==='browse'?(next.url||''):'';

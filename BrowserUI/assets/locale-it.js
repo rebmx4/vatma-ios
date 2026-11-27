@@ -40,6 +40,7 @@ export default {
   "Показать оригинал": "Mostra originale",
   "Перевести на русский": "Traduci in russo",
   "Перевод страницы сейчас недоступен.": "La traduzione della pagina non è disponibile al momento.",
+  "Дождитесь загрузки языков для перевода и нажмите «Перевести» ещё раз.": "Attendi il download delle lingue, poi tocca di nuovo «Traduci».",
   "Куки": "Cookie",
   "Куки и данные сайтов": "Cookie e dati dei siti",
   "‹ Рабочий стол": "‹ Home",

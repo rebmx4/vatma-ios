@@ -40,6 +40,7 @@ export default {
   "Показать оригинал": "Original anzeigen",
   "Перевести на русский": "Ins Russische übersetzen",
   "Перевод страницы сейчас недоступен.": "Die Seitenübersetzung ist derzeit nicht verfügbar.",
+  "Дождитесь загрузки языков для перевода и нажмите «Перевести» ещё раз.": "Warte, bis die Sprachen geladen sind, und tippe erneut auf „Übersetzen“.",
   "Куки": "Cookies",
   "Куки и данные сайтов": "Cookies und Websitedaten",
   "‹ Рабочий стол": "‹ Startseite",

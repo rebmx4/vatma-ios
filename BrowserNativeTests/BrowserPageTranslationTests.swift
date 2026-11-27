@@ -19,10 +19,12 @@ final class BrowserPageTranslationTests: XCTestCase {
         let source = try String(contentsOf: scriptURL, encoding: .utf8)
 
         let result = try await fixture.script("""
-            document.documentElement.lang = 'it';
+            document.documentElement.lang = 'en';
+            document.body.lang = 'en';
             document.body.innerHTML =
-                '<p id="article">Articolo italiano</p><p id="live">Testo precedente</p>' +
-                '<form>Account data <input value="Draft"></form><p translate="no">Keep original</p>' +
+                '<form><p id="article">Articolo italiano</p><p id="live">Testo precedente</p>' +
+                '<label>Account data <input value="Draft"></label><textarea>Reply draft</textarea>' +
+                '<button type="button">Submit</button></form><p translate="no">Keep original</p>' +
                 '<p lang="en">Keep this English passage</p>';
             const article = document.getElementById('article');
             const live = document.getElementById('live');
@@ -38,19 +40,24 @@ final class BrowserPageTranslationTests: XCTestCase {
             article.click();
             translator.restore();
             return {sample, texts, rejected, applied, translated, original: article.textContent,
-                    live: live.textContent, form: document.querySelector('input').value, clicks};
+                    live: live.textContent, input: document.querySelector('input').value,
+                    draft: document.querySelector('textarea').value, button: document.querySelector('button').textContent,
+                    clicks};
             """, in: page) as? [String: Any]
 
         XCTAssertEqual(result?["texts"] as? [String], ["Articolo italiano", "Testo precedente"])
         let sample = result?["sample"] as? [String: String]
-        XCTAssertEqual(sample?["language"], "it")
+        XCTAssertEqual(sample?["language"], "en")
+        XCTAssertTrue(sample?["sample"]?.contains("Articolo italiano") ?? false)
         XCTAssertFalse(sample?["sample"]?.contains("Account data") ?? true)
         XCTAssertEqual(result?["rejected"] as? Bool, false)
         XCTAssertEqual(result?["applied"] as? Bool, true)
         XCTAssertEqual(result?["translated"] as? String, "Статья")
         XCTAssertEqual(result?["original"] as? String, "Articolo italiano")
         XCTAssertEqual(result?["live"] as? String, "Updated by site")
-        XCTAssertEqual(result?["form"] as? String, "Draft")
+        XCTAssertEqual(result?["input"] as? String, "Draft")
+        XCTAssertEqual(result?["draft"] as? String, "Reply draft")
+        XCTAssertEqual(result?["button"] as? String, "Submit")
         XCTAssertEqual(result?["clicks"] as? Int, 1)
     }
 }

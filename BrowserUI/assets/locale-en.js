@@ -85,6 +85,7 @@ export default {
  'Open a video and activate the player first.':'Open a video and activate the player first.',
  "Язык устройства":"Device language",
  "Перевести страницу":"Translate page",
+ "Дождитесь загрузки языков для перевода и нажмите «Перевести» ещё раз.":"Wait for the languages to download, then tap Translate again.",
  "Перевод страницы…":"Translating page…",
  "Искать «{value}»":"Search for “{value}”",
  "Cookie сайтов: {count}":"Website cookies: {count}",

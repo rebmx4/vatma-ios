@@ -28,7 +28,11 @@ final class BrowserPageTranslation {
     private var detections: [ObjectIdentifier: UUID] = [:]
     private var sources: [ObjectIdentifier: String] = [:]
     private var translated: [ObjectIdentifier: String] = [:]
-    private var failed = Set<ObjectIdentifier>()
+    private enum Failure: String {
+        case unavailable
+        case languagesNotInstalled = "languages-not-installed"
+    }
+    private var failures: [ObjectIdentifier: Failure] = [:]
     private var target = "en"
     private struct LanguagePair: Hashable {
         let source: String
@@ -46,8 +50,7 @@ final class BrowserPageTranslation {
         let key = ObjectIdentifier(page)
         if workingPage === page { return "translating" }
         if translated[key] != nil { return "translated" }
-        if failed.contains(key) { return "unavailable" }
-        return "original"
+        return failures[key]?.rawValue ?? "original"
     }
 
     var offered: Bool {
@@ -58,7 +61,7 @@ final class BrowserPageTranslation {
     func setTarget(_ language: String) {
         if target != language {
             target = language
-            failed.removeAll()
+            failures.removeAll()
             let interruptedPage = workingPage
             cancel()
             if let interruptedPage { restore(interruptedPage) }
@@ -128,7 +131,7 @@ final class BrowserPageTranslation {
         detections.removeValue(forKey: key)
         sources.removeValue(forKey: key)
         translated.removeValue(forKey: key)
-        failed.remove(key)
+        failures.removeValue(forKey: key)
         if workingPage === page { cancel() }
     }
 
@@ -158,7 +161,7 @@ final class BrowserPageTranslation {
         job = ticket
         workingPage = page
         let key = ObjectIdentifier(page)
-        failed.remove(key)
+        failures.removeValue(forKey: key)
         browser?.publish()
 
         page.callAsyncJavaScript("""
@@ -179,15 +182,18 @@ final class BrowserPageTranslation {
     private func translate(_ texts: [String], in page: WKWebView, ticket: UUID, pair: LanguagePair) {
         guard let browser else { cancel(); return }
         let view = TranslationTaskView(texts: texts, source: Locale.Language(identifier: pair.source),
-                                       target: Locale.Language(identifier: pair.target)) { [weak self, weak page] results in
+                                       target: Locale.Language(identifier: pair.target)) { [weak self, weak page] result in
             guard let self, let page, self.job == ticket else { return }
-            guard let results else {
-                self.finish(ticket, applied: false)
-                return
-            }
-            page.callAsyncJavaScript("return globalThis.__atmaPageTranslation?.apply(ticket, results) === true;",
-                                     arguments: ["ticket": ticket.uuidString, "results": results], in: nil, in: Self.world) { [weak self] result in
-                self?.finish(ticket, applied: (try? result.get()) as? Bool == true)
+            switch result {
+            case .success(let results):
+                page.callAsyncJavaScript("return globalThis.__atmaPageTranslation?.apply(ticket, results) === true;",
+                                         arguments: ["ticket": ticket.uuidString, "results": results], in: nil, in: Self.world) { [weak self] result in
+                    self?.finish(ticket, applied: (try? result.get()) as? Bool == true)
+                }
+            case .failure:
+                let availability = await LanguageAvailability().status(from: Locale.Language(identifier: pair.source),
+                                                                        to: Locale.Language(identifier: pair.target))
+                self.finish(ticket, applied: false, failure: availability == .supported ? .languagesNotInstalled : .unavailable)
             }
         }
         let controller = UIHostingController(rootView: view)
@@ -200,11 +206,11 @@ final class BrowserPageTranslation {
         host = controller
     }
 
-    private func finish(_ ticket: UUID, applied: Bool) {
+    private func finish(_ ticket: UUID, applied: Bool, failure: Failure = .unavailable) {
         guard ticket == job, let page = workingPage else { return }
         let key = ObjectIdentifier(page)
         if applied { translated[key] = target }
-        else { failed.insert(key) }
+        else { failures[key] = failure }
         cancel()
         browser?.publish()
         reconcile()
@@ -225,13 +231,17 @@ private struct TranslationTaskView: View {
     let texts: [String]
     let source: Locale.Language
     let target: Locale.Language
-    let completion: @MainActor ([String]?) -> Void
+    let completion: @MainActor (Result<[String], Error>) async -> Void
 
     var body: some View {
         Color.clear.translationTask(source: source, target: target) { session in
             let requests = texts.map { TranslationSession.Request(sourceText: $0) }
-            let results = try? await session.translations(from: requests)
-            await completion(results?.map(\.targetText))
+            do {
+                let results = try await session.translations(from: requests)
+                await completion(.success(results.map(\.targetText)))
+            } catch {
+                await completion(.failure(error))
+            }
         }
     }
 }

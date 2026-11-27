@@ -1,5 +1,5 @@
 (function () {
-  const excluded = 'script, style, noscript, form, input, textarea, select, code, pre, svg, [contenteditable], [hidden], [inert], [aria-hidden="true"], [translate="no"], .notranslate';
+  const excluded = 'script, style, noscript, input, textarea, select, button, label, output, code, pre, svg, [contenteditable], [hidden], [inert], [aria-hidden="true"], [translate="no"], .notranslate';
   let pending;
   let translated = [];
 
@@ -23,7 +23,8 @@
       if (!text || text.length > 4000 || !/\p{L}/u.test(text)) continue;
       const element = node.parentElement;
       if (isExcluded(element)) continue;
-      const nodeLanguage = element.closest('[lang]')?.lang.toLowerCase().split(/[-_]/)[0];
+      // Page-level declarations may already have been overridden by language detection.
+      const nodeLanguage = element.closest('[lang]:not(html):not(body)')?.lang.toLowerCase().split(/[-_]/)[0];
       if (language && nodeLanguage && nodeLanguage !== language) continue;
       if (length + text.length > maxLength) continue;
       nodes.push({node, original, text});
