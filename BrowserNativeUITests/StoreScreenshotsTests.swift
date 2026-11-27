@@ -76,6 +76,10 @@ final class StoreScreenshotsTests: XCTestCase {
         waitUntilUsable(currentTab, "Tab cards must be rendered before capture")
         capture("store-ru-03-tabs")
         let supportTab = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND (label BEGINSWITH %@ OR label BEGINSWITH %@)", "Поддержка", "Открыть вкладку:", "Open tab:")).firstMatch
+        for _ in 0..<4 {
+            if supportTab.isHittable { break }
+            app.swipeUp()
+        }
         waitUntilUsable(supportTab, "Select the support tab to resume browsing")
         supportTab.tap()
         let emailLink = supportSite.links["a1238585@bk.ru"]
