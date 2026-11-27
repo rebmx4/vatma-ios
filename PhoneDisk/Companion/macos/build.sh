@@ -65,6 +65,7 @@ info.update({
     "CFBundleShortVersionString": "0.1.0",
     "CFBundleVersion": "1",
     "LSMinimumSystemVersion": "13.0",
+    "NSRequiresAquaSystemAppearance": False,
     "NSLocalNetworkUsageDescription": "Мой диск подключается к iPhone в домашней сети.",
     "NSBonjourServices": ["_phonedisk._tcp"],
 })
