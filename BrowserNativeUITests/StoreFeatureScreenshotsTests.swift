@@ -83,7 +83,7 @@ final class StoreFeatureScreenshotsTests: XCTestCase {
     private func captureMedia(_ market: Market) throws -> String {
         try openSettings(market)
         try tap(.media, market)
-        let audio = app.descendants(matching: .any).matching(label(.audio, market)).firstMatch
+        let audio = app.descendants(matching: .any).matching(label(.audio, market, localized: true)).firstMatch
         guard audio.waitForExistence(timeout: 12) else { throw MissingScene(description: "Background audio control") }
         return "media-settings"
     }
@@ -91,7 +91,7 @@ final class StoreFeatureScreenshotsTests: XCTestCase {
     private func captureVault(_ market: Market) throws -> String {
         try openSettings(market)
         try tap(.vault, market)
-        let code = app.buttons.matching(label(.pin, market)).firstMatch
+        let code = app.buttons.matching(label(.pin, market, localized: true)).firstMatch
         guard code.waitForExistence(timeout: 12) else { throw MissingScene(description: "Fresh private desktop options") }
         return app.buttons["Face ID"].exists ? "face-id-choice" : "pin-choice"
     }
@@ -100,7 +100,7 @@ final class StoreFeatureScreenshotsTests: XCTestCase {
         try openSettings(market)
         try tap(.incognito, market)
         try tap(.device, market)
-        let chooser = app.staticTexts.matching(label(.chooser, market)).firstMatch
+        let chooser = app.staticTexts.matching(label(.chooser, market, localized: true)).firstMatch
         guard chooser.waitForExistence(timeout: 12) else { throw MissingScene(description: "Incognito device chooser") }
         return "incognito-chooser"
     }
@@ -120,8 +120,9 @@ final class StoreFeatureScreenshotsTests: XCTestCase {
         element.tap()
     }
 
-    private func label(_ field: Text, _ market: Market) -> NSPredicate {
-        let titles = [copy[market.language]![field.rawValue], copy["ru"]![field.rawValue], copy["en"]![field.rawValue]]
+    private func label(_ field: Text, _ market: Market, localized: Bool = false) -> NSPredicate {
+        let expected = copy[market.language]![field.rawValue]
+        let titles = localized ? [expected] : [expected, copy["ru"]![field.rawValue], copy["en"]![field.rawValue]]
         return NSPredicate(format: "label IN %@", titles)
     }
 }
