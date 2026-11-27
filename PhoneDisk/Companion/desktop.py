@@ -94,7 +94,8 @@ def configure_window(root):
         style.map(variant, foreground=[("disabled", "#888888")])
     root.disk_style_images = images
 
-    family = font.nametofont("TkDefaultFont").actual("family")
+    default_font = font.nametofont("TkDefaultFont")
+    family = default_font.actual("family")
     style.configure(".", background=BACKGROUND, foreground=TEXT)
     style.configure("Title.TLabel", font=(family, 25, "bold"))
     style.configure("Section.TLabel", background=SURFACE, font=(family, 13, "bold"))
@@ -107,13 +108,14 @@ def configure_window(root):
     style.map("TCheckbutton", background=[("active", SURFACE)])
     style.layout("Treeview", [("Treeview.treearea", {"sticky": "nsew"})])
     style.configure("Treeview", background=SURFACE, fieldbackground=SURFACE, foreground=TEXT,
-                    rowheight=max(30, font.nametofont("TkDefaultFont").metrics("linespace") + 10), borderwidth=0)
+                    rowheight=max(26, default_font.metrics("linespace") + 6), borderwidth=0)
     style.map("Treeview", background=[("selected", SELECTED)], foreground=[("selected", TEXT)])
-    style.configure("Treeview.Heading", background=SURFACE, foreground=MUTED, padding=(0, 5),
+    style.configure("Treeview.Heading", background=SURFACE, foreground=MUTED, font=default_font, padding=(0, 4),
                     relief="flat", borderwidth=0, bordercolor=SURFACE, separable=False)
     style.map("Treeview.Heading", background=[("active", SURFACE), ("pressed", SURFACE)])
+    element("Disk.thumb", 3, SURFACE, "#565c58", "#565c58", 0)
     style.layout("Disk.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
-        ("Vertical.Scrollbar.thumb", {"expand": True, "sticky": "nswe"}),
+        ("Disk.thumb", {"expand": True, "sticky": "nswe"}),
     ]})])
     style.configure("Disk.Vertical.TScrollbar", troughcolor=SURFACE, background="#565c58",
                     bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE, width=7, relief="flat")
@@ -292,7 +294,8 @@ class DesktopWindow:
         dialog.resizable(False, False)
         content = ttk.Frame(dialog, style="Card.TFrame", padding=18)
         content.pack(fill="both", expand=True, padx=12, pady=12)
-        ttk.Label(content, text="Наведите камеру iPhone на код и нажмите на ссылку. Оба устройства должны быть в одной сети.",
+        ttk.Label(content, text="Подключите iPhone к той же сети, что и компьютер. Наведите камеру на QR-код и нажмите на ссылку. "
+                  "Код также можно отсканировать через «Добавить компьютер» в «Моём диске».",
                   style="Inset.TLabel", wraplength=310, justify="center").pack(pady=(0, 12))
         canvas = tk.Canvas(content, width=310, height=310, bg="white", highlightthickness=0)
         canvas.pack()
