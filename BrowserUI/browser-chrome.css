@@ -1,4 +1,13 @@
 /* Shared controls for the bundled ATMA interface. */
+body {
+  --chrome-control-size:54px;
+  --chrome-control-gap:5px;
+  --chrome-address-max-width:580px;
+  --chrome-controls-max-width:calc(var(--chrome-address-max-width) + 2 * (var(--chrome-control-size) + var(--chrome-control-gap)));
+  --chrome-control-inset:clamp(20px,5.6vw,34px);
+  --chrome-control-left:max(var(--chrome-control-inset),env(safe-area-inset-left,0px));
+  --chrome-control-right:max(var(--chrome-control-inset),env(safe-area-inset-right,0px));
+}
 body[data-theme=dark] {
   --chrome-base:#000; --chrome-text:#f2f2f2; --chrome-muted:#b8b8b8;
   --chrome-glass:rgba(39,39,39,.84); --chrome-sheet:#292929c9;
@@ -43,13 +52,12 @@ body[data-theme][data-mode=home][data-surface=home] .browser-bar {
 }
 body[data-theme][data-mode=home][data-surface=home]:not([data-desktop-search],.address-submit-hold,:has(#address:focus)) {
   --desktop-bar-safe-bottom:max(var(--native-safe-area-bottom,0px),env(safe-area-inset-bottom,0px));
-  --desktop-bar-side:clamp(20px,5.6vw,34px);
-  --desktop-address-height:54px;
+  --desktop-address-height:var(--chrome-control-size);
   --bar-height:calc(var(--desktop-address-height) + 16px + var(--desktop-bar-safe-bottom));
 
   .browser-bar {
-    gap:5px;
-    padding-inline:max(var(--desktop-bar-side),env(safe-area-inset-left,0px)) max(var(--desktop-bar-side),env(safe-area-inset-right,0px));
+    gap:var(--chrome-control-gap);
+    padding-inline:var(--chrome-control-left) var(--chrome-control-right);
     padding-bottom:calc(5px + var(--desktop-bar-safe-bottom));
   }
 
@@ -58,6 +66,8 @@ body[data-theme][data-mode=home][data-surface=home]:not([data-desktop-search],.a
     height:var(--desktop-address-height);
     padding:0;
   }
+
+  .browser-bar .address-form { max-width:var(--chrome-address-max-width) }
 
   .browser-bar #settings > svg {
     display:block;

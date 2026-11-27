@@ -1,4 +1,4 @@
-import {APPEARANCE_KEY,ICON_CHOICES,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
+import {APPEARANCE_KEY,ICON_CHOICES,WALLPAPERS,wallpaperForTheme,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
 import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry } from './workspace-model.js';
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview,showTabsHistory} from './tabs-view.js';
@@ -130,7 +130,10 @@ let desktopTabId=null;try{desktopTabId=sessionStorage.getItem(desktopSurfaceKey)
 const poolFor=scope=>scope==='private'?vaultApps:apps;
 const currentScope=()=>$('apps').children[desktopPage]?.dataset.scope==='private'?'private':'public';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-let wallpaper = localStorage.getItem('atma-preview-wallpaper') || 'solid';
+const wallpaperKey = 'atma-preview-wallpaper';
+let wallpaper = localStorage.getItem(wallpaperKey);
+if (wallpaper !== 'custom' && !WALLPAPERS.some(choice => choice.id === wallpaper)) wallpaper = 'auto';
+let customWallpaperURL = '';
 let searchEngine = localStorage.getItem('atma-preview-search') || 'google';
 
 const brandLogoSource=document.querySelector('.wordmark img').getAttribute('src');
@@ -141,6 +144,8 @@ function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
+  applyWallpaper();
+  if (panel === 'wallpaper') renderWallpapers();
   renderToolbarMessageBadge();
   if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;reportError(error.message);});}
 }
@@ -1141,17 +1146,36 @@ function renderSettings() {
   settingsPickers(preferences);
   $('sheet-content').append(settingButton(window.webkit?.messageHandlers?.atma?'О браузере':'О предпросмотре', 'info', () => setPanel('about')));
 }
+function applyWallpaper() {
+  const choice = wallpaperForTheme(wallpaper, document.body.dataset.theme);
+  const image = wallpaper === 'custom' ? customWallpaperURL : choice?.image;
+  document.body.dataset.wallpaper = wallpaper;
+  document.body.dataset.wallpaperTone = choice?.tone ?? '';
+  document.querySelector('.wallpaper').style.backgroundImage = image ? `url("${image}")` : 'none';
+}
 function useWallpaper(name) {
-  wallpaper = name; localStorage.setItem('atma-preview-wallpaper', name);document.body.dataset.wallpaper=name;
-  if(name==='solid')document.querySelector('.wallpaper').style.backgroundImage='none';
-  else if (name !== 'custom') document.querySelector('.wallpaper').style.backgroundImage = `url('/assets/${name}.svg')`;
+  localStorage.setItem(wallpaperKey, name);
+  wallpaper = name;
+  applyWallpaper();
   if (panel === 'wallpaper') renderWallpapers();
 }
 function renderWallpapers() {
   $('sheet-content').replaceChildren();
   const list = document.createElement('div'); list.className = 'wallpapers';
-  for (const [name, label] of [['solid', 'Однотонный'], ['landscape', 'Каньон'], ['north', 'Север'], ['night', 'Ночь']]) {
-    const button = document.createElement('button'); button.className = 'wallpaper-choice'; button.classList.toggle('selected', wallpaper === name); button.dataset.wallpaper=name;button.style.backgroundImage = name==='solid'?'none':`url('/assets/${name}.svg')`; button.innerHTML = `<span>${label}</span>`; button.addEventListener('click', () => useWallpaper(name)); list.append(button);
+  for (const {id, label} of WALLPAPERS) {
+    const preview = wallpaperForTheme(id, document.body.dataset.theme);
+    const button = document.createElement('button');
+    const title = document.createElement('span');
+    title.textContent = label;
+    button.className = 'wallpaper-choice';
+    button.classList.toggle('selected', wallpaper === id);
+    button.setAttribute('aria-pressed', String(wallpaper === id));
+    button.dataset.wallpaper = id;
+    button.dataset.tone = preview?.tone ?? '';
+    button.style.backgroundImage = preview?.image ? `url("${preview.image}")` : 'none';
+    button.append(title);
+    button.addEventListener('click', () => useWallpaper(id));
+    list.append(button);
   }
   $('sheet-content').append(appearanceBack('Оформление','appearance'),list, settingButton('Выбрать фото', 'image', () => $('wallpaper-file').click()));
 }
@@ -1163,7 +1187,9 @@ $('wallpaper-file').addEventListener('change', async event => {
     const db = await wallpaperDB(); const transaction = db.transaction('preferences', 'readwrite');
     transaction.objectStore('preferences').put(file, 'wallpaper');
     await new Promise((resolve, reject) => { transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error); }); db.close();
-    document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(file)}')`; useWallpaper('custom'); await setPanel(null);
+    if (customWallpaperURL) URL.revokeObjectURL(customWallpaperURL);
+    customWallpaperURL = URL.createObjectURL(file);
+    useWallpaper('custom'); await setPanel(null);
   } catch { reportError('Не удалось сохранить обои'); }
 });
 function renderAppForm(app) {
@@ -1468,12 +1494,14 @@ async function shellStylesReady() {
 async function start() {
   const attemptID = query.get('startup');
   applyAppearance();
-  useWallpaper(wallpaper);
   if (wallpaper === 'custom') {
     wallpaperDB().then(db => {
       const request = db.transaction('preferences').objectStore('preferences').get('wallpaper');
       request.onsuccess = () => {
-        if (wallpaper === 'custom' && request.result) document.querySelector('.wallpaper').style.backgroundImage = `url('${URL.createObjectURL(request.result)}')`;
+        if (wallpaper === 'custom' && request.result && !customWallpaperURL) {
+          customWallpaperURL = URL.createObjectURL(request.result);
+          applyWallpaper();
+        }
       };
       db.close();
     }).catch(() => {});

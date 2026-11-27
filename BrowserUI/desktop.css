@@ -31,6 +31,18 @@ body[data-surface=home][data-theme][data-wallpaper=solid] .wallpaper {
   background-color: var(--desktop-backdrop);
 }
 
+body[data-wallpaper-tone=dark] .wallpaper {
+  background-color: #202124;
+}
+
+body[data-wallpaper-tone=light] .wallpaper {
+  background-color: #d4d4d6;
+}
+
+body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::after {
+  display: none;
+}
+
 .wallpaper-choice[data-wallpaper=solid] {
   background-color: var(--desktop-backdrop);
 }
@@ -38,6 +50,11 @@ body[data-surface=home][data-theme][data-wallpaper=solid] .wallpaper {
 .wallpaper-choice[data-wallpaper=solid] span {
   color: var(--desktop-label);
   text-shadow: none;
+}
+
+.wallpaper-choice[data-tone=light] span {
+  color: #161616;
+  text-shadow: 0 1px 5px #fff;
 }
 
 .home {
@@ -112,6 +129,16 @@ body[data-theme=light] :is(.home, .drag-ghost) .app-tile {
 
 body[data-theme][data-wallpaper=solid] :is(.home, .drag-ghost) .app-name {
   color: var(--desktop-label);
+}
+
+body[data-wallpaper-tone=light] :is(.desktop-pages, .drag-ghost) .app-name {
+  color: #181818;
+  text-shadow: 0 1px 4px #fff8;
+}
+
+body[data-wallpaper-tone=dark] :is(.desktop-pages, .drag-ghost) .app-name {
+  color: #f7f7f7;
+  text-shadow: 0 1px 4px #000b;
 }
 
 :is(.home, .drag-ghost) .app-tile.folder-tile {
