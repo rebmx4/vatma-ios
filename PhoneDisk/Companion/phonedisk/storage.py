@@ -82,10 +82,14 @@ def checked_file(path, mode="rb"):
 def hash_file(path):
     with checked_file(path) as stream:
         before = version(os.fstat(stream.fileno()))
-        result = hashlib.file_digest(stream, "sha256").hexdigest()
+        digest = hashlib.sha256()
+        buffer = bytearray(BUFFER)
+        view = memoryview(buffer)
+        for count in iter(lambda: stream.readinto(buffer), 0):
+            digest.update(view[:count])
         if version(os.fstat(stream.fileno())) != before or version(file_info(path)) != before:
             raise TransferError(409, "file-changed")
-        return result
+        return digest.hexdigest()
 
 
 @dataclass(frozen=True)

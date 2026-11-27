@@ -163,7 +163,8 @@ class DesktopWindow:
         path = filedialog.askdirectory(title="Папка для автокопий" if backup else "Добавить папку",
                                        parent=self.root, mustexist=True)
         if path:
-            self.server.admin({"action": "add", "path": path, "backup": backup})
+            selected = Path(path).resolve(strict=True)
+            self.server.admin({"action": "add", "path": str(selected), "backup": backup})
             self.refresh()
 
     def remove_folder(self):
@@ -310,9 +311,10 @@ def server_for(state, loopback=False):
 
 def verify(root, video):
     with TemporaryDirectory(prefix="phonedisk-desktop-") as temporary:
-        folder = Path(temporary) / "Videos"
+        temporary = Path(temporary).resolve()
+        folder = temporary / "Videos"
         folder.mkdir()
-        with server_for(Path(temporary) / "state", loopback=True) as server:
+        with server_for(temporary / "state", loopback=True) as server:
             app = DesktopWindow(root, server)
             server.admin({"action": "add", "path": str(folder), "backup": False})
             app.refresh()
@@ -325,6 +327,7 @@ def verify(root, video):
             if sys.platform == "darwin":
                 assert server.thumbnailer and server.thumbnailer.is_file(), "The native thumbnail tool is missing"
             if video:
+                video = video.resolve(strict=True)
                 cover = server.cover(video, file_info(video))
                 assert cover.read_bytes().startswith(b"\xff\xd8"), "Unable to create a JPEG video cover"
             root.destroy()
@@ -343,7 +346,7 @@ def main():
         return 0
 
     try:
-        state = state_directory()
+        state = state_directory().resolve()
         state.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (state / "instance.lock").open("a+b") as lock:
             try:

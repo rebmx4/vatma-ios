@@ -240,4 +240,4 @@ if __name__ == "__main__":
     cli = parser.parse_args()
     sys.path.insert(0, str(cli.wheels.resolve()))
     with tempfile.TemporaryDirectory(prefix="phonedisk-acceptance-") as temporary:
-        run(Path(temporary), cli.ffmpeg)
+        run(Path(temporary).resolve(), cli.ffmpeg)
