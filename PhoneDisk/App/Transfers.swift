@@ -710,7 +710,6 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard status == .authorized || status == .limited else {
             message="Медиатека недоступна. Разрешение можно изменить в настройках iPhone."; return
         }
-        if !defaults.bool(forKey:"photo-auto") { defaults.set(Date(),forKey:"photo-cutoff") }
         defaults.set(true,forKey:"photo-auto")
         Self.schedule()
         try? await scan()
@@ -756,8 +755,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
 
         let video=destination(for:"video",folder:"/Видео")
-        let cutoff=defaults.object(forKey:"photo-cutoff") as? Date
-        let photo=cutoff == nil ? nil : destination(for:"photo",folder:"/Фото")
+        let photo=destination(for:"photo",folder:"/Фото")
         let destinations=[video, photo].compactMap { $0 }
         guard !destinations.isEmpty else { return }
         Self.schedule()
@@ -796,13 +794,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard toPrepare > 0 else { return }
 
         var history=BackupHistory(jobs:jobs)
-        let options=PHFetchOptions()
-        if video != nil {
-            options.includeHiddenAssets=true
-            options.includeAssetSourceTypes=[.typeUserLibrary,.typeCloudShared,.typeiTunesSynced]
-        }
-        options.predicate=backupAssetPredicate(includeVideo:video != nil,photoCutoff:photo == nil ? nil : cutoff)
-        options.sortDescriptors=[NSSortDescriptor(key:"creationDate",ascending:false)]
+        let options=backupFetchOptions(includePhoto:photo != nil,includeVideo:video != nil)
         let assets=PHAsset.fetchAssets(with:options)
         var preparationError: Error?
         var prepared=0
@@ -813,12 +805,12 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             let item=assets.object(at:index)
             let isVideo=item.mediaType == .video
             guard let target=isVideo ? video : photo,
-                  isVideo || (!item.isHidden && item.sourceType.contains(.typeUserLibrary)),
                   !history.contains(item.localIdentifier,on:target.source)
             else { continue }
             let resources=PHAssetResource.assetResources(for:item)
             let original=resources.first { isVideo ? $0.type == .video : $0.type == .photo }
-            guard let asset=original ?? (isVideo ? resources.first { $0.type == .fullSizeVideo } : nil)
+            let fallback=isVideo ? PHAssetResourceType.fullSizeVideo : .fullSizePhoto
+            guard let asset=original ?? resources.first(where: { $0.type == fallback })
             else { continue }
             let temporary=Self.support.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at:temporary) }
@@ -843,7 +835,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // An unavailable original must not prevent later videos from reaching the queue.
+                // An unavailable original must not prevent later items from reaching the queue.
                 preparationError=error
                 Self.backupLog.error("Could not prepare a library asset: \((error as NSError).code)")
             }

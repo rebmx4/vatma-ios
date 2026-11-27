@@ -52,16 +52,21 @@ struct BackupHistory {
     }
 }
 
-func backupAssetPredicate(includeVideo: Bool, photoCutoff: Date?) -> NSPredicate {
+func backupFetchOptions(includePhoto: Bool, includeVideo: Bool) -> PHFetchOptions {
     var choices: [NSPredicate] = []
+    if includePhoto {
+        choices.append(NSPredicate(format: "mediaType == %d", Int(PHAssetMediaType.image.rawValue)))
+    }
     if includeVideo {
         choices.append(NSPredicate(format: "mediaType == %d", Int(PHAssetMediaType.video.rawValue)))
     }
-    if let photoCutoff {
-        choices.append(NSPredicate(format: "mediaType == %d AND creationDate >= %@",
-                                   Int(PHAssetMediaType.image.rawValue), photoCutoff as NSDate))
-    }
-    return NSCompoundPredicate(orPredicateWithSubpredicates: choices)
+    let options = PHFetchOptions()
+    options.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: choices)
+    options.includeHiddenAssets = true
+    options.includeAllBurstAssets = true
+    options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared, .typeiTunesSynced]
+    options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+    return options
 }
 
 
