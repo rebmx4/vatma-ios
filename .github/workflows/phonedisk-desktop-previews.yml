@@ -1,0 +1,62 @@
+name: PhoneDisk desktop previews
+
+on:
+  push:
+    branches: [phone-disk/phonedisk-ui-preview-mwzcsdcz]
+    paths:
+      - '.github/workflows/phonedisk-desktop-previews.yml'
+      - 'PhoneDisk/Companion/Tests/capture_desktop.py'
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Render the macOS window
+        run: |
+          set -euo pipefail
+          installer="$RUNNER_TEMP/python-3.13.17.pkg"
+          curl --fail --silent --show-error --location \
+            https://www.python.org/ftp/python/3.13.17/python-3.13.17-macos11.pkg -o "$installer"
+          printf '%s  %s\n' '3053592af66128269efab37fe7851a4894920b27c442aeec99ce4d34d17c07e3' "$installer" |
+            shasum -a 256 -c -
+          sudo installer -pkg "$installer" -target /
+          /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 -m venv "$RUNNER_TEMP/phonedisk-preview"
+          python="$RUNNER_TEMP/phonedisk-preview/bin/python"
+          "$python" -m pip install --disable-pip-version-check --only-binary=:all: \
+            'cryptography==50.0.2' 'cffi==2.1.1' 'ifaddr==0.2.0' 'qrcode==8.2' 'zeroconf==0.154.0' \
+            'pyobjc-framework-Cocoa==11.1'
+          "$python" PhoneDisk/Companion/Tests/capture_desktop.py out/macos.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonedisk-preview-macos
+          path: out/macos.png
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Render the Linux window
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-tk python3-cryptography \
+            python3-ifaddr python3-qrcode python3-zeroconf xvfb xauth imagemagick openbox
+          xvfb-run -a -s '-screen 0 1440x900x24' bash -ec '
+            openbox >/tmp/phonedisk-preview-wm.log 2>&1 &
+            sleep 1
+            /usr/bin/python3 PhoneDisk/Companion/Tests/capture_desktop.py out/linux.png
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonedisk-preview-linux
+          path: out/linux.png
+          if-no-files-found: error
+          retention-days: 7
