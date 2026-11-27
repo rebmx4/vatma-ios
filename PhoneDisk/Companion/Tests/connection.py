@@ -85,8 +85,9 @@ def invitation(client):
     assert len(encoded) == 1 and reply["expiresIn"] == 180
     assert len(reply["matrix"]) >= 29 and all(len(row) == len(reply["matrix"]) for row in reply["matrix"])
     link = urlsplit(encoded[0])
-    assert link.scheme == "phonedisk" and link.netloc == "pair"
-    qr = {name: values[0] for name, values in parse_qs(link.query).items()}
+    assert (link.scheme, link.netloc, link.path) == ("https", "rynpro.ru", "/disk/connect/")
+    assert not link.query and link.fragment
+    qr = {name: values[0] for name, values in parse_qs(link.fragment).items()}
     assert qr["v"] == "1" and qr["pin"] == client.server.fingerprint
     assert qr["id"] == client.server.journal.server_id and int(qr["port"]) == client.server.server_port
     return qr

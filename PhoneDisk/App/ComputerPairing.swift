@@ -17,10 +17,24 @@ struct PairInvitation {
 
     init?(_ text: String) {
         guard text.utf8.count <= 512, let url = URLComponents(string: text),
-              url.scheme == "phonedisk", url.host == "pair", url.path.isEmpty,
-              url.user == nil, url.password == nil, url.port == nil, url.fragment == nil,
-              let query = url.queryItems, Set(query.map(\.name)).count == query.count,
-              Set(query.map(\.name)).isSubset(of: ["v", "id", "host", "port", "pin", "code", "tailnet"])
+              url.user == nil, url.password == nil, url.port == nil else { return nil }
+        let fields: URLComponents
+        switch (url.scheme, url.host, url.percentEncodedPath) {
+        case ("https", "rynpro.ru", "/disk/connect/"):
+            guard url.query == nil, let fragment = url.percentEncodedFragment,
+                  let components = URLComponents(string: "?" + fragment), components.fragment == nil
+            else { return nil }
+            fields = components
+        case ("phonedisk", "pair", ""):
+            guard url.fragment == nil else { return nil }
+            fields = url
+        default:
+            return nil
+        }
+        guard let query = fields.queryItems else { return nil }
+        let keys = Set(query.map(\.name))
+        guard keys.count == query.count,
+              keys.isSubset(of: ["v", "id", "host", "port", "pin", "code", "tailnet"])
         else { return nil }
         func value(_ name: String) -> String? { query.first(where: { $0.name == name })?.value }
         guard value("v") == "1", let id = value("id"), Self.validID(id), let host = value("host"),
@@ -182,8 +196,7 @@ final class Computers: ObservableObject {
     @Published private(set) var notice: String?
     var connected: Bool { computer != nil || legacy }
 
-    func pair(_ text: String) async throws {
-        guard let invitation = PairInvitation(text) else { throw PairingFailure.invalid }
+    func pair(_ invitation: PairInvitation) async throws {
         let defaults = UserDefaults.standard
         let device = defaults.string(forKey: "phone-disk-companion-device") ??
             UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -292,6 +305,7 @@ final class FilesLock: ObservableObject {
 
 struct PairComputerScreen: View {
     @ObservedObject var computers: Computers
+    @Binding var pendingInvitation: PairInvitation?
     @State private var scan = false
     @State private var loading = false
     @State private var message: String?
@@ -302,10 +316,16 @@ struct PairComputerScreen: View {
             Image(systemName: "desktopcomputer").font(.system(size: 48, weight: .light)).foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Text("Добавить компьютер").font(.title.bold())
-            Text("На ПК откройте «Мой диск», выберите папку и нажмите «Подключить телефон».")
+            Text(instructions)
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
             if loading {
                 ProgressView("Подключаюсь к компьютеру…")
+            } else if let invitation = pendingInvitation {
+                Button("Подключить компьютер") {
+                    pendingInvitation = nil
+                    connect(invitation)
+                }.buttonStyle(.borderedProminent)
+                Button("Отмена", role: .cancel) { pendingInvitation = nil }
             } else {
                 Button("Сканировать QR-код") { requestCamera() }.buttonStyle(.borderedProminent)
             }
@@ -321,17 +341,21 @@ struct PairComputerScreen: View {
         }
         .padding(26)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: pendingInvitation?.code) { _, code in
+            if code != nil {
+                scan = false
+                message = nil
+            }
+        }
         .sheet(isPresented: $scan) {
             NavigationStack {
                 QRScanner { code in
                     scan = false
-                    loading = true
-                    message = nil
-                    Task {
-                        defer { loading = false }
-                        do { try await computers.pair(code) }
-                        catch { message = error.localizedDescription }
+                    guard let invitation = PairInvitation(code) else {
+                        message = PairingFailure.invalid.localizedDescription
+                        return
                     }
+                    connect(invitation)
                 } failed: {
                     scan = false
                     message = "Камера недоступна. Проверьте разрешение в настройках iPhone."
@@ -341,6 +365,26 @@ struct PairComputerScreen: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { scan = false } } }
             }
+        }
+    }
+
+    private var instructions: String {
+        if pendingInvitation == nil {
+            return "На ПК откройте «Мой диск», выберите папку и нажмите «Подключить телефон»."
+        }
+        if computers.connected {
+            return "Подтвердите подключение по QR-коду. Новый компьютер заменит текущий."
+        }
+        return "Подтвердите подключение к компьютеру по QR-коду."
+    }
+
+    private func connect(_ invitation: PairInvitation) {
+        loading = true
+        message = nil
+        Task {
+            defer { loading = false }
+            do { try await computers.pair(invitation) }
+            catch { message = error.localizedDescription }
         }
     }
 

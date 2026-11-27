@@ -64,6 +64,22 @@ def validate_target():
         raise RuntimeError("An additional group has automatic access")
 
 
+def enable_associated_domains():
+    identifiers = list(resources("/v1/bundleIds", {"filter[identifier]": BUNDLE}))
+    if len(identifiers) != 1 or identifiers[0]["attributes"]["identifier"] != BUNDLE:
+        raise RuntimeError("Expected one Bundle ID for PhoneDisk")
+    bundle = identifiers[0]["id"]
+    capability = "ASSOCIATED_DOMAINS"
+    current = resources(f"/v1/bundleIds/{bundle}/bundleIdCapabilities", {})
+    if any(item["attributes"]["capabilityType"] == capability for item in current):
+        return
+    api("/v1/bundleIdCapabilities", body={"data": {
+        "type": "bundleIdCapabilities",
+        "attributes": {"capabilityType": capability},
+        "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle}}},
+    }})
+
+
 def next_build():
     known = []
     for item in resources(f"/v1/apps/{APP}/builds", {"fields[builds]": "version"}):
@@ -148,5 +164,7 @@ if __name__ == "__main__":
         print(next_build())
     elif sys.argv[1] == "assign":
         assign(os.environ["DISK_BUILD"])
+    elif sys.argv[1] == "enable-associated-domains":
+        enable_associated_domains()
     else:
-        raise SystemExit("Expected next or assign")
+        raise SystemExit("Expected next, assign or enable-associated-domains")

@@ -18,6 +18,11 @@ targets:
     sources:
       - App
       - Assets.xcassets
+    entitlements:
+      path: PhoneDisk.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:rynpro.ru
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.atma.phonedisk

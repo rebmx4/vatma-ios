@@ -41,7 +41,7 @@ class Access:
                    "pin": self.fingerprint, "code": code}
         if self.network.tailnet:
             payload["tailnet"] = self.network.tailnet
-        uri = "phonedisk://pair?" + urlencode(payload)
+        uri = "https://rynpro.ru/disk/connect/#" + urlencode(payload)
         qr = qrcode.QRCode(box_size=1, border=4)
         qr.add_data(uri)
         matrix = ["".join("1" if cell else "0" for cell in line) for line in qr.get_matrix()]

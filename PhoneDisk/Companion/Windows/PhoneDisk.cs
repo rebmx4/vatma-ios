@@ -337,7 +337,7 @@ internal sealed class MainWindow : Form
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var hint = new Label { Text = "Откройте «Мой диск» на iPhone в домашней сети и нажмите «Добавить компьютер».",
+            var hint = new Label { Text = "Наведите камеру iPhone на QR-код и нажмите на ссылку. Код также можно считать в «Моём диске» через «Добавить компьютер». Оба устройства должны быть в одной сети Wi-Fi.",
                 AutoSize = true, MaximumSize = new Size(380, 0) };
             var canvas = new CodePanel { Dock = DockStyle.Fill };
             var expires = new Label { AutoSize = true, ForeColor = Muted };

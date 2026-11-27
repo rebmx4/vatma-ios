@@ -56,4 +56,27 @@ final class DiskRouteTests: XCTestCase {
         XCTAssertNil(PairInvitation(invitation.replacingOccurrences(of: "192.168.1.32", with: "203.0.113.40")))
         XCTAssertNil(PairInvitation(invitation.replacingOccurrences(of: "192.168.1.32", with: "100.71.20.3")))
     }
+
+    func testCameraPairingLinkKeepsTheCodeInTheFragment() throws {
+        let id = "0123456789abcdef0123456789abcdef"
+        let pin = String(repeating: "9", count: 64)
+        let code = String(repeating: "q", count: 43)
+        let fields = "v=1&id=\(id)&host=192.168.1.32&port=18119&pin=\(pin)&code=\(code)&tailnet=100.71.20.3"
+        let path = "https://rynpro.ru/disk/connect/"
+        let invitation = try XCTUnwrap(PairInvitation(path + "#" + fields))
+        XCTAssertEqual(invitation.id, id)
+        XCTAssertEqual(invitation.host, "192.168.1.32")
+        XCTAssertEqual(invitation.port, 18119)
+        XCTAssertEqual(invitation.fingerprint, pin)
+        XCTAssertEqual(invitation.code, code)
+        XCTAssertEqual(invitation.tailnet, "100.71.20.3")
+        XCTAssertNil(PairInvitation(path + "?" + fields))
+        XCTAssertNil(PairInvitation(path + "?extra=1#" + fields))
+        XCTAssertNil(PairInvitation(path + "#" + fields + "&code=" + code))
+        XCTAssertNil(PairInvitation(path + "#" + fields + "#other-fragment"))
+        XCTAssertNil(PairInvitation("http://rynpro.ru/disk/connect/#" + fields))
+        XCTAssertNil(PairInvitation("https://www.rynpro.ru/disk/connect/#" + fields))
+        XCTAssertNil(PairInvitation("https://rynpro.ru:443/disk/connect/#" + fields))
+        XCTAssertNil(PairInvitation("https://rynpro.ru/disk/#" + fields))
+    }
 }

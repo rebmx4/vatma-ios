@@ -8,6 +8,7 @@ on:
       - "PhoneDisk/Tests/**"
       - "PhoneDisk/UITests/**"
       - "PhoneDisk/Info.plist"
+      - "PhoneDisk/project.yml"
       - ".github/workflows/phone-disk-lan-release.yml"
       - ".github/phone-disk-build-recipient.pem"
 
@@ -138,7 +139,12 @@ jobs:
           keychain initialize
           export CERTIFICATE_PRIVATE_KEY
           CERTIFICATE_PRIVATE_KEY="$(printf '%s' "$CERT_KEY_B64" | base64 --decode)"
-          app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE
+          if [[ "$COMPACT_CANDIDATE" == true ]]; then
+            "$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py enable-associated-domains
+            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE --strict-match-identifier --create
+          else
+            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE
+          fi
           keychain add-certificates
           options="$RUNNER_TEMP/phone-disk-export.plist"
           xcode-project use-profiles --project PhoneDisk/PhoneDisk.xcodeproj --export-options-plist "$options"
@@ -179,6 +185,8 @@ jobs:
           assert info["BGTaskSchedulerPermittedIdentifiers"] == [bundle + ".scan"]
           assert info["NSBonjourServices"] == ["_phonedisk._tcp"]
           assert entitlements["application-identifier"] == os.environ["DISK_TEAM"] + "." + bundle
+          if os.environ["COMPACT_CANDIDATE"] == "true":
+              assert entitlements["com.apple.developer.associated-domains"] == ["applinks:rynpro.ru"]
           assert not entitlements.get("get-task-allow", False)
           PY
           icon="$(find "$app" -maxdepth 1 -name 'AppIcon60x60@*.png' -print -quit)"

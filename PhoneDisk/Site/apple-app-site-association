@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["GR3WB4Z646.ru.atma.phonedisk"],
+        "components": [{"/": "/disk/connect/"}]
+      }
+    ]
+  }
+}

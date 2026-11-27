@@ -20,6 +20,8 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     for asset in ("index.html", "styles.css", "guide.js"):
         shutil.copyfile(HERE / asset, args.output / asset)
+    (args.output / "connect").mkdir(exist_ok=True)
+    shutil.copyfile(HERE / "connect" / "index.html", args.output / "connect" / "index.html")
     icon = HERE.parent / "Assets.xcassets" / "AppIcon.appiconset" / "icon.png"
     shutil.copyfile(icon, args.output / "icon.png")
     demo = args.output / "demo"

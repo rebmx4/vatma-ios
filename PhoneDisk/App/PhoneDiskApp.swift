@@ -34,6 +34,7 @@ struct PhoneDiskApp: App {
     @State private var lockSettings = false
     @State private var disconnect = false
     @State private var addComputer = false
+    @State private var pendingInvitation: PairInvitation?
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -42,7 +43,7 @@ struct PhoneDiskApp: App {
                 if computers.connected {
                     DiskScreen(disk: disk, transfers: transfers, filesLock: filesLock)
                 } else {
-                    PairComputerScreen(computers: computers)
+                    PairComputerScreen(computers: computers, pendingInvitation: $pendingInvitation)
                 }
             }
                 .preferredColorScheme(.dark)
@@ -75,11 +76,17 @@ struct PhoneDiskApp: App {
                 .onReceive(disk.closeComputer) { disconnect = true }
                 .onReceive(disk.openPairing) { addComputer = true }
                 .onReceive(disk.accessLost) { Task { await computers.disconnect(revoke: false) } }
+                .onOpenURL { url in
+                    guard let invitation = PairInvitation(url.absoluteString) else { return }
+                    pendingInvitation = invitation
+                    if computers.connected { addComputer = true }
+                }
                 .sheet(isPresented: $addComputer, onDismiss: {
+                    pendingInvitation = nil
                     if PairedComputer.load() != nil && !filesLock.enabled { lockSettings = true }
                 }) {
                     NavigationStack {
-                        PairComputerScreen(computers: computers)
+                        PairComputerScreen(computers: computers, pendingInvitation: $pendingInvitation)
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
                                     Button("Закрыть") { addComputer = false }
