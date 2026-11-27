@@ -92,6 +92,8 @@ final class BrowserRenderingFixtureServer {
             let mime: String
             switch URL(fileURLWithPath: path).pathExtension {
             case "png": mime = "image/png"
+            case "jpg": mime = "image/jpeg"
+            case "mp4": mime = "video/mp4"
             case "json": mime = "application/manifest+json"
             case "css": mime = "text/css; charset=utf-8"
             default: mime = "text/html; charset=utf-8"

@@ -28,6 +28,12 @@ final class StoreAdScreenshotsTests: XCTestCase {
         Market("IT", "it", "it_IT", "Menu del browser", "Nuova scheda", "Vai", "Test del filtro", "La richiesta pubblicitaria non è stata caricata"),
     ]
 
+    private let filmTitles = [
+        "RU":"Над облаками", "US":"Above the clouds", "DE":"Über den Wolken", "FR":"Au-dessus des nuages",
+        "BR":"Acima das nuvens", "PT":"Acima das nuvens", "JP":"雲の上で", "CN":"云海之上", "KR":"구름 위에서",
+        "ES":"Sobre las nubes", "IT":"Sopra le nuvole",
+    ]
+
     private struct MissingShot: Error, CustomStringConvertible { let description: String }
     private let app = XCUIApplication()
 
@@ -39,6 +45,9 @@ final class StoreAdScreenshotsTests: XCTestCase {
             ("/\($0.region).html", Data(demoPage($0).utf8))
         })
         resources["/alive.json"] = Data("{\"control\":true}".utf8)
+        let bundle = Bundle(for: Self.self)
+        resources["/film.jpg"] = try Data(contentsOf: XCTUnwrap(bundle.url(forResource: "StoreFilterPoster", withExtension: "jpg")))
+        resources["/film.mp4"] = try Data(contentsOf: XCTUnwrap(bundle.url(forResource: "StoreFilterFilm", withExtension: "mp4")))
         let server = try BrowserRenderingFixtureServer(resources: resources)
         defer { server.stop() }
         let root = try await server.start()
@@ -112,14 +121,13 @@ final class StoreAdScreenshotsTests: XCTestCase {
     private func demoPage(_ market: Market) -> String {
         """
         <!doctype html><html lang="\(market.language)"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>ATMA · \(market.title)</title><style>
+        <title>ATMA · \(filmTitles[market.region]!)</title><style>
         *{box-sizing:border-box}body{margin:0;background:#fff4ed;color:#29151d;font:17px system-ui,sans-serif}
         main{max-width:900px;margin:auto;padding:32px max(22px,5vw)}small{font-weight:800;letter-spacing:.14em}
         h1{font-size:clamp(32px,6vw,72px);line-height:1.04;margin:27px 0 19px}
-        .art{height:clamp(175px,41vw,450px);border-radius:25px;background:radial-gradient(ellipse at 24% 18%,#ffe3a5 0%,transparent 62%),linear-gradient(145deg,#ff6c58,#c70048);display:grid;place-items:center}
-        .disc{height:49%;aspect-ratio:1;border:4px solid #fff8;border-radius:50%;box-shadow:0 0 55px #ffeddf;color:#fff;font-size:clamp(30px,9vw,120px);display:grid;place-items:center}
+        video{width:100%;height:clamp(200px,62vw,435px);object-fit:cover;border-radius:22px;background:#29151d;display:block}
         p{font-size:clamp(19px,3.5vw,34px);font-weight:700;margin:26px 0;color:#5e272f}
-        </style><main><small>ATMA STUDIO</small><h1>\(market.title)</h1><div class="art" aria-hidden="true"><div class="disc">◎</div></div>
+        </style><main><small>ATMA STUDIO</small><h1>\(filmTitles[market.region]!)</h1><video controls playsinline preload="none" poster="/film.jpg"><source src="/film.mp4" type="video/mp4"></video>
         <p id="outcome" role="status"></p></main>
         <script>
         (async () => {
