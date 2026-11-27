@@ -32,7 +32,7 @@ def capture_mac(root, path):
 
     app = NSApplication.sharedApplication()
     app.activateIgnoringOtherApps_(True)
-    root.update()
+    root.update_idletasks()
     windows = [window for window in app.windows() if window.title() == root.title()]
     if not windows:
         raise RuntimeError("The app window could not be located")
@@ -112,12 +112,16 @@ def main():
             icon = ROOT.parent / "Assets.xcassets" / "AppIcon.appiconset" / "icon.png"
             root.iconphoto(True, tk.PhotoImage(file=icon))
             window = DesktopWindow(root, server)
-            verify_controls(root, window, server)
+            if sys.platform == "darwin":
+                root.geometry("+80+80")
+            else:
+                verify_controls(root, window, server)
 
             def finished():
                 try:
                     root.update_idletasks()
                     if sys.platform == "darwin":
+                        assert len(window.folder_list.get_children()) == 3, "The catalog did not render"
                         capture_mac(root, out)
                     else:
                         subprocess.run(["import", "-silent", "-window", root.wm_frame(), str(out)],
