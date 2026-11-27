@@ -210,7 +210,7 @@ function renderAppIconPicker() {
 }
 
 function brand(app, useStoredIcon = false) {
-  if(app.id==='atma-private-desktop')return `<svg viewBox="0 0 62 62" aria-hidden="true"><rect width="62" height="62" rx="15" fill="#183747"/><rect x="19" y="29" width="24" height="20" rx="4" fill="none" stroke="white" stroke-width="3"/><path d="M24 29v-7a7 7 0 0 1 14 0v7m-7 8v5" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>`;
+  if(app.id==='atma-private-desktop')return '<span class="private-desktop-artwork" aria-hidden="true"><span class="private-desktop-keyhole"></span></span>';
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
   if(app.id==='atma-incognito')return `<svg class="desktop-system-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18M6 11l2-6h8l2 6"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/><path d="M11 16h2"/></svg>`;
   if(app.type!=='system'){
@@ -293,23 +293,30 @@ function paintShortcutIcon(target,app,scope){
     if(current.iconUrl!==iconUrl){current.iconUrl=iconUrl;saveApps(scope,{render:false,layoutChanged:false}).catch(()=>{});}
   });
 }
-let pinSiteBusy=false,pinSiteArtKey='';
+let pinSiteBusy=false,pinSiteArtKey='',pendingVaultSite=null;
 function normalizedSiteUrl(value) {
   try{const url=new URL(value);return /^https?:$/.test(url.protocol)?url.href:'';}catch{return '';}
 }
-function savedSite(url) {return flattenApps(apps).some(app=>normalizedSiteUrl(app.url)===normalizedSiteUrl(url));}
+function shortcutDestination() {
+  if(state?.mode==='browse')return state.privateBrowsing===true||state.privateDesktop===true?'private':'public';
+  return currentScope();
+}
+function savedSite(url,scope) {return flattenApps(poolFor(scope)).some(app=>normalizedSiteUrl(app.url)===url);}
 function updateQuickAdd() {
   const button=$('pin-site'),url=normalizedSiteUrl(state?.url);
   button.hidden=state?.mode!=='browse'||!url;
   if(button.hidden){pinSiteArtKey='';return;}
   const name=state.siteName||state.title||new URL(url).hostname;
-  const saved=savedSite(url);button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
-  button.setAttribute('aria-label',saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`);
+  const scope=shortcutDestination(),saved=!pinSiteBusy&&savedSite(url,scope);
+  button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
+  const label=scope==='private'?(saved?'Уже на приватном столе':'Добавить на приватный стол')
+    :saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`;
+  button.setAttribute('aria-label',label);
   button.title=button.getAttribute('aria-label');$('pin-site-badge').innerHTML=icon(saved?'check':'plus');
-  const key=JSON.stringify([state.activeTabId,url,state.privateBrowsing===true,Boolean(state.loading)]);
+  const key=JSON.stringify([state.activeTabId,url,scope,Boolean(state.loading)]);
   if(key===pinSiteArtKey)return;pinSiteArtKey=key;
   const art=$('pin-site-art');art.innerHTML=icon('globe');delete art.dataset.logo;
-  if(state.privateBrowsing===true||state.loading)return;
+  if(scope==='private'||state.loading)return;
   void paintQuickAddLogo(art,key,{url,iconUrl:state.iconUrl||''});
 }
 async function paintQuickAddLogo(art,key,site) {
@@ -325,18 +332,30 @@ async function paintQuickAddLogo(art,key,site) {
   });
   image.src=iconUrl;
 }
-async function saveCurrentSite() {
+async function saveCurrentSite(target) {
   if(pinSiteBusy||state?.mode!=='browse'||state.loading)return;
+  target??={tabId:state.activeTabId,url:normalizedSiteUrl(state.url),scope:shortcutDestination()};
+  const {tabId,url,scope}=target;
+  const isCurrent=()=>state?.mode==='browse'&&!state.loading&&state.activeTabId===tabId&&normalizedSiteUrl(state.url)===url&&shortcutDestination()===scope;
+  if(!url||!isCurrent())return;
+  if(scope==='private'&&!vaultKey){
+    pendingVaultSite=target;
+    return requestVault();
+  }
+  const key=vaultKey,canSave=()=>isCurrent()&&(scope==='public'||vaultKey===key);
   pinSiteBusy=true;updateQuickAdd();
   try{
-    const site=await api('current-site'),url=normalizedSiteUrl(site.url);
-    if(!url)throw new Error('Не удалось получить адрес сайта');
-    if(savedSite(url))return;
+    const site=await api('current-site');
+    if(!canSave()||normalizedSiteUrl(site.url)!==url||savedSite(url,scope))return;
     const iconUrl=await resolveShortcutIcon(site);
+    if(!canSave()||savedSite(url,scope))return;
     const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true,messageNotifications:false};
-    const previous=apps;apps=freezeSlots(freezeSlots([...apps,entry],4),6);
-    try{await saveApps();}catch(error){apps=previous;renderApps();throw error;}
-  }catch(error){reportError(error.message);}
+    const previous=poolFor(scope),items=freezeSlots(freezeSlots([...previous,entry],4),6);
+    try{await updatePool(scope,items);}catch(error){
+      if(poolFor(scope)===items)await updatePool(scope,previous).catch(()=>{});
+      throw error;
+    }
+  }catch(error){if(canSave())reportError(error.message);}
   finally{pinSiteBusy=false;updateQuickAdd();}
 }
 function updateTabSurface(){
@@ -956,7 +975,7 @@ function renderFolder() {
 async function launch(url,scope='public',options={}) {
   setEditing(false);
   if(scope==='private')lockVault();
-  try { await action('open', { url, webApp:state?.mode==='browse'&&Boolean(state.webApp), ...options }); $('address').blur(); } catch {}
+  try { await action('open', { url, webApp:state?.mode==='browse'&&Boolean(state.webApp), ...(scope==='private'?{privateDesktop:true}:{}), ...options }); $('address').blur(); } catch {}
 }
 async function launchShortcut(app,scope='public') {
   if(scope==='private'&&!vaultKey)return;
@@ -966,7 +985,7 @@ async function launchShortcut(app,scope='public') {
 }
 async function setPanel(name, options = {}) {
   if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
-  if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;}}
+  if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;pendingVaultSite=null;}}
   panel = name; renderPanel();
   try { await action('panel', { panel: name }); } catch {}
 }
@@ -1003,7 +1022,7 @@ function renderPanel() {
   else if(panel==='cookies')renderCookieBrowser($('sheet-content'),{api,onBack:()=>setPanel(null),reportError,t:localization.t,backLabel:'Рабочий стол'});
   else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
-  else if (panel === 'add') {editorScope=currentScope();renderAppForm();}
+  else if (panel === 'add') renderAppForm();
   else if (panel === 'about') $('sheet-content').innerHTML = window.webkit?.messageHandlers?.atma?'<div class="setting-card"><div class="setting-row">Независимый браузер ATMA на WebKit Apple</div></div><p class="sheet-note">Сайты открываются через системный WebKit текущего iPhone или iPad. Cookie и входы сохраняются в браузере.</p>':'<div class="setting-card"><div class="setting-row">Локальный прототип ATMA в Responsively</div></div><p class="sheet-note">Это предпросмотр интерфейса. Работа сайтов в приложении iOS использует системный WebKit.</p><p class="sheet-note">Уведомления, синхронизация, перевод и диктовка Apple в этом этапе не подключены.</p>';
 }
 function settingButton(text, glyph, handler) {
@@ -1129,6 +1148,7 @@ function renderDesktopMenu() {
     ['Открыть Инкогнито','incognito',newIncognitoTab],
     ['Куки и данные сайтов','lock',()=>setPanel('cookies')],
     ['История','left',openBrowserHistory],
+    ['Добавить веб-приложение','plus',openAddShortcut],
     [editing?'Завершить редактирование':'Изменить приложения','edit',async()=>{await setPanel(null);setEditing(!editing);}],
     ['Оформление и язык','image',()=>setPanel('appearance')],
   ];
@@ -1155,7 +1175,7 @@ function renderSettings() {
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
   card.append(settingButton('Приватный стол','lock',requestVault));
   card.append(settingButton('Добавить страницу рабочего стола','plus',async()=>{publicPages++;localStorage.setItem('atma-preview-page-count',publicPages);await setPanel(null);renderApps();showDesktopPage(publicPages-1);}));
-  const addDesktopButton=settingButton('Добавить веб-приложение','plus',()=>{if(currentScope()==='private'&&!vaultKey){pendingVaultAdd=true;requestVault();}else setPanel('add');});addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
+  const addDesktopButton=settingButton('Добавить веб-приложение','plus',openAddShortcut);addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
   const probe=settingButton('Проверить, что видит сайт', 'phone', async () => { try { await action('probe'); } catch {} });probe.disabled=state?.capabilities?.probe===false;card.append(probe);
   card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; renderApps(); }));
   $('sheet-content').append(card);
@@ -1235,15 +1255,25 @@ $('wallpaper-file').addEventListener('change', async event => {
     useWallpaper('custom'); await setPanel(null);
   } catch { reportError('Не удалось сохранить обои'); }
 });
+function openAddShortcut() {
+  editorScope=shortcutDestination();
+  if(editorScope==='private'&&!vaultKey){
+    pendingVaultAdd=true;
+    return requestVault();
+  }
+  return setPanel('add');
+}
 function renderAppForm(app) {
   const editorPanel=panel,version=++appEditorVersion;
+  const scope=editorScope,key=vaultKey;
+  const submitLabel=app?'Сохранить':scope==='private'?'Добавить на приватный стол':'Добавить на рабочий стол';
   const selectedIcon=normalizeShortcutIconStyle(app?.iconStyle);
   const siteArtwork=/^data:image\/png;base64,/i.test(app?.iconUrl||'')?'<img src="'+escape(app.iconUrl)+'" alt="">':brand({...app,id:app?.id||'site-preview',name:app?.name||'Сайт',iconStyle:'site'});
   const iconChoices='<fieldset class="shortcut-icon-picker"><legend>Иконка ярлыка</legend><div class="shortcut-icon-options">'+SHORTCUT_ICON_CHOICES.map(choice=>'<label class="shortcut-icon-option"><input type="radio" name="iconStyle" value="'+choice.id+'" '+(selectedIcon===choice.id?'checked':'')+'><span class="shortcut-icon-art">'+(choice.id==='site'?siteArtwork:shortcutIconArtwork(choice.id))+'</span><span>'+choice.label+'</span></label>').join('')+'</div></fieldset>';
   const messageChoice=`<label class="message-choice" id="message-choice" hidden><input type="checkbox" name="messageNotifications" ${!app||messagesEnabled(app)?'checked':''}><span><strong>Счётчик сообщений</strong><small>Появится, пока ATMA открыт и сайт показывает число у сообщений. Текст переписки не передаётся.</small></span></label>`;
-  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}${messageChoice}<button class="primary-button" type="submit">${app ? 'Сохранить' : 'Добавить на рабочий стол'}</button></form>`;
+  $('sheet-content').innerHTML = `<form id="app-form"><label class="field">Название<input name="name" aria-label="Название приложения" maxlength="36" placeholder="Например, мой банк" value="${escape(app?.name || '')}" required></label><label class="field">Адрес сайта<input name="url" aria-label="Адрес приложения" placeholder="https://example.com" value="${escape(app?.url || '')}" required autocomplete="off"></label>${iconChoices}${messageChoice}<button class="primary-button" type="submit">${submitLabel}</button></form>`;
   const urlInput=$('app-form').elements.namedItem('url'),messageToggle=$('app-form').elements.namedItem('messageNotifications');
-  const updateMessageChoice=()=>{const raw=urlInput.value.trim(),value=/^[a-z][\w+.-]*:/i.test(raw)?raw:`https://${raw}`;const supported=Boolean(messageProvider(value));$('message-choice').hidden=!supported;messageToggle.disabled=!supported;};
+  const updateMessageChoice=()=>{const raw=urlInput.value.trim(),value=/^[a-z][\w+.-]*:/i.test(raw)?raw:`https://${raw}`;const supported=scope==='public'&&Boolean(messageProvider(value));$('message-choice').hidden=!supported;messageToggle.disabled=!supported;};
   urlInput.addEventListener('input',updateMessageChoice);updateMessageChoice();
   $('app-form').addEventListener('submit', async event => {
     event.preventDefault(); reportError(''); const form = new FormData(event.currentTarget); let url;
@@ -1252,16 +1282,15 @@ function renderAppForm(app) {
     const name=String(form.get('name')).trim();if(!name)return reportError('Введите название приложения');
     const submit=event.currentTarget.querySelector?.('[type="submit"]');
     if(submit?.disabled)return;if(submit){submit.disabled=true;submit.textContent='Сохраняю…';}
-    const scope=editorScope,key=vaultKey;
     const iconStyle=normalizeShortcutIconStyle(form.get('iconStyle')),sameURL=app?.url===url.href;
     const iconUrl=iconStyle==='site'?await resolveShortcutIcon({url:url.href,iconUrl:sameURL?app.iconUrl:''}):sameURL?app.iconUrl||'':'';
     if(panel!==editorPanel||version!==appEditorVersion||scope==='private'&&(!vaultKey||vaultKey!==key))return;
-    const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${Date.now()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL), messageNotifications: Boolean(messageProvider(url.href)&&form.get('messageNotifications')) };
+    const entry = { ...app, iconUrl, iconStyle, id: app?.id || `custom-${crypto.randomUUID()}`, name, url: url.href, color: app?.color || '#337b96', custom: Boolean(app?.custom||!app||!sameURL), messageNotifications: scope==='public'&&Boolean(messageProvider(url.href)&&form.get('messageNotifications')) };
     delete entry.profileId;
     if (!entry.name) return;
     const pool=poolFor(scope);
     if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=app?'Сохранить':'Добавить на рабочий стол';}}
+    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=submitLabel;}}
   });
   if(app) $('sheet-content').append(settingButton(editorScope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async()=>{
     if(editorScope==='private') {
@@ -1270,17 +1299,41 @@ function renderAppForm(app) {
   }));
 }
 async function openAppEditor(app,scope='public') { editorScope=scope;await setPanel('edit');renderAppForm(app); }
-function requestVault() {
-  lockVault();pinDigits='';firstPin=null;pinBusy=false;enableBiometryAfterPIN=false;
-  pinSetup=vaultRecord?'unlock':'choice';const epoch=++pinEpoch;setPanel('pin');
-  api('vault/biometry/status').then(result=>{if(epoch===pinEpoch&&panel==='pin'){biometricStatus=result;renderPIN();}}).catch(()=>{});
+async function requestVault() {
+  if(panel==='pin'&&(pinBusy||pinSetup==='biometry'))return;
+  if(vaultKey){
+    try{await finishVaultUnlock();}catch(error){reportError(error.message);}
+    return;
+  }
+  pinDigits='';firstPin=null;enableBiometryAfterPIN=false;
+  const unavailable={available:false,kind:'none'};
+  biometricStatus=unavailable;
+  pinSetup=!vaultRecord?'choice':vaultRecord.biometric&&vaultRecord.vaultId?'biometry':'unlock';
+  const epoch=++pinEpoch,openPanel=setPanel('pin');
+  const status=await api('vault/biometry/status').catch(()=>unavailable);
+  await openPanel;
+  if(epoch!==pinEpoch||panel!=='pin')return;
+  biometricStatus=status;
+  if(pinSetup==='biometry'){
+    if(status.available)return unlockWithBiometry();
+    pinSetup='unlock';
+  }
+  renderPIN();
+  if(vaultRecord?.auth==='biometric'&&!status.available)reportError('Не удалось войти по биометрии');
 }
 const biometricName=()=>biometricStatus.kind==='touchID'?'Touch ID':'Face ID';
 function renderPIN() {
   $('sheet-title').textContent='Приватный стол';
   const creating=!vaultRecord,biometricOnly=vaultRecord?.auth==='biometric';
+  const artwork=`<div class="pin-lock">${brand({id:'atma-private-desktop'})}</div>`;
+  const biometricText=key=>escape(localization.t(key,{method:biometricName()}));
+  if(pinSetup==='biometry'){
+    $('sheet-content').innerHTML=`${artwork}<h2>Приватный стол</h2><p class="pin-subtitle" role="status">Ожидание биометрии…</p><div class="vault-choices"><button data-pin="cancel" ${pinBusy?'disabled':''}>Отмена</button></div>`;
+    document.querySelector('[data-pin="cancel"]').addEventListener('click',()=>pinKey('cancel'));
+    return;
+  }
   if(creating&&pinSetup==='choice'){
-    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>Приватный стол</h2><p class="pin-subtitle">Выберите способ входа</p><div class="vault-choices"><button data-vault-choice="pin" ${pinBusy?'disabled':''}>Код из 6 цифр</button>${biometricStatus.available?`<button data-vault-choice="biometric" ${pinBusy?'disabled':''}>${biometricName()}</button><button data-vault-choice="both" ${pinBusy?'disabled':''}>Код и ${biometricName()}</button>`:''}<button data-vault-choice="cancel" ${pinBusy?'disabled':''}>Отмена</button></div><p class="pin-note">Замок скрывает ярлыки, но не историю и входы на сайты. При входе только по биометрии ключ нельзя перенести на другое устройство.</p>`;
+    $('sheet-content').innerHTML=`${artwork}<h2>Приватный стол</h2><p class="pin-subtitle">Выберите способ входа</p><div class="vault-choices"><button data-vault-choice="pin" ${pinBusy?'disabled':''}>Код из 6 цифр</button>${biometricStatus.available?`<button data-vault-choice="biometric" ${pinBusy?'disabled':''}>${biometricName()}</button><button data-vault-choice="both" ${pinBusy?'disabled':''}>${biometricText('Код и {method}')}</button>`:''}<button data-vault-choice="cancel" ${pinBusy?'disabled':''}>Отмена</button></div><p class="pin-note">Замок скрывает ярлыки, но не историю и входы на сайты. При входе только по биометрии ключ нельзя перенести на другое устройство.</p>`;
     for(const button of document.querySelectorAll('[data-vault-choice]'))button.addEventListener('click',()=>{
       if(pinBusy)return;
       const choice=button.dataset.vaultChoice;
@@ -1291,10 +1344,10 @@ function renderPIN() {
     return;
   }
   if(biometricOnly){
-    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>Приватный стол</h2><p class="pin-subtitle">Вход через ${biometricName()}</p><div class="vault-choices"><button data-vault-biometry ${!biometricStatus.available||pinBusy?'disabled':''}>Открыть через ${biometricName()}</button><button data-pin="cancel">Отмена</button></div><p class="pin-note">Если биометрия изменена или код устройства отключён, ключ на этом устройстве станет недоступен.</p>`;
+    $('sheet-content').innerHTML=`${artwork}<h2>Приватный стол</h2><p class="pin-subtitle">${biometricText('Вход через {method}')}</p><div class="vault-choices"><button data-vault-biometry ${!biometricStatus.available||pinBusy?'disabled':''}>${biometricText('Открыть через {method}')}</button><button data-pin="cancel">Отмена</button></div><p class="pin-note">Если биометрия изменена или код устройства отключён, ключ на этом устройстве станет недоступен.</p>`;
   }else{
     const title=creating?(firstPin?'Повторите код':'Придумайте код'):'Введите код';
-    $('sheet-content').innerHTML=`<div class="pin-lock">${icon('lock')}</div><h2>${title}</h2><p class="pin-subtitle">6 цифр для приватного стола</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div>${!creating&&vaultRecord?.biometric&&biometricStatus.available?`<button class="vault-biometry-link" data-vault-biometry>Открыть через ${biometricName()}</button>`:''}${!creating&&!vaultRecord?.biometric&&biometricStatus.available?`<label class="vault-biometry-optin"><input type="checkbox" id="vault-enable-biometry" ${enableBiometryAfterPIN?'checked':''}> Включить ${biometricName()} после ввода кода</label>`:''}<p class="pin-note">${creating?'Код нельзя восстановить. ':''}Входы на сайты хранятся отдельно в браузере.</p>`;
+    $('sheet-content').innerHTML=`${artwork}<h2>${title}</h2><p class="pin-subtitle">6 цифр для приватного стола</p><div class="pin-dots" aria-label="Введено ${pinDigits.length} из 6 цифр">${Array.from({length:6},(_,i)=>`<i class="${i<pinDigits.length?'filled':''}"></i>`).join('')}</div><div class="pin-keypad">${['1','2','3','4','5','6','7','8','9','cancel','0','back'].map(digit=>`<button data-pin="${digit}" ${pinBusy?'disabled':''} class="${digit.length>1?'pin-small':''}">${digit==='cancel'?'Отмена':digit==='back'?'⌫':digit}</button>`).join('')}</div>${!creating&&vaultRecord?.biometric&&biometricStatus.available?`<button class="vault-biometry-link" data-vault-biometry>${biometricText('Открыть через {method}')}</button>`:''}${!creating&&!vaultRecord?.biometric&&biometricStatus.available?`<label class="vault-biometry-optin"><input type="checkbox" id="vault-enable-biometry" ${enableBiometryAfterPIN?'checked':''}> ${biometricText('Включить {method} после ввода кода')}</label>`:''}<p class="pin-note">${creating?'Код нельзя восстановить. ':''}Входы на сайты хранятся отдельно в браузере.</p>`;
   }
   for(const button of document.querySelectorAll('[data-pin]'))button.addEventListener('click',()=>pinKey(button.dataset.pin));
   document.querySelector('[data-vault-biometry]')?.addEventListener('click',unlockWithBiometry);
@@ -1302,7 +1355,8 @@ function renderPIN() {
 }
 function pinKey(value) {
   if(pinBusy)return;
-  if(value==='cancel'){pendingVaultMove=null;pendingVaultAdd=false;setPanel(null);return;}
+  if(value==='cancel'){setPanel(null);return;}
+  if(pinSetup==='choice'||pinSetup==='biometry'||vaultRecord?.auth==='biometric')return;
   if(value==='back')pinDigits=pinDigits.slice(0,-1);
   else if(/^\d$/.test(value)&&pinDigits.length<6)pinDigits+=value;
   renderPIN();if(pinDigits.length===6)submitPIN();
@@ -1355,23 +1409,41 @@ async function createBiometricVault(){
 }
 async function unlockWithBiometry(){
   if(pinBusy||!vaultRecord?.biometric||!vaultRecord.vaultId||!biometricStatus.available)return;
-  const epoch=pinEpoch;pinBusy=true;renderPIN();
+  const epoch=pinEpoch;pinSetup='biometry';pinBusy=true;renderPIN();
   try{
     const {secret}=await api('vault/biometry/unlock',{vaultId:vaultRecord.vaultId});if(epoch!==pinEpoch)return;
+    await vaultWrite.catch(()=>{});if(epoch!==pinEpoch)return;
     const opened=await openVaultWithSecret(secret,vaultRecord);if(epoch!==pinEpoch)return;
     vaultKey=opened.key;vaultApps=collapseSingletonFolders(opened.items);pinDigits='';firstPin=null;
     if(vaultApps.length!==opened.items.length)await saveApps('private',{render:false});
     localStorage.removeItem('atma-preview-vault-throttle');await finishVaultUnlock();
-  }catch(error){if(epoch===pinEpoch)reportError(error.message);}
+  }catch{
+    if(epoch!==pinEpoch)return;
+    pinSetup='unlock';
+    reportError('Не удалось войти по биометрии');
+  }
   finally{if(epoch===pinEpoch){pinBusy=false;if(panel==='pin')renderPIN();}}
 }
 async function finishVaultUnlock() {
+  const key=vaultKey,site=pendingVaultSite;
+  clearTimeout(pageLockTimer);
+  autoLockAfter=Date.now()+700;
+  pendingVaultSite=null;
+  if(site){
+    await setPanel(null);
+    if(vaultKey===key){resetVaultIdle();await saveCurrentSite(site);}
+    return;
+  }
   if(pendingVaultMove) {
     const found=findEntry(apps,pendingVaultMove);
     if(found){vaultApps.push(detachFromLayout(found.entry));await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),pendingVaultMove);await saveApps();}
     pendingVaultMove=null;
   }
-  autoLockAfter=Date.now()+700;desktopPage=privatePageStart;await setPanel(null,{keepVaultAction:true});renderApps();resetVaultIdle();
+  const showHome=document.body.dataset.surface!=='home';
+  await setPanel(null,{keepVaultAction:true});
+  if(showHome){await action('home');chooseDesktopSurface(state.activeTabId);$('address').value='';}
+  if(vaultKey!==key)return;
+  desktopPage=privatePageStart;renderApps();resetVaultIdle();
   if(pendingVaultAdd){pendingVaultAdd=false;editorScope='private';await setPanel('add');}
 }
 function detachFromLayout(app) {
@@ -1434,12 +1506,16 @@ selectAddressOnFirstTap($('incognito-address'), $('incognito-address-clear'));
 for (const [inputId, listId] of [['address','address-suggestions'],['incognito-address','incognito-suggestions']]) {
   let editingTabID;
   const reset = installAddressSuggestions($(inputId), $(listId), {
-    suggest: value => addressSuggestions(value, state, flattenApps(apps).filter(app => app.type !== 'system')),
+    suggest: value => {
+      const entries=document.body.dataset.surface==='home'?poolFor(currentScope()):apps;
+      return addressSuggestions(value,state,flattenApps(entries).filter(app=>app.type!=='system'));
+    },
     searchLabel: value => localization.t('Искать «{value}»',{value}),
     select: result => {
+      const scope=state?.mode==='home'&&document.body.dataset.surface==='home'?currentScope():'public';
       if (result.kind === 'tab') selectBrowserTab(result.entry.id);
-      else if (result.kind === 'shortcut') launchShortcut(result.entry);
-      else launch(result.query, 'public');
+      else if (result.kind === 'shortcut') launchShortcut(result.entry,scope);
+      else launch(result.query,scope);
     },
     editing: editing => {
       if (editing) editingTabID = state?.activeTabId;
@@ -1454,7 +1530,7 @@ $('incognito-form').addEventListener('submit',event=>{event.preventDefault();con
 $('end-incognito').addEventListener('click',async()=>{try{await action('tabs/private/close');chooseDesktopSurface(state.activeTabId);$('incognito-address').value='';}catch{}});
 $('address').addEventListener('input', () => { if (document.body.hasAttribute('data-desktop-search')) renderDesktopQuickAccess(); });
 $('settings').addEventListener('click', () => setPanel(document.body.dataset.surface==='home'?'desktop-menu':'settings'));
-$('pin-site').addEventListener('click',saveCurrentSite);
+$('pin-site').addEventListener('click',()=>saveCurrentSite());
 $('tabs-button').addEventListener('click',()=>{setEditing(false);lockVault();if(state?.tabs?.length)setPanel('tabs');else newBrowserTab();});
 $('new-tab-button').addEventListener('click',newBrowserTab);
 $('edit-apps').addEventListener('click', () => setEditing(!editing));

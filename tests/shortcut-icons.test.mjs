@@ -10,11 +10,16 @@ function setup(){
  const effects=[],elements=new Map(),apps=[];
  const element=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',hidden:false,disabled:false,value:'',append(){},addEventListener(type,handler){this[type]=handler;},elements:{namedItem:name=>element(name)}});return elements.get(id);};
  const context={...shortcutArtwork,...messageBadges,appEditorVersion:0,panel:'edit',URL,crypto:{randomUUID:()=> 'icon-test'},Date,FormData:class{constructor(form){this.values=form;}get(key){return this.values[key];}},$ :element,escape:String,state:{mode:'browse',profileId:'iphone-13-pro-max'},editorScope:'public',vaultKey:null,pinSiteBusy:false,apps,updateQuickAdd(){},normalizedSiteUrl: url=>new URL(url).href,savedSite:()=>false,freezeSlots:value=>value,poolFor:()=>apps,findEntry:(pool,id)=>{const index=pool.findIndex(app=>app.id===id);return index<0?null:{list:pool,index,entry:pool[index]};},resolveShortcutIcon:async site=>{effects.push(['icon',site.url]);return 'data:image/png;base64,site-icon';},api:async()=>({url:'https://example.com/account',profileId:'iphone-13-pro-max',title:'Example',iconUrl:''}),saveApps:async()=>effects.push(['save',context.apps[0]?.iconUrl]),settingButton:()=>({}),setPanel:async name=>effects.push(['panel',name]),reportError:message=>effects.push(['error',message])};
+ const vaultApps=[];
+ context.state.url='https://example.com/account';
+ context.shortcutDestination=()=>context.state.privateDesktop?'private':'public';
+ context.poolFor=scope=>scope==='private'?vaultApps:context.apps;
+ context.updatePool=async(scope,entries)=>{assert.equal(scope,'public');context.apps=entries;await context.saveApps(scope);};
  vm.createContext(context);
  const defaultsStart=source.indexOf('const DEFAULT_APPS = ['),defaultsEnd=source.indexOf('const SYSTEM_APPS=',defaultsStart);
  vm.runInContext(source.slice(defaultsStart,defaultsEnd),context);
- for(const [startMarker,endMarker] of [['function brand(','async function api('],['function renderAppForm(','async function openAppEditor('],['async function saveCurrentSite(','function updateTabSurface(']]){const start=source.indexOf(startMarker),end=source.indexOf(endMarker,start);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);}
- return {context,apps,effects,element};
+ for(const [startMarker,endMarker] of [['function brand(','async function api('],['function openAddShortcut(','async function openAppEditor('],['async function saveCurrentSite(','function updateTabSurface(']]){const start=source.indexOf(startMarker),end=source.indexOf(endMarker,start);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);}
+ return {context,apps,vaultApps,effects,element};
 }
 test('manual shortcut creation resolves and stores the website icon',async()=>{
  const f=setup();f.context.renderAppForm();await f.element('app-form').submit({preventDefault(){},currentTarget:{name:'Example',url:'example.com'}});
@@ -25,7 +30,7 @@ test('quick add resolves a durable website icon before storing the shortcut',asy
   assert.deepEqual(f.effects,[['icon','https://example.com/account'],['save','data:image/png;base64,site-icon']]);
 });
 test('quick add of a messaging site saves without interrupting browsing or enabling the count',async()=>{
-  const f=setup();f.context.api=async()=>({url:'https://m.vk.ru/feed',title:'ВКонтакте',iconUrl:''});
+  const f=setup();f.context.state.url='https://m.vk.ru/feed';f.context.api=async()=>({url:f.context.state.url,title:'ВКонтакте',iconUrl:''});
   await f.context.saveCurrentSite();
   assert.equal(f.context.apps[0].messageNotifications,false);
   assert.deepEqual(f.effects,[['icon','https://m.vk.ru/feed'],['save','data:image/png;base64,site-icon']]);
@@ -114,4 +119,24 @@ test('closing the editor cancels an unfinished icon lookup before it saves',asyn
 test('the Add panel saves a new shortcut with the original website icon',async()=>{
  const f=setup();f.context.panel='add';f.context.renderAppForm();await f.element('app-form').submit({preventDefault(){},currentTarget:{name:'Added',url:'example.com',iconStyle:'site'}});
  assert.equal(f.apps.length,1);assert.equal(f.apps[0].iconUrl,'data:image/png;base64,site-icon');
+});
+test('manual creation keeps the original private destination while artwork loads',async()=>{
+ const f=setup();
+ f.context.state.privateDesktop=true;
+ f.context.vaultKey={};
+ await f.context.openAddShortcut();
+ f.context.panel='add';
+ let loadIcon;
+ f.context.resolveShortcutIcon=()=>new Promise(resolve=>{loadIcon=resolve;});
+ const destinations=[];
+ f.context.saveApps=async scope=>destinations.push(scope);
+ f.context.renderAppForm();
+ const pending=f.element('app-form').submit({preventDefault(){},currentTarget:{name:'Private',url:'https://vk.com/',messageNotifications:'on'}});
+ f.context.state.privateDesktop=false;
+ loadIcon('data:image/png;base64,private-icon');
+ await pending;
+ assert.deepEqual(destinations,['private']);
+ assert.equal(f.apps.length,0);
+ assert.equal(f.vaultApps[0].name,'Private');
+ assert.equal(f.vaultApps[0].messageNotifications,false);
 });

@@ -4,18 +4,22 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
 function setup(privateBrowsing=true,iconUrl='https://cdn.private.example/site.png'){
- const requests=[],images=[],elements=new Map(),metadataRequests=[];
+ const requests=[],images=[],elements=new Map(),metadataRequests=[],writes=[],unlocks=[];
  const url='https://private.example/account';
  const logo='data:image/png;base64,site-artwork';
  const element=id=>{if(!elements.has(id))elements.set(id,{dataset:{},innerHTML:'',setAttribute(key,value){this[key]=value;},getAttribute(key){return this[key];},replaceChildren(value){this.content=value;}});return elements.get(id);};
  const context={
-  URL,$:element,state:{mode:'browse',url,siteName:'Private',privateBrowsing,iconUrl},apps:[],flattenApps:value=>value,icon:name=>name,
+  URL,crypto,$:element,state:{activeTabId:'site',mode:'browse',url,siteName:'Private',privateBrowsing,iconUrl},apps:[],vaultApps:[],vaultKey:null,
+  poolFor:scope=>scope==='private'?context.vaultApps:context.apps,
+  updatePool:async(scope,entries)=>{writes.push(scope);context[scope==='private'?'vaultApps':'apps']=entries;},
+  flattenApps:value=>value,freezeSlots:value=>value,icon:name=>name,reportError:assert.fail,
+  requestVault:()=>unlocks.push(vm.runInContext('pendingVaultSite',context)),
   api:async method=>{metadataRequests.push(method);return {url,iconCandidates:iconUrl?[iconUrl]:[]};},
   resolveShortcutIcon:async site=>{requests.push(site);return iconUrl?logo:'';},
   Image:class{constructor(){images.push(this);}addEventListener(type,handler){this[type]=handler;}set src(value){this.source=value;} },
  };
- vm.createContext(context);const start=source.indexOf('let pinSiteBusy='),end=source.indexOf('async function saveCurrentSite(',start);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);
- return {context,element,requests,images,metadataRequests,logo};
+ vm.createContext(context);const start=source.indexOf('let pinSiteBusy='),end=source.indexOf('function updateTabSurface(',start);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);
+ return {context,element,requests,images,metadataRequests,logo,writes,unlocks};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 for(const icon of ['https://cdn.private.example/site.png',''])test('Incognito quick-add uses the local globe without resolving an external '+(icon?'declared icon':'fallback favicon'),()=>{
@@ -45,4 +49,36 @@ test('an unavailable website icon leaves the globe and saving changes the plus t
  f.context.apps.push({url:f.context.state.url});f.context.updateQuickAdd();
  assert.equal(f.element('pin-site-badge').innerHTML,'check');
  assert.equal(f.requests.length,1,'Saving the site does not reload the artwork');
+});
+for(const flag of ['privateBrowsing','privateDesktop'])test(`quick add from ${flag} authenticates and stores only in the private pool`,async()=>{
+ const f=setup(false);
+ f.context.state[flag]=true;
+ f.context.apps.push({url:f.context.state.url});
+ await f.context.saveCurrentSite();
+ assert.equal(f.unlocks.length,1);
+ assert.deepEqual(f.metadataRequests,[]);
+ assert.deepEqual(f.writes,[]);
+ f.context.vaultKey={};
+ await f.context.saveCurrentSite(f.unlocks[0]);
+ assert.deepEqual(f.writes,['private']);
+ assert.equal(f.context.apps.length,1);
+ assert.equal(f.context.vaultApps[0].url,f.context.state.url);
+ assert.equal(f.context.vaultApps[0].iconUrl,f.logo);
+ assert.equal(f.element('pin-site-badge').innerHTML,'check');
+});
+test('a delayed private quick add is discarded when the tab changes or the vault locks',async()=>{
+ for(const invalidate of [context=>{context.state.activeTabId='other';},context=>{context.vaultKey=null;}]){
+  const f=setup();
+  f.context.vaultKey={};
+  let finish;
+  f.context.resolveShortcutIcon=()=>new Promise(resolve=>{finish=resolve;});
+  const pending=f.context.saveCurrentSite();
+  await settle();
+  invalidate(f.context);
+  finish(f.logo);
+  await pending;
+  assert.deepEqual(f.writes,[]);
+  assert.equal(f.context.apps.length,0);
+  assert.equal(f.context.vaultApps.length,0);
+ }
 });

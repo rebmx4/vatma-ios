@@ -219,11 +219,12 @@ final class BrowserController: UIViewController {
         return renderer
     }
 
-    func open(_ input: String, webApp: Bool? = nil) throws {
+    func open(_ input: String, webApp: Bool? = nil, privateDesktop: Bool = false) throws {
         let url = try AddressResolver.resolve(input, engine: model.preferences.searchEngine)
         if mode == "home", !model.active.url.isEmpty || currentRenderer != nil {
             newTab(privateBrowsing: model.active.isPrivate)
         }
+        if privateDesktop { model.tabs[model.activeIndex].privateDesktopBrowsing = true }
         try open(URLRequest(url: url), webApp: webApp)
     }
 
@@ -327,6 +328,7 @@ final class BrowserController: UIViewController {
                 "width": frame.width, "height": frame.height, "footerHeight": currentFooterHeight,
                 "safeAreaBottom": windowBottomConstraint?.isActive == true ? view.safeAreaInsets.bottom : 0,
                 "webApp": webApp, "controlsCollapsed": controlsCollapsed, "privateBrowsing": tab.isPrivate,
+                "privateDesktop": tab.isPrivateDesktop,
                 "canGoBack": mode == "browse" && currentRenderer?.canGoBack == true,
                 "canGoForward": mode == "browse" && currentRenderer?.canGoForward == true,
                 "loading": tab.loading, "error": nativeError as Any? ?? tab.error as Any? ?? NSNull(),

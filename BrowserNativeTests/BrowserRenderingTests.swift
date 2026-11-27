@@ -244,6 +244,36 @@ final class BrowserRenderingTests: XCTestCase {
         XCTAssertEqual(reloaded, stored, "Saved artwork must survive a fresh UI document without the website")
     }
 
+    func testQuickAddFromPrivateDesktopStoresTheWebsiteOnlyInTheVault() async throws {
+        let url = try await startFixture(video: false).appendingPathComponent("red").absoluteString
+        try await waitForUI()
+        _ = try await rpc("open", body: ["url": url, "privateDesktop": true])
+        XCTAssertEqual(controller.state()["privateDesktop"] as? Bool, true)
+        try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(220, 38, 40)")
+        try await waitFor("!document.getElementById('pin-site').disabled", in: controller.ui)
+        _ = try await script("document.getElementById('pin-site').click(); return true;", in: controller.ui)
+        try await waitFor("!!document.querySelector('[data-vault-choice=pin]')", in: controller.ui)
+        _ = try await script("document.querySelector('[data-vault-choice=pin]').click(); return true;", in: controller.ui)
+        let enterCode = """
+            for (const digit of '123456') document.querySelector('[data-pin="' + digit + '"]').click();
+            return true;
+            """
+        _ = try await script(enterCode, in: controller.ui)
+        try await waitFor("document.querySelector('.pin-keypad button[data-pin=\"1\"]')?.disabled===false", in: controller.ui)
+        _ = try await script(enterCode, in: controller.ui)
+        try await waitFor("document.getElementById('pin-site').dataset.saved==='true' && !document.getElementById('pin-site').hidden", in: controller.ui)
+        let saved = try await script("""
+            const {openVault} = await import('/vault.js');
+            const {items} = await openVault('123456', JSON.parse(localStorage.getItem('atma-preview-vault')));
+            const ordinary = JSON.parse(localStorage.getItem('atma-preview-apps'));
+            return {inVault: items.some(app => app.url === url && app.iconUrl?.startsWith('data:image/png;base64,')),
+                    onDesktop: ordinary.some(app => app.url === url), mode: document.body.dataset.mode};
+            """, in: controller.ui, arguments: ["url": url]) as? [String: Any]
+        XCTAssertEqual(saved?["inVault"] as? Bool, true)
+        XCTAssertEqual(saved?["onDesktop"] as? Bool, false)
+        XCTAssertEqual(saved?["mode"] as? String, "browse")
+    }
+
     func testManualShortcutRepairsMissingIconAndCollapsesSingletonFolder() async throws {
         let url = try await startFixture(video: false, largeMetadata: true).appendingPathComponent("manifest-only").absoluteString
         try await waitForUI()

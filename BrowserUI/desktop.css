@@ -198,6 +198,68 @@ body[data-theme=light] .app-item[data-app=youtube] .app-tile:has(.shortcut-brand
   height: 86%;
 }
 
+.private-desktop-artwork {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  color: #e1ecff;
+  background:
+    radial-gradient(ellipse at 28% 3%, #5a6fa9 0, transparent 65%),
+    linear-gradient(145deg, #293650, #131723 78%);
+  box-shadow: inset 0 0 0 1px #c3d6ff35, inset 0 1px 4px #e1edff3b;
+}
+
+.private-desktop-artwork::before {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: linear-gradient(150deg, #a6b7dd3b, #0e152580);
+  box-shadow: inset 0 0 0 1px #a5bded8c, inset 0 0 9px #a1bbfd38, 0 2px 8px #0b102a73;
+}
+
+.private-desktop-keyhole {
+  position: absolute;
+  inset: 34% 41%;
+  filter: drop-shadow(0 0 4px #9cbcffb3);
+}
+
+.private-desktop-keyhole::before,
+.private-desktop-keyhole::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.private-desktop-keyhole::before {
+  inset: 0 0 auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+.private-desktop-keyhole::after {
+  inset: 37% 27% 0;
+  border-radius: 3px;
+}
+
+body[data-theme=light] .private-desktop-artwork {
+  color: #fff;
+  background:
+    radial-gradient(ellipse at 26% 0, #b9cfff 0, transparent 68%),
+    linear-gradient(142deg, #748bc0, #35476f 82%);
+  box-shadow: inset 0 0 0 1px #ebf2ffe0, inset 0 1px 5px #f1f6ff80;
+}
+
+.pin-lock:has(.private-desktop-artwork) {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto;
+  border-radius: 15px;
+}
+
 .home .desktop-slot {
   height: 100%;
   place-items: center;

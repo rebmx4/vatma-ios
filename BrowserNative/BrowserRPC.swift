@@ -74,7 +74,11 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "open":
             guard body["profileId"] == nil,
                   body["webApp"] == nil || body["webApp"] is Bool else { throw BrowserFailure.invalid("Device switching is not supported.") }
-            try open(try string("url", body), webApp: body["webApp"] as? Bool)
+            guard body["privateDesktop"] == nil || body["privateDesktop"] is Bool else {
+                throw BrowserFailure.invalid("Invalid private desktop scope.")
+            }
+            try open(try string("url", body), webApp: body["webApp"] as? Bool,
+                     privateDesktop: body["privateDesktop"] as? Bool == true)
         case "shortcut/open":
             try openShortcut(try string("url", body), shortcutId: try string("shortcutId", body))
         case "home": returnHome()
