@@ -41,15 +41,16 @@ ERROR_MESSAGES = {
 }
 
 
-def rounded_image(root, radius, background, outline, surface):
-    size = 2 * radius + 3
+def rounded_image(root, radius, background, outline, surface, tile):
+    size = 2 * (radius + 1) + tile
     center = (size - 1) / 2
+    straight = (tile + 1) / 2
     colors = [root.winfo_rgb(color) for color in (background, outline, surface)]
     pixels = bytearray()
     for y in range(size):
         for x in range(size):
-            dx = max(0, abs(x - center) - 1)
-            dy = max(0, abs(y - center) - 1)
+            dx = max(0, abs(x - center) - straight)
+            dy = max(0, abs(y - center) - straight)
             distance = math.hypot(dx, dy)
             edge = min(1, max(0, radius + 0.5 - distance))
             fill = min(1, max(0, radius - 0.5 - distance))
@@ -65,14 +66,17 @@ def configure_window(root):
     style.theme_use("clam")
     images = []
 
-    def element(name, radius, background, outline, surface, padding, states=()):
-        image = rounded_image(root, radius, background, outline, surface)
-        variants = [(state, rounded_image(root, radius, background, border, fill))
+    def element(name, radius, background, outline, surface, padding, states=(), tile=16):
+        image = rounded_image(root, radius, background, outline, surface, tile)
+        variants = [(state, rounded_image(root, radius, background, border, fill, tile))
                     for state, border, fill in states]
         images.extend([image, *(variant for _, variant in variants)])
-        style.element_create(name, "image", image, *variants, border=radius + 1, padding=padding, sticky="nsew")
+        minimum = 2 * radius + 3
+        style.element_create(name, "image", image, *variants, border=radius + 1, padding=padding,
+                             width=minimum, height=minimum, sticky="nsew")
 
-    element("Disk.Card", 22, BACKGROUND, "#313131", SURFACE, (16, 12))
+    # Large center tiles keep Tk from painting each pixel of a panel separately on macOS.
+    element("Disk.Card", 22, BACKGROUND, "#313131", SURFACE, (16, 12), tile=64)
     style.layout("Card.TFrame", [("Disk.Card", {"sticky": "nsew"})])
     element("Disk.Network", 15, BACKGROUND, "#343c37", "#1b221e", (10, 6))
     style.layout("Network.TFrame", [("Disk.Network", {"sticky": "nsew"})])
