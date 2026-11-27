@@ -29,33 +29,95 @@ struct PhoneDiskApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject var transfers = Transfers.shared
     @StateObject var disk = Browser()
+    @StateObject private var computers = Computers()
+    @StateObject private var filesLock = FilesLock()
+    @State private var lockSettings = false
+    @State private var disconnect = false
+    @State private var addComputer = false
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
         WindowGroup {
-            DiskScreen(disk:disk,transfers:transfers)
+            Group {
+                if computers.connected {
+                    DiskScreen(disk: disk, transfers: transfers, filesLock: filesLock)
+                } else {
+                    PairComputerScreen(computers: computers)
+                }
+            }
                 .preferredColorScheme(.dark)
                 .tint(DiskPalette.accent)
                 .background(Color.black.ignoresSafeArea())
+                .overlay {
+                    if filesLock.enabled && phase != .active {
+                        Color.black.ignoresSafeArea().accessibilityHidden(true)
+                    }
+                }
                 .task {
                     DiskRoutes.shared.start()
                     if let route = DiskRoutes.shared.selected { disk.changeRoute(route) }
-                    else if Transfers.base.host != "127.0.0.1" { disk.reload() }
+                    else if computers.connected && Transfers.base.host != "127.0.0.1" { disk.reload() }
                     transfers.recover()
                 }
                 .onReceive(DiskRoutes.shared.$selected.dropFirst()) { route in
-                    disk.changeRoute(route)
+                    if computers.connected { disk.changeRoute(route) }
                     if route != nil { transfers.routeChanged() }
+                }
+                .onReceive(computers.$computer.dropFirst()) { computer in
+                    disk.resetWebsite()
+                    if computer != nil || PairedComputer.hasLegacyComputer { disk.reload() }
+                    if computer != nil {
+                        if addComputer { addComputer = false }
+                        else if !filesLock.enabled { lockSettings = true }
+                    }
+                }
+                .onReceive(disk.openProtection) { lockSettings = true }
+                .onReceive(disk.closeComputer) { disconnect = true }
+                .onReceive(disk.openPairing) { addComputer = true }
+                .onReceive(disk.accessLost) { Task { await computers.disconnect(revoke: false) } }
+                .sheet(isPresented: $addComputer, onDismiss: {
+                    if PairedComputer.load() != nil && !filesLock.enabled { lockSettings = true }
+                }) {
+                    NavigationStack {
+                        PairComputerScreen(computers: computers)
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Закрыть") { addComputer = false }
+                                }
+                            }
+                    }
                 }
                 .onChange(of:phase) { _, state in
                     if state == .active {
                         DiskRoutes.shared.refresh()
-                        disk.reconnectIfNeeded()
+                        if computers.connected { disk.reconnectIfNeeded() }
                         transfers.recover()
                         Task { try? await transfers.scan() }
                     }
-                    if state == .background { Transfers.schedule() }
+                    if state == .background {
+                        filesLock.background()
+                        if filesLock.enabled { disk.pauseMedia() }
+                        Transfers.schedule()
+                    }
                 }
+                .confirmationDialog("Защита «Файлов»", isPresented: $lockSettings, titleVisibility: .visible) {
+                    if filesLock.enabled {
+                        Button("Отключить защиту", role: .destructive) { Task { await filesLock.setEnabled(false) } }
+                    } else {
+                        Button("Включить Face ID или код iPhone") { Task { await filesLock.setEnabled(true) } }
+                    }
+                    Button("Закрыть", role: .cancel) {}
+                } message: {
+                    Text("Системная проверка открывает «Файлы» после запуска и возврата в приложение.")
+                }
+                .alert("Отключить компьютер?", isPresented: $disconnect) {
+                    Button("Отключить", role: .destructive) { Task { await computers.disconnect(revoke: true) } }
+                    Button("Отмена", role: .cancel) {}
+                }
+                .alert("Защита «Файлов»", isPresented: Binding(get: { !filesLock.message.isEmpty },
+                                                              set: { if !$0 { filesLock.message = "" } })) {
+                    Button("Закрыть", role: .cancel) { filesLock.message = "" }
+                } message: { Text(filesLock.message) }
         }
     }
 }
@@ -137,14 +199,21 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     @Published private(set) var pageState: DiskPageState = .connecting
     let uploadSelection = PassthroughSubject<NativePickerRequest,Never>()
     let openTransfers = PassthroughSubject<Void,Never>()
+    let openProtection = PassthroughSubject<Void, Never>()
+    let closeComputer = PassthroughSubject<Void, Never>()
+    let openPairing = PassthroughSubject<Void, Never>()
+    let accessLost = PassthroughSubject<Void, Never>()
+    @Published private(set) var websiteRevision = UUID()
     private let bridge = "phoneDiskNative"
     private var webTab: DiskTab = .files
     private var pageRoute: DiskRoute?
     private var pageNavigation: WKNavigation?
     private var reconnect: Task<Void, Never>?
-    lazy var view:WKWebView = {
+    private var webView: WKWebView?
+    var view: WKWebView {
+        if let webView { return webView }
         let config=WKWebViewConfiguration()
-        config.websiteDataStore = .default()
+        config.websiteDataStore = PairedComputer.load() == nil ? .default() : .nonPersistent()
         config.allowsInlineMediaPlayback=true
         let nativeTabs = """
         window.phoneDiskNativeTabVersion = 1;
@@ -158,7 +227,19 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         config.userContentController.addUserScript(WKUserScript(source:nativeTabs,injectionTime:.atDocumentStart,forMainFrameOnly:true))
         let script = """
         const deviceSettings = document.getElementById('device-settings');
-        if (deviceSettings) deviceSettings.hidden = false;
+        if (deviceSettings) {
+          deviceSettings.hidden = false;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.nativeSetting = 'face-settings';
+          button.textContent = 'Защита «Файлов»';
+          deviceSettings.append(button);
+          const link = document.createElement('button');
+          link.type = 'button';
+          link.dataset.nativeSetting = 'pair-computer';
+          link.textContent = 'Добавить компьютер';
+          deviceSettings.append(link);
+        }
         document.addEventListener('click', event => {
           const bridge = window.webkit.messageHandlers.phoneDiskNative;
           if (event.target.closest('#logout')) bridge.postMessage('revoke-device');
@@ -186,8 +267,31 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             config.websiteDataStore.proxyConfigurations = []
             pageNavigation = view.load(URLRequest(url: Transfers.base))
         }
+        webView = view
         return view
-    }()
+    }
+
+    func resetWebsite() {
+        reconnect?.cancel()
+        reconnect = nil
+        pageNavigation = nil
+        pageRoute = nil
+        webView?.stopLoading()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: bridge)
+        webView = nil
+        webTab = .files
+        pageState = .connecting
+        websiteRevision = UUID()
+    }
+
+    func pauseMedia() {
+        webView?.evaluateJavaScript("document.querySelectorAll('video,audio').forEach(media => media.pause())", completionHandler: nil)
+    }
+
+    private func accepts(_ url: URL?) -> Bool {
+        if let route = pageRoute, route.companionID != nil { return route.acceptsBackgroundURL(url) }
+        return PairedComputer.load() == nil && Transfers.sameHost(url)
+    }
 
     func reload() {
         reconnect?.cancel()
@@ -216,7 +320,13 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         pageRoute = route
         view.configuration.websiteDataStore.proxyConfigurations = route.proxy
         pageState = .connecting
-        pageNavigation = view.load(URLRequest(url: Transfers.base))
+        let origin = route.webOrigin ?? Transfers.base
+        var request = URLRequest(url: origin, cachePolicy: .reloadIgnoringLocalCacheData)
+        if let id = route.companionID {
+            guard let computer = PairedComputer.load(), computer.id == id else { pageState = .unavailable; return }
+            request.setValue("Bearer " + computer.credential.token, forHTTPHeaderField: "Authorization")
+        }
+        pageNavigation = view.load(request)
     }
 
     fileprivate func selectWebTab(_ tab: DiskTab) {
@@ -226,7 +336,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 
     private func syncWebTab() {
-        guard Transfers.sameHost(view.url) else { return }
+        guard let webView, accepts(webView.url) else { return }
         let tab = webTab
         let script = """
         (() => {
@@ -253,9 +363,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 
     func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host==Transfers.base.host,
-              message.frameInfo.securityOrigin.protocol==Transfers.base.scheme,
-              [0,Transfers.base.port ?? 443].contains(message.frameInfo.securityOrigin.port) else { return }
+        guard message.webView === webView, message.frameInfo.isMainFrame, accepts(message.frameInfo.request.url) else { return }
         if let action=message.body as? String {
             switch action {
             case "enable":
@@ -268,11 +376,24 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
                 Transfers.shared.askNotifications()
             case "revoke-device":
                 Task { @MainActor in await Transfers.shared.revokeDevice() }
+            case "face-settings":
+                openProtection.send()
+            case "pair-computer" where pageRoute?.companionID == nil:
+                openPairing.send()
+            case "unpair" where pageRoute?.companionID != nil:
+                closeComputer.send()
+            case "access-revoked" where pageRoute?.companionID != nil:
+                accessLost.send()
             default:
                 break
             }
         } else if let update=message.body as? [String:String], update["action"]=="backup-settings" {
             Task { @MainActor in await Transfers.shared.backupSettingsChanged(enabled:update["enabled"]=="true") }
+        } else if let download = message.body as? [String: String], download["action"] == "download",
+                  pageRoute?.companionID != nil, let source = download["source"], let path = download["path"],
+                  Transfers.valid(Destination(source: source, path: path)) {
+            let url = Transfers.address("/api/resources/download", ["source": source, "file": path])
+            if Transfers.shared.enqueueDownload(url, download["name"]) { openTransfers.send() }
         } else if let selection=message.body as? [String:String], selection["action"]=="upload" {
             let type=selection["type"] ?? "files"
             guard ["files","album","photo","video"].contains(type) else { return }
@@ -285,7 +406,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping (WKNavigationActionPolicy)->Void) {
-        guard Transfers.sameHost(action.request.url) else { decisionHandler(.cancel); return }
+        guard webView === self.webView, accepts(action.request.url) else { decisionHandler(.cancel); return }
         if let url=action.request.url,url.path=="/api/resources/download",(action.request.httpMethod ?? "GET") == "GET" {
             if Transfers.shared.enqueueDownload(url,nil) { openTransfers.send() }
             decisionHandler(.cancel)
@@ -293,11 +414,33 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView:WKWebView,createWebViewWith configuration:WKWebViewConfiguration,for action:WKNavigationAction,windowFeatures:WKWindowFeatures)->WKWebView? {
-        if action.targetFrame==nil,Transfers.sameHost(action.request.url) { webView.load(action.request) }
+        if action.targetFrame==nil, accepts(action.request.url) { webView.load(action.request) }
         return nil
     }
 
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard webView === self.webView, let route = pageRoute, route.companionID != nil else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        let (result, credential) = route.evaluate(challenge)
+        completionHandler(result, credential)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if webView === self.webView, navigationResponse.isForMainFrame, pageRoute?.companionID != nil,
+           let response = navigationResponse.response as? HTTPURLResponse, response.statusCode == 401, accepts(response.url) {
+            decisionHandler(.cancel)
+            accessLost.send()
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) {
+        guard webView === self.webView else { return }
         if let pageNavigation, pageNavigation !== navigation { return }
         pageNavigation = nil
         reconnect?.cancel()
@@ -328,10 +471,12 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         Task { @MainActor in try? await Transfers.shared.scan() }
     }
     func webView(_ webView:WKWebView,didFailProvisionalNavigation navigation:WKNavigation!,withError error:Error) {
+        guard webView === self.webView else { return }
         navigationFailed(navigation, error: error)
     }
 
     func webView(_ webView:WKWebView,didFail navigation:WKNavigation!,withError error:Error) {
+        guard webView === self.webView else { return }
         navigationFailed(navigation, error: error)
     }
 
@@ -375,6 +520,8 @@ struct ImportFile: Transferable {
 struct DiskScreen: View {
     @ObservedObject var disk:Browser
     @ObservedObject var transfers:Transfers
+    @ObservedObject var filesLock: FilesLock
+    @Environment(\.scenePhase) private var phase
     @State private var photos:[PhotosPickerItem]=[]
     @State private var destination:Destination?
     @State private var files=false
@@ -388,20 +535,31 @@ struct DiskScreen: View {
     @State private var showDestinations=false
     @State private var pickPhotos=false
     @State private var pickerType="album"
+    @State private var offeredUnlock = false
 
     var body: some View {
         VStack(spacing:0) {
             ZStack {
                 webContent
-                    .opacity(currentTab == .transfers ? 0 : 1)
-                    .allowsHitTesting(currentTab != .transfers)
-                    .accessibilityHidden(currentTab == .transfers)
+                    .opacity(currentTab == .transfers || filesLock.needsUnlock ? 0 : 1)
+                    .allowsHitTesting(currentTab != .transfers && !filesLock.needsUnlock)
+                    .accessibilityHidden(currentTab == .transfers || filesLock.needsUnlock)
+                if currentTab != .transfers && filesLock.needsUnlock { unlockScreen }
                 if currentTab == .transfers { queue }
             }
             if currentTab == .transfers { transferControls }
             transferTabs
         }
         .background(Color.black)
+        .onAppear { unlockIfNeeded() }
+        .onChange(of: phase) { _, phase in
+            if phase == .background { offeredUnlock = false }
+            if phase == .active { unlockIfNeeded() }
+        }
+        .onChange(of: currentTab) { _, tab in
+            if tab != .files { offeredUnlock = false }
+            unlockIfNeeded()
+        }
         .onReceive(disk.openTransfers) { showTransfers(.download) }
         .onReceive(disk.uploadSelection) { selection in
             pickerType=selection.type
@@ -444,10 +602,28 @@ struct DiskScreen: View {
         } message:{ Text(transfers.message) }
     }
 
+    private var unlockScreen: some View {
+        ContentUnavailableView {
+            Label("Файлы защищены", systemImage: "lock")
+        } actions: {
+            Button("Разблокировать") { Task { await filesLock.unlock() } }
+                .buttonStyle(.borderedProminent)
+                .disabled(filesLock.authenticating)
+        }
+    }
+
+    private func unlockIfNeeded() {
+        guard phase == .active, currentTab == .files, filesLock.needsUnlock,
+              !filesLock.authenticating, !offeredUnlock else { return }
+        offeredUnlock = true
+        Task { await filesLock.unlock() }
+    }
+
     private var webContent: some View {
         VStack(spacing:0) {
             ZStack {
                 WebSurface(browser:disk)
+                    .id(disk.websiteRevision)
                     .opacity(disk.pageState == .ready ? 1 : 0)
                     .allowsHitTesting(disk.pageState == .ready)
                     .accessibilityHidden(disk.pageState != .ready)
@@ -507,7 +683,7 @@ struct DiskScreen: View {
     }
 
     private var visibleTransfers: [DiskJob] {
-        transfers.jobs.filter { $0.hiddenFromQueue != true && transferDirection.includes($0) }
+        transfers.jobs.filter { Transfers.belongsToCurrentComputer($0) && $0.hiddenFromQueue != true && transferDirection.includes($0) }
     }
 
     private var queue: some View {
@@ -712,7 +888,13 @@ struct DiskScreen: View {
                 Spacer(minLength: 0)
                 if !selectingTransfers {
                     if job.downloadURL != nil {
-                        if job.isFinished, let name = job.localName { completedDownload(job, name: name) }
+                        if job.isFinished, let name = job.localName {
+                            if filesLock.needsUnlock {
+                                transferIcon("Разблокировать скачанный файл", "lock") { Task { await filesLock.unlock() } }
+                            } else {
+                                completedDownload(job, name: name)
+                            }
+                        }
                         downloadActions(job)
                     } else if !job.isFinished &&
                         !["Выгрузка", "Подготовка", "Проверка на ПК", "Проверка файла"].contains(job.phase) {

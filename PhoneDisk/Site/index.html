@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Подключите iPhone к своему компьютеру и открывайте выбранные папки по домашнему Wi-Fi.">
+  <title>Мой диск — подключить компьютер</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="downloads.js"></script>
+  <script defer src="guide.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Мой диск, на главную">
+      <img src="icon.png" width="40" height="40" alt="">
+      <span>Мой диск</span>
+    </a>
+    <a class="quiet-link" id="demo" href="./demo/">Открыть демо</a>
+  </header>
+  <main>
+    <section class="intro" id="start">
+      <div class="intro-copy">
+        <h1>Ваши папки на iPhone</h1>
+        <p>Выберите, какие папки открыть. «Мой диск» свяжет iPhone с компьютером по домашнему Wi‑Fi.</p>
+        <button class="primary" id="begin" type="button">Подключить мой компьютер</button>
+      </div>
+      <figure class="connection" aria-label="Папка Видео на компьютере и на iPhone">
+        <div class="desktop" aria-hidden="true">
+          <div class="app-heading"><img src="icon.png" alt=""><b>Мой диск</b></div>
+          <span class="small">Общие папки</span>
+          <div class="folder-row"><span class="folder"></span><strong>Видео</strong></div>
+          <span class="mock-button">Подключить телефон</span>
+        </div>
+        <div class="phone" aria-hidden="true">
+          <b>Папки</b>
+          <span class="folder"></span>
+          <span>Видео</span>
+          <span class="phone-tab">Файлы</span>
+        </div>
+      </figure>
+    </section>
+    <section class="guide" id="guide" aria-label="Подключение компьютера" hidden>
+      <ol class="steps" id="steps" aria-label="Шаги подключения">
+        <li><button type="button" data-step="0"><span>1</span> iPhone</button></li>
+        <li><button type="button" data-step="1"><span>2</span> Windows</button></li>
+        <li><button type="button" data-step="2"><span>3</span> Папка</button></li>
+        <li><button type="button" data-step="3"><span>4</span> QR-код</button></li>
+      </ol>
+      <div class="step-body">
+        <p class="progress" id="progress"></p>
+        <h1 id="step-title" tabindex="-1"></h1>
+        <p class="step-text" id="description"></p>
+        <div class="example" id="example"></div>
+        <div class="install" id="install" hidden>
+          <a class="primary" id="download"></a>
+          <p class="availability" id="availability" role="status"></p>
+        </div>
+        <nav class="guide-actions" aria-label="Переход между шагами">
+          <button class="quiet-link" id="back" type="button">Назад</button>
+          <button class="primary" id="next" type="button">Дальше</button>
+        </nav>
+      </div>
+    </section>
+    <noscript><p>Откройте «Мой диск» на ПК, выберите папку и нажмите «Подключить телефон». Затем отсканируйте QR-код в «Моём диске» на iPhone.</p></noscript>
+  </main>
+</body>
+</html>

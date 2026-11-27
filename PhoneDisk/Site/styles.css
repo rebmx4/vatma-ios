@@ -1,0 +1,70 @@
+:root {
+  color-scheme: dark;
+  background: #000;
+  color: #f4f4f4;
+  --green: #a4c8ae;
+  --muted: #b2b2b2;
+  --surface: #171717;
+  --line: #303030;
+  font: 16px / 1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; min-width: 280px; }
+a { color: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 4px; }
+.site-header { max-width: 1170px; margin: auto; min-height: 86px; padding: 12px 40px; display: flex; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-size: 1.08rem; font-weight: 650; text-decoration: none; }
+.brand img { border-radius: 11px; }
+.quiet-link { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; border: 0; background: transparent; color: var(--green); text-decoration: none; border-radius: 12px; }
+.quiet-link:hover { background: var(--surface); }
+main { max-width: 1170px; margin: auto; padding: 0 40px; }
+.intro { display: grid; align-items: center; grid-template-columns: 1.05fr 1fr; column-gap: 48px; min-height: min(580px, 80svh); padding: 64px 0; }
+h1 { font-size: clamp(2.4rem, 6vw, 4.6rem); line-height: 1.05; letter-spacing: -.055em; margin: 0; text-wrap: balance; }
+.intro p, .step-text { max-width: 490px; font-size: clamp(1rem, 2vw, 1.22rem); color: var(--muted); margin: 20px 0 29px; }
+.primary { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; border: 1px solid transparent; border-radius: 30px; padding: 0 22px; background: var(--green); color: #102017; font-weight: 660; text-align: center; text-decoration: none; }
+.primary:hover { background: #b8d6c1; }
+.connection { position: relative; min-height: 343px; margin: 0; display: grid; align-items: center; padding-right: 18%; }
+.desktop { background: var(--surface); border: 1px solid var(--line); border-radius: 23px; min-height: 245px; padding: 19px 22px; box-shadow: 0 24px 50px #000; }
+.app-heading { display: flex; align-items: center; gap: 8px; font-size: 1rem; margin-bottom: 19px; }
+.app-heading img { width: 28px; height: 28px; border-radius: 7px; }
+.small { color: var(--muted); font-size: .88rem; }
+.folder-row { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); min-height: 52px; }
+.folder { display: inline-block; vertical-align: middle; background: #f8db91; border-radius: .19em; width: 1.7em; height: 1.12em; margin: .25em 0 0; position: relative; }
+.folder::before { content: ""; position: absolute; width: .79em; height: .30em; inset: -.19em auto auto .10em; background: inherit; border-radius: .17em .18em 0 0; }
+.mock-button { display: inline-block; margin-top: 20px; padding: 5px 12px; border-radius: 16px; background: #27372d; color: var(--green); font-size: .88rem; }
+.phone { position: absolute; width: 34%; min-width: 108px; aspect-ratio: 1 / 1.65; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; justify-content: center; background: #070707; border: 4px solid #2c2c2c; border-radius: 28px; text-align: center; padding: 14px 5px 45px; font-size: .87rem; box-shadow: 0 16px 30px #000c; }
+.phone b { margin-bottom: 9px; }
+.phone .folder { font-size: 1.9rem; }
+.phone-tab { position: absolute; bottom: 7px; left: 7px; right: 7px; background: #222; color: var(--green); border: 1px solid #383838; border-radius: 20px; padding: 3px 0; font-size: .9rem; }
+.guide { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 48px; margin: 56px 0 60px; }
+.steps { list-style: none; padding: 0 15px 0 0; margin: 0; border-right: 1px solid var(--line); }
+.steps button { min-height: 46px; width: 100%; padding: 0 8px; color: var(--muted); border: 0; border-radius: 10px; text-align: left; background: transparent; }
+.steps button span { margin-right: 5px; }
+.steps button[aria-current="step"] { color: var(--green); background: #1b241e; }
+.steps button:hover { color: var(--green); }
+.step-body { max-width: 720px; min-width: 0; }
+.step-body h1 { font-size: clamp(2rem, 4.5vw, 3.6rem); overflow-wrap: break-word; }
+.progress { margin: 0 0 14px; color: var(--green); font-size: .94rem; }
+.example { margin-bottom: 24px; }
+.example:empty { display: none; }
+.example .path { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.path span + span::before { content: "›"; color: var(--muted); margin-right: 8px; }
+.example p, .availability { color: var(--muted); font-size: .95rem; margin: 12px 0; }
+.availability:empty { display: none; }
+.guide-actions { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; }
+.guide-actions .primary { min-height: 44px; }
+@media (max-width: 740px) {
+  .site-header { min-height: 72px; padding: 10px 17px; }
+  main { padding: 0 17px; }
+  .intro { grid-template-columns: 1fr; gap: 18px; padding: 40px 0; }
+  .intro p { margin: 15px 0 23px; }
+  .connection { width: min(100%, 420px); min-height: 268px; padding-right: 19%; }
+  .desktop { min-height: 207px; padding: 13px 15px; }
+  .phone { bottom: 2px; }
+  .guide { margin: 24px 0 35px; grid-template-columns: 1fr; gap: 22px; }
+  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .steps button { text-align: center; font-size: .87rem; padding: 0 2px; overflow-wrap: anywhere; }
+}

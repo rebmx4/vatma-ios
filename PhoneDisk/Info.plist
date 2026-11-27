@@ -26,6 +26,10 @@
     <string>Домашнее подключение открывает твои папки через Wi-Fi.</string>
     <key>NSBonjourServices</key>
     <array><string>_phonedisk._tcp</string></array>
+    <key>NSCameraUsageDescription</key>
+    <string>Камера считывает QR-код подключения с экрана вашего ПК.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Face ID подтверждает доступ к вашим файлам.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key><true/>

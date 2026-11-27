@@ -103,7 +103,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     static func valid(_ destination: Destination) -> Bool {
-        guard sources.contains(destination.source), destination.path.hasPrefix("/") else { return false }
+        let permitted: Bool
+        if PairedComputer.load() != nil {
+            let prefix = "folder-"
+            permitted = destination.source.hasPrefix(prefix) && PairInvitation.validID(String(destination.source.dropFirst(prefix.count)))
+        } else {
+            permitted = sources.contains(destination.source)
+        }
+        guard permitted, destination.path.hasPrefix("/") else { return false }
         if destination.path == "/" { return true }
         return destination.path.dropFirst().split(separator:"/",omittingEmptySubsequences:false).allSatisfy {
             !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("\\") && !$0.hasPrefix(".phone-disk-")
@@ -111,7 +118,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     static func sameHost(_ url: URL?) -> Bool {
-        url?.scheme == base.scheme && url?.host == base.host && (url?.port ?? 443) == (base.port ?? 443) && url?.user == nil && url?.password == nil
+        let origin = PairedComputer.load()?.logicalOrigin ?? base
+        return url?.scheme == origin.scheme && url?.host == origin.host && (url?.port ?? 443) == (origin.port ?? 443) && url?.user == nil && url?.password == nil
     }
 
     static func downloadLocation(_ url: URL) -> Destination? {
@@ -127,13 +135,18 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func isRunnable(_ id:String) -> Bool {
-        jobs.contains { $0.id == id && !$0.isStopped && !$0.isFinished }
+        jobs.contains { $0.id == id && Self.belongsToCurrentComputer($0) && !$0.isStopped && !$0.isFinished }
+    }
+
+    static func belongsToCurrentComputer(_ job: DiskJob) -> Bool {
+        if let paired = PairedComputer.load() { return job.computerID == paired.id }
+        return PairedComputer.hasLegacyComputer && job.computerID == nil
     }
 
     func recover() {
         Task { @MainActor in
             await restoreTasks()
-            for job in jobs where job.asset == nil && !job.isFinished && !job.isStopped && !active.contains(job.id) {
+            for job in jobs where Self.belongsToCurrentComputer(job) && job.asset == nil && !job.isFinished && !job.isStopped && !active.contains(job.id) {
                 start(job.id)
             }
         }
@@ -141,7 +154,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     @MainActor func refreshQueue() async {
         await restoreTasks()
-        for job in jobs where job.asset == nil && !job.isStopped && !job.isFinished && !active.contains(job.id) && retrying[job.id] == nil {
+        for job in jobs where Self.belongsToCurrentComputer(job) && job.asset == nil && !job.isStopped && !job.isFinished && !active.contains(job.id) && retrying[job.id] == nil {
             start(job.id)
         }
         try? await scan(prepareOriginals:false)
@@ -209,7 +222,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     static func address(_ path: String, _ query: [String:String] = [:]) -> URL {
-        var url = URLComponents(url:base,resolvingAgainstBaseURL:false)!
+        var url = URLComponents(url:PairedComputer.load()?.logicalOrigin ?? base,resolvingAgainstBaseURL:false)!
         url.path = path
         url.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name:$0.key,value:$0.value) }
         url.percentEncodedQuery = url.percentEncodedQuery?.replacingOccurrences(of:"+",with:"%2B")
@@ -217,7 +230,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func request(_ url:URL, method:String = "GET") async throws -> URLRequest {
-        guard Self.sameHost(url) else { throw DiskFailure.rejected }
+        guard PairedComputer.load() == nil, Self.sameHost(url) else { throw DiskFailure.rejected }
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies {
                 continuation.resume(returning:$0.filter { $0.domain.trimmingCharacters(in:CharacterSet(charactersIn:".")) == Self.base.host && ($0.expiresDate ?? .distantFuture) > Date() })
@@ -288,7 +301,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             try FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],
                                                   ofItemAtPath:stage(id).path)
             var queue = jobs
-            queue.insert(DiskJob(id:id,name:filename(name ?? url.lastPathComponent),destination:destination,asset:asset),at:0)
+            queue.insert(DiskJob(id:id,name:filename(name ?? url.lastPathComponent),destination:destination,asset:asset,
+                                 computerID:PairedComputer.load()?.id),at:0)
             try writeQueue(queue)
             jobs = queue
         } catch {
@@ -302,7 +316,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func enqueueDownload(_ url:URL,_ name:String?) -> Bool {
         guard let location = Self.downloadLocation(url) else { return false }
         let existing = jobs.contains { job in
-            guard !job.isFinished, job.hiddenFromQueue != true,
+            guard Self.belongsToCurrentComputer(job), !job.isFinished, job.hiddenFromQueue != true,
                   let previousURL = job.downloadURL, let previous = Self.downloadLocation(previousURL) else { return false }
             return previous.source == location.source && previous.path == location.path
         }
@@ -313,7 +327,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let suggested = (location.path as NSString).lastPathComponent
         let id = UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
         var queue = jobs
-        queue.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url),at:0)
+        queue.insert(DiskJob(id:id,name:filename(name ?? suggested),downloadURL:url,computerID:PairedComputer.load()?.id),at:0)
         guard applyQueueChange(queue) else { return false }
         recentDownload = (location.source,location.path,now)
         start(id)
@@ -404,7 +418,8 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func beginTransfer(_ id:String) async {
-        guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),!job.isFinished,!job.isStopped else { return }
+        guard !active.contains(id),let job=jobs.first(where:{$0.id==id}),Self.belongsToCurrentComputer(job),
+              !job.isFinished,!job.isStopped else { return }
         active.insert(id)
         update(id){$0.phase=job.downloadURL == nil ? "Подготовка" : "Подготовка файла"}
         var attemptedRoute: DiskRoute?
@@ -417,7 +432,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
             }
             let route = try await DiskRoutes.shared.resolve()
             attemptedRoute = route
-            guard isRunnable(id) else { throw CancellationError() }
+            guard route.companionID == job.computerID, isRunnable(id) else { throw CancellationError() }
             if !job.uploaded {
                 let usesV2 = resumable.contains(id)
                 let capability = try await DiskRoutes.shared.capabilities(route)
@@ -432,6 +447,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     return
                 }
             }
+            guard route.companionID == nil else { throw DiskFailure.rejected }
             if let destination=job.destination {
                 try await requireDrive(destination.source)
                 if job.uploaded { try await publish(job,destination); done(id); return }
@@ -669,7 +685,7 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     private var pendingBackgroundJobs: [DiskJob] {
         jobs.filter { job in
-            job.asset == nil && !job.isStopped && !job.isFinished && job.hiddenFromQueue != true &&
+            Self.belongsToCurrentComputer(job) && job.asset == nil && !job.isStopped && !job.isFinished && job.hiddenFromQueue != true &&
             [DiskJob.waiting,"Подготовка","Подготовка файла","Скачивание","Выгрузка","Проверка файла",
              "Ожидание сети","Восстанавливаю соединение"].contains(job.phase)
         }
@@ -748,9 +764,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let settings = try await readBackupSettings(route)
 
         func destination(for type:String, folder:String) -> Destination? {
-            guard let preference=settings[type] as? [String:Any], preference["enabled"] as? Bool == true,
-                  let disk=(preference["disk"] as? String)?.lowercased(), ["c","d","e"].contains(disk)
-            else { return nil }
+            guard let preference=settings[type] as? [String:Any], preference["enabled"] as? Bool == true else { return nil }
+            if route.companionID != nil {
+                guard let source = preference["source"] as? String, let path = preference["path"] as? String,
+                      path == folder else { return nil }
+                let destination = Destination(source: source, path: path)
+                return Self.valid(destination) ? destination : nil
+            }
+            guard let disk=(preference["disk"] as? String)?.lowercased(), ["c","d","e"].contains(disk) else { return nil }
             return Destination(source:"backup-"+disk,path:folder)
         }
 
@@ -765,14 +786,14 @@ final class Transfers: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         active.formUnion(taskIDs)
         var remaining=Self.automaticTransferLimit - jobs.filter {
-            $0.asset != nil && $0.phase != "Готово" && active.contains($0.id)
+            Self.belongsToCurrentComputer($0) && $0.asset != nil && $0.phase != "Готово" && active.contains($0.id)
         }.count
         func current() -> Bool {
-            defaults.bool(forKey:"photo-auto") && backupSettingsRevision == revision
+            defaults.bool(forKey:"photo-auto") && backupSettingsRevision == revision && route.companionID == PairedComputer.load()?.id
         }
 
         let previous = jobs.reversed().filter { job in
-            guard job.asset != nil, !job.isFinished, !job.isStopped,
+            guard Self.belongsToCurrentComputer(job), job.asset != nil, !job.isFinished, !job.isStopped,
                   !active.contains(job.id), retrying[job.id] == nil, let target=job.destination
             else { return false }
             return destinations.contains { $0.source == target.source && $0.path == target.path }

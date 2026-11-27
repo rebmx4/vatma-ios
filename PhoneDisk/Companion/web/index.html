@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Мой диск</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header><h1 id="title">Файлы</h1></header>
+  <main id="panel" aria-label="Файлы">
+    <p class="notice" role="status">Открываю папки…</p>
+  </main>
+  <div id="toolbar">
+    <button type="button" id="back" aria-label="Назад" hidden>‹</button>
+    <button type="button" id="upload" aria-label="Добавить файл" hidden>＋</button>
+    <button type="button" id="refresh" aria-label="Обновить">↻</button>
+    <button type="button" id="settings" aria-label="Настройки" aria-expanded="false">☰</button>
+    <div id="menu" hidden>
+      <button type="button" id="lock">Защита «Файлов»</button>
+      <button type="button" id="disconnect" class="danger">Отключить компьютер</button>
+    </div>
+  </div>
+  <dialog id="actions">
+    <form method="dialog">
+      <h2 id="action-title"></h2>
+      <div id="action-buttons"></div>
+      <button type="submit">Закрыть</button>
+    </form>
+  </dialog>
+  <dialog id="viewer">
+    <div class="viewer-bar">
+      <button type="button" id="close-viewer" aria-label="Закрыть">‹</button>
+      <strong id="file-title"></strong>
+      <button type="button" id="download">Скачать</button>
+    </div>
+    <div id="media"></div>
+  </dialog>
+</body>
+</html>

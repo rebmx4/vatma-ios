@@ -34,4 +34,26 @@ final class DiskRouteTests: XCTestCase {
         let route = await DiskRoutes.firstReachable(local: [lan], fallback: DiskRoute.tailnet) { _ in false }
         XCTAssertNil(route)
     }
+
+    func testPairedBackgroundSessionRestoresTheComputerAndAddress() throws {
+        let id = "0123456789abcdef0123456789abcdef"
+        let route = try XCTUnwrap(DiskRoute.companion(id: id, host: "192.168.1.32", port: 18119))
+        let tailnet = try XCTUnwrap(DiskRoute.companion(id: id, host: "100.71.20.3", port: 18119))
+        XCTAssertEqual(DiskRoute.restore(route.backgroundIdentifier), route)
+        XCTAssertEqual(DiskRoute.restore(tailnet.backgroundIdentifier), tailnet)
+        XCTAssertEqual(route.webOrigin?.absoluteString, "https://192.168.1.32:18119/")
+        XCTAssertTrue(route.isLocal)
+        XCTAssertTrue(tailnet.isTailnet)
+        XCTAssertFalse(route.acceptsBackgroundURL(tailnet.webOrigin))
+    }
+
+    func testPairingQRExpectsAPrivateAddressAndExactComputerIdentity() throws {
+        let id = "0123456789abcdef0123456789abcdef"
+        let fingerprint = String(repeating: "9", count: 64)
+        let invitation = "phonedisk://pair?v=1&id=\(id)&host=192.168.1.32&port=18119&pin=\(fingerprint)&code=\(String(repeating: "q", count: 43))"
+        XCTAssertEqual(PairInvitation(invitation)?.id, id)
+        XCTAssertNil(PairInvitation(invitation + "&id=" + id))
+        XCTAssertNil(PairInvitation(invitation.replacingOccurrences(of: "192.168.1.32", with: "203.0.113.40")))
+        XCTAssertNil(PairInvitation(invitation.replacingOccurrences(of: "192.168.1.32", with: "100.71.20.3")))
+    }
 }

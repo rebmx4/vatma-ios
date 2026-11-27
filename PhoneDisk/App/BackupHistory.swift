@@ -21,6 +21,7 @@ struct DiskJob: Codable, Identifiable {
     var localName: String?
     var remotePath: String?
     var hiddenFromQueue: Bool?
+    var computerID: String?
 
     var isStopped: Bool { phase == Self.stopped }
     var isFinished: Bool { phase == "Готово" }

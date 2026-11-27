@@ -126,7 +126,8 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
 
     private func isObsolete(_ session: URLSession) -> Bool {
         guard let identifier = session.configuration.identifier, let route = DiskRoute.restore(identifier) else { return false }
-        return identifier == route.identifier || (route == .internet && Transfers.base.host != "127.0.0.1")
+        return route.companionID != PairedComputer.load()?.id ||
+            identifier == route.identifier || (route == .internet && Transfers.base.host != "127.0.0.1")
     }
 
     @MainActor func recover() async -> Set<String> {
@@ -202,12 +203,19 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
     }
 
     @MainActor private func deviceKey(_ route: DiskRoute) async throws -> DiskDeviceKey {
+        if let id = route.companionID {
+            guard let computer = PairedComputer.load(), computer.id == id,
+                  computer.credential.expires > Date().timeIntervalSince1970 else { throw DiskFailure.signIn }
+            return computer.credential
+        }
+        guard PairedComputer.load() == nil else { throw DiskFailure.signIn }
         if let key = DiskDeviceKey.load(), key.expires > Date().timeIntervalSince1970 + 300 { return key }
         if let connectingKey { return try await connectingKey.value }
         let task = Task { @MainActor in
             guard let cookieRequest else { throw DiskFailure.signIn }
             var request = try await cookieRequest(Transfers.address("/api/v2/device"),"POST")
-            request.setValue("https://files.rynpro.ru",forHTTPHeaderField:"Origin")
+            request.setValue(Transfers.base.deletingLastPathComponent().absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                             forHTTPHeaderField:"Origin")
             request.setValue("application/json",forHTTPHeaderField:"Content-Type")
             let defaults = UserDefaults.standard
             let device = defaults.string(forKey:"phone-disk-device") ?? UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased()
@@ -240,7 +248,9 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
                                     body: Data? = nil, query: [String:String] = [:]) async throws -> (Data,HTTPURLResponse) {
         let request = try await self.request(Transfers.address(path,query),verb,route:route,body:body)
         let (data,reply) = try await routes.data(request,route:route)
-        if reply.statusCode == 401 { DiskDeviceKey.clear(request.value(forHTTPHeaderField:"Authorization").map { String($0.dropFirst(7)) }) }
+        if reply.statusCode == 401, route.companionID == nil {
+            DiskDeviceKey.clear(request.value(forHTTPHeaderField:"Authorization").map { String($0.dropFirst(7)) })
+        }
         guard (200..<300).contains(reply.statusCode) else { throw DiskFailure.response(reply.statusCode) }
         return (data,reply)
     }
@@ -376,7 +386,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let transferRoute: DiskRoute
         do {
             transferRoute = try await routes.resolve()
-            guard isRunnable?(job.id) != false else { throw CancellationError() }
+            guard transferRoute.companionID == route.companionID, isRunnable?(job.id) != false else { throw CancellationError() }
         } catch {
             for file in files { try? FileManager.default.removeItem(at:file.url) }
             throw error
@@ -450,7 +460,7 @@ final class ResumableTransfers: NSObject, URLSessionDownloadDelegate {
         let fileURL = Transfers.address("/api/v2/file",query)
         var request = try await self.request(fileURL,"GET",route:route)
         let transferRoute = try await routes.resolve()
-        guard isRunnable?(job.id) != false else { throw CancellationError() }
+        guard transferRoute.companionID == route.companionID, isRunnable?(job.id) != false else { throw CancellationError() }
         request.url = transferRoute.backgroundURL(fileURL)
         let bounded = transferRoute.isTailnet || receipt.boundedDownload == true
         let end = bounded ? String(min(size,receipt.confirmed + receipt.partSize)-1) : ""
