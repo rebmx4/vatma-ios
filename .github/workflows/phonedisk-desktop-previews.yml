@@ -14,16 +14,16 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-26
-    timeout-minutes: 10
+    runs-on: macos-15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Render the macOS window
+      - name: Set up Python with native Tk
         run: |
           set -euo pipefail
           sw_vers -productVersion
           installer="$RUNNER_TEMP/python-3.13.17.pkg"
-          curl --fail --silent --show-error --location \
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 75 \
             https://www.python.org/ftp/python/3.13.17/python-3.13.17-macos11.pkg -o "$installer"
           printf '%s  %s\n' '3053592af66128269efab37fe7851a4894920b27c442aeec99ce4d34d17c07e3' "$installer" |
             shasum -a 256 -c -
@@ -33,7 +33,9 @@ jobs:
           "$python" -m pip install --disable-pip-version-check --only-binary=:all: \
             'cryptography==50.0.2' 'cffi==2.1.1' 'ifaddr==0.2.0' 'qrcode==8.2' 'zeroconf==0.154.0' \
             'pyobjc-framework-Cocoa==11.1'
-          "$python" PhoneDisk/Companion/Tests/capture_desktop.py out/macos.png
+      - name: Verify and capture the macOS window
+        run: |
+          "$RUNNER_TEMP/phonedisk-preview/bin/python" PhoneDisk/Companion/Tests/capture_desktop.py out/macos.png
       - uses: actions/upload-artifact@v4
         with:
           name: phonedisk-preview-macos

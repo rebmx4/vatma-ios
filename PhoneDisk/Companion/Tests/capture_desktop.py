@@ -3,6 +3,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
+import faulthandler
 import subprocess
 import sys
 import tkinter as tk
@@ -90,6 +91,7 @@ def verify_controls(root, window, server):
     root.update()
     assert tree.yview()[1] < 1, "The catalog must scroll when it has more folders"
     tree.yview_moveto(1)
+    root.update()
     assert tree.bbox(extras[-1]), "Scrolling did not reach the last folder"
     tree.delete(*extras)
     tree.yview_moveto(0)
@@ -131,4 +133,5 @@ def main():
 
 
 if __name__ == "__main__":
+    faulthandler.dump_traceback_later(45, exit=True)
     main()
