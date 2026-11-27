@@ -38,7 +38,11 @@ def api(path, query=None, body=None):
             return json.loads(response.read()) if response.status != 204 else {}
     except HTTPError as error:
         result = json.loads(error.read())
-        codes = ",".join(str(item.get("code", "?")) for item in result.get("errors", []))
+        errors = result.get("errors", [])
+        codes = ",".join(str(item.get("code", "?")) for item in errors)
+        if error.code == 422 and path == f"/v1/betaGroups/{GROUP}/relationships/builds":
+            reason = " ".join(str(item.get("detail", "")) for item in errors)
+            codes += f" ({' '.join(reason.split())[:350]})"
         raise RuntimeError(f"App Store Connect returned HTTP {error.code}: {codes}") from None
 
 
@@ -104,7 +108,13 @@ def groups_for_build(build):
     return linked
 
 
-def assign(num):
+def internal_beta_state(build):
+    detail = api("/v1/buildBetaDetails", {"filter[build]": build,
+                 "fields[buildBetaDetails]": "internalBuildState"})["data"]
+    return detail[0]["attributes"].get("internalBuildState") if len(detail) == 1 else None
+
+
+def assign(num, expected_build=None):
     deadline = time.monotonic() + 16 * 60
     recorded = None
     while time.monotonic() < deadline:
@@ -116,6 +126,8 @@ def assign(num):
             raise RuntimeError("More than one matching build")
         if matches:
             item = matches[0]
+            if expected_build is not None and item["id"] != expected_build:
+                raise RuntimeError("App Store Connect returned a different build identifier")
             attributes = item["attributes"]
             status = attributes["processingState"]
             if status != recorded:
@@ -131,6 +143,13 @@ def assign(num):
                           {"fields[preReleaseVersions]": "version,platform"})["data"]["attributes"]
                 if pre["version"] != VERSION or pre["platform"] != "IOS":
                     raise RuntimeError("App Store Connect reported a different version or platform")
+                state = internal_beta_state(build)
+                print(f"TestFlight internal state: {state}", flush=True)
+                if state in (None, "PROCESSING"):
+                    time.sleep(25)
+                    continue
+                if state not in ("READY_FOR_BETA_TESTING", "IN_BETA_TESTING"):
+                    raise RuntimeError(f"TestFlight cannot distribute the build in state {state}")
                 links = groups_for_build(build)
                 print(f"Existing build {build}; owner linked: {GROUP in links}", flush=True)
                 if links - {GROUP}:
@@ -148,10 +167,7 @@ def assign(num):
 def verify(build):
     for _ in range(15):
         groups = groups_for_build(build)
-        detail = api("/v1/buildBetaDetails", {"filter[build]": build,
-                     "fields[buildBetaDetails]": "internalBuildState"})["data"]
-        detail = detail[0]["attributes"] if len(detail) == 1 else {}
-        if groups == {GROUP} and detail.get("internalBuildState") == "IN_BETA_TESTING":
+        if groups == {GROUP} and internal_beta_state(build) == "IN_BETA_TESTING":
             print(f"VALID / IN_BETA_TESTING / Владелец / {build}", flush=True)
             return
         time.sleep(10)
@@ -163,7 +179,7 @@ if __name__ == "__main__":
     if sys.argv[1] == "next":
         print(next_build())
     elif sys.argv[1] == "assign":
-        assign(os.environ["DISK_BUILD"])
+        assign(os.environ["DISK_BUILD"], os.environ.get("DISK_BUILD_ID"))
     elif sys.argv[1] == "enable-associated-domains":
         enable_associated_domains()
     else:
