@@ -29,6 +29,7 @@ final class BrowserSmokeTests: XCTestCase {
 
         expand.tap()
         XCTAssertTrue(collapse.waitForExistence(timeout: 5))
+        XCTAssertTrue(secondRow.waitForExistence(timeout: 5))
         XCTAssertTrue(secondRow.isHittable)
         XCTAssertTrue(keyboard.exists)
 

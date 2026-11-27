@@ -83,6 +83,10 @@ body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::aft
   display: none;
 }
 
+.home .desktop-pages.editing .desktop-page {
+  padding-top: 8px;
+}
+
 .home .desktop-page .app-item,
 .desktop-dock .app-item,
 .desktop-suggestions-grid .app-item {
@@ -289,7 +293,7 @@ body[data-wallpaper=solid] .desktop-controls {
   opacity: .62;
 }
 
-.desktop-dock-grid, .desktop-suggestions-grid {
+.desktop-dock-grid, .desktop-suggestion-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
@@ -356,9 +360,20 @@ body[data-desktop-search] .home :is(.desktop-pages, .desktop-controls) {
 }
 
 .desktop-suggestions-grid {
+  display: grid;
+  gap: 7px;
   padding: 10px 5px;
   background: var(--desktop-search-glass);
   pointer-events: auto;
+}
+
+.desktop-suggestion-row + .desktop-suggestion-row:not([hidden]) {
+  animation: atma-quick-access-row .16s ease-out;
+}
+
+@keyframes atma-quick-access-row {
+  from { transform: translateY(-5px); }
+  to { transform: translateY(0); }
 }
 
 .desktop-suggestions-grid .app-tile {

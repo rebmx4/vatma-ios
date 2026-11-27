@@ -209,11 +209,16 @@ function renderAppIconPicker() {
   const done=document.createElement('button');done.className='primary-button';done.textContent='Готово';done.addEventListener('click',()=>setPanel(null));root.append(list,done);
 }
 
-function brand(app) {
+function brand(app, useStoredIcon = false) {
   if(app.id==='atma-private-desktop')return `<svg viewBox="0 0 62 62" aria-hidden="true"><rect width="62" height="62" rx="15" fill="#183747"/><rect x="19" y="29" width="24" height="20" rx="4" fill="none" stroke="white" stroke-width="3"/><path d="M24 29v-7a7 7 0 0 1 14 0v7m-7 8v5" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>`;
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
   if(app.id==='atma-incognito')return `<svg class="desktop-system-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18M6 11l2-6h8l2 6"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/><path d="M11 16h2"/></svg>`;
-  if(app.type!=='system'){const customArtwork=shortcutIconArtwork(app.iconStyle);if(customArtwork)return customArtwork;}
+  if(app.type!=='system'){
+    const customArtwork=shortcutIconArtwork(app.iconStyle);
+    if(customArtwork)return customArtwork;
+    if(useStoredIcon&&/^data:image\/png;base64,/i.test(app.iconUrl||''))
+      return `<img src="${escape(app.iconUrl)}" alt="" draggable="false">`;
+  }
   if(!app.custom&&!app.iconUrl&&app.url&&DEFAULT_APPS.some(entry=>entry.id===app.id&&entry.url===app.url)){
     return `<img class="shortcut-brand-icon" src="/assets/desktop-icons/${app.id}.png" alt="" draggable="false">`;
   }
@@ -521,11 +526,12 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
   tile.setAttribute('aria-label', `Открыть ${appLabel(app)}`);
   if (isFolder(app)) {
     item.classList.add('folder-item'); tile.classList.add('folder-tile');
-    tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,9).map(child=>`<span>${brand(child)}</span>`).join('')}</span>`;
-    for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries())paintShortcutIcon(miniature,app.children[index],scope);
+    tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,9).map(child=>`<span>${brand(child,quickAccess)}</span>`).join('')}</span>`;
+    if(!quickAccess)
+      for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries())paintShortcutIcon(miniature,app.children[index],scope);
   } else {
-    tile.innerHTML = brand(app);
-    paintShortcutIcon(tile,app,scope);
+    tile.innerHTML = brand(app,quickAccess);
+    if(!quickAccess)paintShortcutIcon(tile,app,scope);
   }
   // Pointer taps are handled by the gesture even if the grid replaces this button.
   tile.addEventListener('click', event => {
@@ -647,6 +653,14 @@ $('apps').addEventListener('scroll',event=>{
 });
 let quickAccessExpanded=false;
 const desktopSearchTarget=element=>element instanceof Element&&Boolean(element.closest('#address-form,#desktop-focus-dock'));
+function updateQuickAccessExpansion() {
+  const toggle=$('desktop-suggestion-toggle');
+  const secondRow=$('desktop-suggested-apps').children[1];
+  toggle.hidden=!secondRow;
+  toggle.textContent=quickAccessExpanded?'Свернуть':'Развернуть';
+  toggle.setAttribute('aria-expanded',String(quickAccessExpanded));
+  if(secondRow)secondRow.hidden=!quickAccessExpanded||!secondRow.hasAttribute('data-ready');
+}
 function renderDesktopQuickAccess() {
   const scope=vaultKey?currentScope():'public', entries=poolFor(scope);
   const grid=arrangeEntries(entries,gridMetrics().columns).sort((first,second)=>first.slot-second.slot);
@@ -654,13 +668,29 @@ function renderDesktopQuickAccess() {
   const needle=$('address').value.trim().toLocaleLowerCase();
   const matches=app=>[app.name,appLabel(app),app.url].some(value=>value?.toLocaleLowerCase().includes(needle));
   const suggested=(needle?ordered.flatMap(app=>matches(app)?[app]:isFolder(app)?app.children.filter(matches):[]):ordered).slice(0,8);
-  const host=$('desktop-focus-dock'), toggle=$('desktop-suggestion-toggle');
+  const host=$('desktop-focus-dock'), suggestions=$('desktop-suggested-apps');
   host.dataset.scope=scope;
   host.hidden=suggested.length===0;
-  toggle.hidden=suggested.length<=4;
-  toggle.textContent=quickAccessExpanded?'Свернуть':'Развернуть';
-  toggle.setAttribute('aria-expanded',String(quickAccessExpanded));
-  $('desktop-suggested-apps').replaceChildren(...suggested.slice(0,quickAccessExpanded?8:4).map((app,index)=>createItem(app,null,index,scope,true)));
+  const rows=[];
+  for(let start=0;start<suggested.length;start+=4) {
+    const row=document.createElement('div');
+    row.className='desktop-suggestion-row';
+    row.hidden=start!==0;
+    row.append(...suggested.slice(start,start+4).map((app,index)=>createItem(app,null,start+index,scope,true)));
+    rows.push(row);
+  }
+  suggestions.replaceChildren(...rows);
+  updateQuickAccessExpansion();
+  const secondRow=rows[1];
+  if(secondRow) {
+    // Decode the entire row before revealing it, including icons stored as PNGs.
+    const images=[...secondRow.querySelectorAll('img')];
+    Promise.all(images.map(image=>image.decode().catch(()=>{}))).then(()=>{
+      if(secondRow.parentElement!==suggestions)return;
+      secondRow.setAttribute('data-ready','');
+      updateQuickAccessExpansion();
+    });
+  }
 }
 function syncDesktopSearch(target=document.activeElement) {
   const body=document.body, wasActive=body.hasAttribute('data-desktop-search');
@@ -692,7 +722,7 @@ const keepDesktopSearchFocused=event=>{
 };
 for(const type of ['pointerdown','mousedown'])$('desktop-focus-dock').addEventListener(type,keepDesktopSearchFocused);
 const quickAccessToggle=$('desktop-suggestion-toggle');
-const toggleQuickAccess=()=>{quickAccessExpanded=!quickAccessExpanded;renderDesktopQuickAccess();};
+const toggleQuickAccess=()=>{quickAccessExpanded=!quickAccessExpanded;updateQuickAccessExpansion();};
 quickAccessToggle.addEventListener('touchstart',keepDesktopSearchFocused,{passive:false});
 quickAccessToggle.addEventListener('touchend',event=>{
   if(document.activeElement!==$('address'))return;
