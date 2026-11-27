@@ -1,5 +1,5 @@
 {
-  "name": "ATMA localized store captures",
+  "name": "ATMA screenshot feature sessions",
   "on": {
     "workflow_dispatch": {}
   },
@@ -9,40 +9,51 @@
   "jobs": {
     "capture": {
       "runs-on": "macos-26",
-      "timeout-minutes": 28,
+      "timeout-minutes": 38,
       "strategy": {
         "fail-fast": false,
         "matrix": {
           "device": [
             "iphone",
             "ipad"
+          ],
+          "batch": [
+            "RU-US-DE-FR",
+            "BR-PT-JP-CN",
+            "KR-ES-IT"
           ]
         }
       },
       "env": {
         "DEVELOPER_DIR": "/Applications/Xcode_26.4.app/Contents/Developer",
         "DEVICE": "${{ matrix.device }}",
-        "HOMEBREW_NO_AUTO_UPDATE": "1"
+        "HOMEBREW_NO_AUTO_UPDATE": "1",
+        "MARKETS": "${{ matrix.batch }}"
       },
       "steps": [
         {
           "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "with": {
-            "ref": "948857860c37a9569775b96c282306eed1e5a025",
             "persist-credentials": false
           }
         },
         {
-          "name": "Capture fresh regional desktops",
-          "run": "set -euo pipefail\ncommand -v xcodegen >/dev/null || brew install xcodegen\nxcodegen generate\nmkdir -p \"frames/$DEVICE\"\nxcrun simctl list -j devices available | python3 release/simulators.py --ios-version \"$(xcrun --sdk iphonesimulator --show-sdk-version)\" > sim.json\nsim=$(python3 -c 'import json,os; print(json.load(open(\"sim.json\"))[os.environ[\"DEVICE\"]])')\nxcrun simctl boot \"$sim\" || true\nxcrun simctl bootstatus \"$sim\" -b\nxcrun simctl ui \"$sim\" appearance light\nxcrun simctl status_bar \"$sim\" override --time '9:41' --batteryState charged --batteryLevel 100\nxcodebuild build -project ATMA.xcodeproj -scheme ATMA -configuration Release -destination \"platform=iOS Simulator,id=$sim\" -derivedDataPath dd CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION=14 > build.log\nat=dd/Build/Products/Release-iphonesimulator/ATMA.app\nid=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' \"$at/Info.plist\")\nfor pair in ru:RU en:US de:DE fr:FR pt-BR:BR pt-PT:PT ja:JP zh-Hans:CN ko:KR es:ES it:IT; do\n lang=${pair%:*}; reg=${pair#*:}\n xcrun simctl uninstall \"$sim\" \"$id\" 2>/dev/null || true\n xcrun simctl install \"$sim\" \"$at\"\n base=${lang%%-*}\n xcrun simctl launch \"$sim\" \"$id\" -AppleLanguages \"(\\\"$lang\\\")\" -AppleLocale \"${base}_${reg}\"\n sleep 9\n xcrun simctl io \"$sim\" screenshot \"frames/$DEVICE/$reg.png\"\ndone"
+          "name": "Capture feature panels of the tested release",
+          "run": "set -euo pipefail\ngit diff --quiet 948857860c37a9569775b96c282306eed1e5a025 HEAD -- BrowserUI BrowserNative project.yml\npython3 - <<'PY'\nimport os,pathlib\np=pathlib.Path('BrowserNativeUITests/StoreFeatureScreenshotsTests.swift')\nallowed=os.environ['MARKETS'].split('-')\np.write_text(p.read_text().replace('for market in markets {','for market in markets where ['+', '.join('\"'+x+'\"' for x in allowed)+'].contains(market.region) {'))\nPY\ncommand -v xcodegen >/dev/null || brew install xcodegen\nxcodegen generate\nxcrun simctl list -j devices available | python3 release/simulators.py --ios-version \"$(xcrun --sdk iphonesimulator --show-sdk-version)\" > sim.json\nsim=$(python3 -c 'import json,os; print(json.load(open(\"sim.json\"))[os.environ[\"DEVICE\"]])')\nxcrun simctl boot \"$sim\" || true\nxcrun simctl bootstatus \"$sim\" -b\nxcrun simctl ui \"$sim\" appearance light\nxcrun simctl status_bar \"$sim\" override --time 9:41 --batteryState charged --batteryLevel 100\nxcodebuild test -project ATMA.xcodeproj -scheme ATMA -configuration Release -destination \"platform=iOS Simulator,id=$sim\" -only-testing:BrowserNativeUITests/StoreFeatureScreenshotsTests -parallel-testing-enabled NO -maximum-test-execution-time-allowance 1500 -resultBundlePath evidence.xcresult CURRENT_PROJECT_VERSION=14 CODE_SIGNING_ALLOWED=NO > report.txt || { tail -60 report.txt; exit 1; }"
+        },
+        {
+          "name": "Export feature frames",
+          "if": "always()",
+          "run": "mkdir -p frames\nif [ -d evidence.xcresult ]; then\n xcrun xcresulttool export attachments --path evidence.xcresult --output-path raw\n python3 - <<'PY'\nfrom pathlib import Path\nimport json, shutil\nd=Path('raw')\nfor test in json.loads((d/'manifest.json').read_text()):\n for a in test['attachments']:\n  name=a.get('suggestedHumanReadableName','')\n  if name.startswith('native-14-') and name.endswith('.png'):\n   shutil.copyfile(d/a['exportedFileName'],Path('frames')/(name.split('_')[0]+'.png'))\nPY\nfi"
         },
         {
           "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
           "with": {
-            "name": "store-home-${{ matrix.device }}",
-            "path": "frames/${{ matrix.device }}/*.png",
+            "name": "store-features-${{ matrix.device }}-${{ matrix.batch }}",
+            "path": "frames/*.png",
             "retention-days": 3
-          }
+          },
+          "if": "always()"
         }
       ]
     }
