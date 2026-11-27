@@ -3,13 +3,13 @@
 const steps = [
   {
     id: "iphone", title: "Установите «Мой диск» на iPhone",
-    text: "После установки на главном экране приложения будет кнопка «Добавить компьютер».",
-    button: "Скачать на iPhone", waiting: "Ссылка для iPhone появится здесь, когда будет доступна версия с подключением по QR-коду."
+    text: "В «Моём диске» нажмите «Добавить компьютер». Если приложение уже подключено к ПК, эта кнопка находится в меню.",
+    button: "Скачать на iPhone", waiting: "Участники внутреннего тестирования могут установить приложение через TestFlight. Публичная ссылка появится после выпуска."
   },
   {
     id: "windows", title: "Установите «Мой диск» на Windows",
     text: "Откройте установщик и нажмите «Установить». После установки откроется окно «Мой диск».",
-    button: "Скачать для Windows", waiting: "Ссылка появится после проверки установщика.",
+    button: "Скачать для Windows", waiting: "Публичный установщик Windows готовится к выпуску.",
     note: "Если страница открыта на iPhone, зайдите на rynpro.ru/disk/ с компьютера."
   },
   {
@@ -95,4 +95,8 @@ byId("steps").onclick = event => {
   if (target) select(Number(target.dataset.step));
 };
 window.addEventListener("popstate", restore);
+window.addEventListener("hashchange", () => {
+  const index = steps.findIndex(step => location.hash.slice(1) === step.id);
+  if (index !== current) show(index, true);
+});
 restore();
