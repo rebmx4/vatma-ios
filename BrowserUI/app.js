@@ -212,7 +212,15 @@ function renderAppIconPicker() {
 function brand(app, useStoredIcon = false) {
   if(app.id==='atma-private-desktop')return '<span class="private-desktop-artwork" aria-hidden="true"><span class="private-desktop-keyhole"></span></span>';
   if(app.id==='atma-home')return appIconArtwork(appearance.icon,brandLogoSource);
-  if(app.id==='atma-incognito')return `<svg class="desktop-system-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11h18M6 11l2-6h8l2 6"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/><path d="M11 16h2"/></svg>`;
+  if(app.id==='atma-incognito')return `<span class="incognito-artwork" aria-hidden="true">
+    <span class="incognito-glyph">
+      <span class="incognito-crown"></span>
+      <span class="incognito-brim"></span>
+      <span class="incognito-bridge"></span>
+      <span class="incognito-lens"></span>
+      <span class="incognito-lens"></span>
+    </span>
+  </span>`;
   if(app.type!=='system'){
     const customArtwork=shortcutIconArtwork(app.iconStyle);
     if(customArtwork)return customArtwork;
