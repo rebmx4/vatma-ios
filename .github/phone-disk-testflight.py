@@ -42,8 +42,8 @@ def api(path, query=None, body=None):
         raise RuntimeError(f"App Store Connect returned HTTP {error.code}: {codes}") from None
 
 
-def resources(path, fields):
-    result = api(path, {"limit": 200, **fields})
+def resources(path, fields=None):
+    result = api(path, {"limit": 200, **fields} if fields is not None else None)
     yield from result["data"]
     while result.get("links", {}).get("next"):
         result = api(result["links"]["next"])
@@ -70,7 +70,7 @@ def enable_associated_domains():
         raise RuntimeError("Expected one Bundle ID for PhoneDisk")
     bundle = identifiers[0]["id"]
     capability = "ASSOCIATED_DOMAINS"
-    current = resources(f"/v1/bundleIds/{bundle}/bundleIdCapabilities", {})
+    current = resources(f"/v1/bundleIds/{bundle}/bundleIdCapabilities")
     if any(item["attributes"]["capabilityType"] == capability for item in current):
         return
     api("/v1/bundleIdCapabilities", body={"data": {

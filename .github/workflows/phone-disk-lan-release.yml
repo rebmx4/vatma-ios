@@ -66,6 +66,34 @@ jobs:
           python3 -m venv "$tools"
           "$tools/bin/pip" install --disable-pip-version-check codemagic-cli-tools==0.70.0 "PyJWT[crypto]"
           echo "$tools/bin" >> "$GITHUB_PATH"
+      - name: Prepare PhoneDisk signing materials
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CERT_KEY_B64: ${{ secrets.CERT_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ "$OWNER_RELEASE" == true ]]; then
+            number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
+          else
+            latest="$(app-store-connect get-latest-testflight-build-number "$DISK_APP_ID")"
+            [[ "$latest" =~ ^[0-9]+$ ]]
+            number="$((latest + 1))"
+          fi
+          [[ "$number" =~ ^[0-9]+$ ]]
+          echo "Selected PhoneDisk $DISK_VERSION ($number)."
+          echo "DISK_BUILD=$number" >> "$GITHUB_ENV"
+          keychain initialize
+          export CERTIFICATE_PRIVATE_KEY
+          CERTIFICATE_PRIVATE_KEY="$(printf '%s' "$CERT_KEY_B64" | base64 --decode)"
+          if [[ "$COMPACT_CANDIDATE" == true ]]; then
+            "$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py enable-associated-domains
+            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE --strict-match-identifier --create
+          else
+            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE
+          fi
+          keychain add-certificates
       - name: Test download controls and queue navigation on iOS
         run: |
           set -euo pipefail
@@ -118,42 +146,14 @@ jobs:
               CODE_SIGNING_ALLOWED=NO
             python3 -c 'from pathlib import Path; import sys; assert Path(sys.argv[1]).read_bytes() == b"PhoneDisk fixture bytes\n"' "$smoke/upload.txt"
           fi
-      - name: Prepare existing signing materials
-        env:
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          CERT_KEY_B64: ${{ secrets.CERT_KEY_B64 }}
-        run: |
-          set -euo pipefail
-          if [[ "$OWNER_RELEASE" == true ]]; then
-            number="$("$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py next)"
-          else
-            latest="$(app-store-connect get-latest-testflight-build-number "$DISK_APP_ID")"
-            [[ "$latest" =~ ^[0-9]+$ ]]
-            number="$((latest + 1))"
-          fi
-          [[ "$number" =~ ^[0-9]+$ ]]
-          echo "Selected PhoneDisk $DISK_VERSION ($number)."
-          echo "DISK_BUILD=$number" >> "$GITHUB_ENV"
-          keychain initialize
-          export CERTIFICATE_PRIVATE_KEY
-          CERTIFICATE_PRIVATE_KEY="$(printf '%s' "$CERT_KEY_B64" | base64 --decode)"
-          if [[ "$COMPACT_CANDIDATE" == true ]]; then
-            "$RUNNER_TEMP/phone-disk-build-tools/bin/python" .github/phone-disk-testflight.py enable-associated-domains
-            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE --strict-match-identifier --create
-          else
-            app-store-connect fetch-signing-files "$DISK_BUNDLE" --type IOS_APP_STORE
-          fi
-          keychain add-certificates
-          options="$RUNNER_TEMP/phone-disk-export.plist"
-          xcode-project use-profiles --project PhoneDisk/PhoneDisk.xcodeproj --export-options-plist "$options"
-          /usr/libexec/PlistBuddy -c 'Delete :destination' "$options" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c 'Add :destination string export' "$options"
       - name: Archive and verify one iOS build
         run: |
           set -euo pipefail
           project=PhoneDisk/PhoneDisk.xcodeproj
+          options="$RUNNER_TEMP/phone-disk-export.plist"
+          xcode-project use-profiles --project "$project" --export-options-plist "$options"
+          /usr/libexec/PlistBuddy -c 'Delete :destination' "$options" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c 'Add :destination string export' "$options"
           archive="$RUNNER_TEMP/PhoneDisk.xcarchive"
           xcodebuild archive -project "$project" -scheme PhoneDisk -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$archive" \
