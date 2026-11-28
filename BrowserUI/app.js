@@ -569,15 +569,21 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
   const item = document.createElement('div'); item.className = 'app-item'; item.dataset.app = app.id;
   item.dataset.scope=scope;
   if (parentId) item.dataset.folder = parentId;
-  item.style.setProperty('--jiggle-delay', `${-(index % 7) * 67}ms`);
+  item.style.setProperty('--jiggle-delay', `${-(index % 7) * 63}ms`);
+  item.style.setProperty('--jiggle-duration', `${470 + (index % 5) * 19}ms`);
+  item.style.setProperty('--jiggle-start', index % 2 ? '1.3deg' : '-1.3deg');
+  item.style.setProperty('--jiggle-end', index % 2 ? '-1.3deg' : '1.3deg');
   item.classList.toggle('dragging', Boolean(gesture?.active && gesture.id === app.id && gesture.scope === scope));
   const tile = document.createElement('button'); tile.className = 'app-tile';
   tile.setAttribute('aria-label', `Открыть ${appLabel(app)}`);
   if (isFolder(app)) {
     item.classList.add('folder-item'); tile.classList.add('folder-tile');
     tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,9).map(child=>`<span>${brand(child,quickAccess)}</span>`).join('')}</span>`;
-    if(!quickAccess)
-      for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries())paintShortcutIcon(miniature,app.children[index],scope);
+    for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries()){
+      const child=app.children[index];
+      miniature.dataset.shortcut=child.id;
+      if(!quickAccess)paintShortcutIcon(miniature,child,scope);
+    }
   } else {
     tile.innerHTML = brand(app,quickAccess);
     if(!quickAccess)paintShortcutIcon(tile,app,scope);
@@ -653,8 +659,8 @@ function renderApps() {
   renderDesktopDock(currentScope());
   animatePositions($('apps'), previous);
 }
-function desktopCell(app,slot,scope) {
-  const item=app?createItem(app,null,slot,scope):document.createElement('div');
+function desktopCell(app,slot,scope,animationIndex=slot) {
+  const item=app?createItem(app,null,animationIndex,scope):document.createElement('div');
   if(!app){item.className='desktop-slot';item.setAttribute('aria-hidden','true');}
   item.dataset.slot=slot;
   item.dataset.scope=scope;
@@ -676,7 +682,7 @@ function renderDesktopPages(layout,scope,count,offset,columns,rows) {
 function renderDesktopDock(scope) {
   const dock=$('desktop-dock'), grid=$('desktop-dock-grid'), previous=positions(grid);
   dock.dataset.scope=scope;
-  grid.replaceChildren(...arrangeDock(poolFor(scope)).map((app,slot)=>desktopCell(app,slot,scope)));
+  grid.replaceChildren(...arrangeDock(poolFor(scope)).map((app,slot)=>desktopCell(app,slot,scope,slot+23)));
   animatePositions(grid,previous);
 }
 observeDesktopViewport($('apps'),()=>{
@@ -903,7 +909,7 @@ document.addEventListener('pointermove', event => {
   if (panel === 'folder' && current.parentId === openFolderId) {
     const card = document.querySelector('.folder-card')?.getBoundingClientRect();
     if (card && (event.clientX < card.left-22 || event.clientX > card.right+22 || event.clientY < card.top-26 || event.clientY > card.bottom+26)) {
-      openFolderId = null; setPanel(null, { immediate:true });
+      setPanel(null, { dragOut:true });
     }
   }
   updateDropTarget(event.clientX,event.clientY,current);
@@ -960,6 +966,37 @@ function updateDropTarget(x,y,current) {
     target.setAttribute('data-folder-drop','');
   }, 330);
 }
+function landingTile(id,scope,container=document) {
+  return [...container.querySelectorAll('.app-item:not(.drag-ghost)')].find(item=>
+    item.dataset.app===id&&item.dataset.scope===scope)?.querySelector('.app-tile');
+}
+function animateShortcutLanding(tile,from) {
+  if(!tile||!from?.width)return;
+  const to=tile.getBoundingClientRect();
+  if(!to.width||!to.height||to.right<=0||to.left>=innerWidth)return;
+  const dx=from.x+from.width/2-to.x-to.width/2;
+  const dy=from.y+from.height/2-to.y-to.height/2;
+  tile.setAttribute('data-settling','');
+  const settle=tile.animate([
+    {transform:`translate(${dx}px,${dy}px) scale(${from.width/to.width},${from.height/to.height})`,easing:'cubic-bezier(.18,.78,.25,1)'},
+    {offset:.75,transform:'scale(.97)',easing:'ease-out'},
+    {transform:'none'}
+  ],{duration:245});
+  settle.finished.catch(()=>{}).then(()=>tile.removeAttribute('data-settling'));
+}
+function animateShortcutDrop(current,result,from,joined) {
+  if(!from)return;
+  if(result.folderId){
+    const folder=landingTile(result.folderId,current.scope);
+    for(const miniature of folder?.querySelectorAll('[data-shortcut]')||[]){
+      if(miniature.dataset.shortcut===current.id)animateShortcutLanding(miniature,from);
+      else if(miniature.dataset.shortcut===joined?.id)animateShortcutLanding(miniature,joined.rect);
+    }
+  } else {
+    const container=panel==='folder'?$('sheet-content'):document.querySelector('.home');
+    animateShortcutLanding(landingTile(current.id,current.scope,container),from);
+  }
+}
 async function endGesture(event, cancelled = false) {
   const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
   clearTimeout(current.hold); clearTimeout(current.pageTimer);
@@ -967,6 +1004,8 @@ async function endGesture(event, cancelled = false) {
   if(current.active&&!cancelled)updateDropTarget(event.clientX,event.clientY,current);
   clearTimeout(current.hoverTimer);
   const targetId = current.targetId, combine = current.combine, targetSlot=current.targetSlot, targetDockSlot=current.targetDockSlot;
+  const from=current.active&&!reducedMotion.matches?current.ghost.querySelector('.app-tile').getBoundingClientRect():null;
+  const joined=from&&combine&&current.folderDropTile?{id:targetId,rect:current.folderDropTile.querySelector('.app-tile').getBoundingClientRect()}:null;
   clearHover();
   try { document.body.releasePointerCapture(current.pointerId); } catch {}
   if(current.swipe){gesture=null;suppressClickUntil=Date.now()+350;showDesktopPage(Math.round($('apps').scrollLeft/$('apps').clientWidth));return;}
@@ -990,6 +1029,7 @@ async function endGesture(event, cancelled = false) {
     gesture = null; suppressClickUntil=Date.now()+350;
     if (result.changed) updatePool(current.scope,result.items);
     else for(const item of document.querySelectorAll('.app-item.dragging'))item.classList.remove('dragging');
+    if(from)animateShortcutDrop(current,result,from,joined);
   } else {
     gesture=null;
     const shortTap = current.onTile && Date.now() >= suppressClickUntil
@@ -1069,7 +1109,18 @@ async function launchShortcut(app,scope='public') {
   try { await action('shortcut/open',{url:app.url,shortcutId:`${scope}:${app.id}`});$('address').blur(); } catch {}
 }
 async function setPanel(name, options = {}) {
-  if (panel==='folder' && name!=='folder' && !options.immediate) await animateFolder(false);
+  if(panel==='folder'&&!name&&options.dragOut&&!reducedMotion.matches){
+    const overlay=$('overlay'),closing=animateFolder(false);
+    panel=null;openFolderId=null;
+    overlay.inert=true;
+    overlay.classList.add('folder-drag-exit');
+    document.body.classList.remove('folder-open');
+    closing.then(()=>{if(!panel&&overlay.classList.contains('folder-drag-exit'))renderPanel();});
+    try { await action('panel', { panel:null }); } catch {}
+    return;
+  }
+  if (panel==='folder' && name!=='folder' && !options.immediate && !options.dragOut) await animateFolder(false);
+  if(options.dragOut)openFolderId=null;
   if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;pendingVaultSite=null;}}
   panel = name; renderPanel();
   try { await action('panel', { panel: name }); } catch {}
@@ -1081,7 +1132,9 @@ function renderPanel() {
   disposeMediaPanel?.();disposeMediaPanel=null;
   $('sheet-content').classList.remove('cookie-browser');
   if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
-  const wasFolder=$('overlay').classList.contains('folder-overlay');
+  const wasFolder=$('overlay').classList.contains('folder-overlay')&&!$('overlay').classList.contains('folder-drag-exit');
+  $('overlay').inert=false;
+  $('overlay').classList.remove('folder-drag-exit');
   $('overlay').classList.toggle('folder-overlay',panel==='folder');
   $('overlay').classList.toggle('pin-overlay',panel==='pin');
   $('overlay').classList.toggle('tabs-overlay',panel==='tabs');
@@ -1584,6 +1637,7 @@ function lockVault() {
     $('address').dispatchEvent(new Event('input',{bubbles:true}));
   }
   if(gesture?.scope==='private'){clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);gesture.ghost?.remove();gesture=null;}
+  if(folderScope==='private'&&$('overlay').classList.contains('folder-drag-exit'))renderPanel();
   if((panel==='folder'&&folderScope==='private')||(panel==='edit'&&editorScope==='private')||(panel==='add'&&editorScope==='private'))setPanel(null,{immediate:true});
   renderApps();
 }
@@ -1653,7 +1707,18 @@ $('settings').addEventListener('click', () => setPanel(document.body.dataset.sur
 $('pin-site').addEventListener('click',()=>saveCurrentSite());
 $('tabs-button').addEventListener('click',()=>{setEditing(false);lockVault();if(state?.tabs?.length)setPanel('tabs');else newBrowserTab();});
 $('new-tab-button').addEventListener('click',newBrowserTab);
-$('edit-apps').addEventListener('click', () => setEditing(!editing));
+const desktopDone=$('edit-apps');
+let doneTouch;
+desktopDone.addEventListener('pointerdown',event=>{
+  if(event.isPrimary&&event.pointerType==='touch')doneTouch={id:event.pointerId,x:event.clientX,y:event.clientY};
+});
+desktopDone.addEventListener('pointerup',event=>{
+  if(event.pointerType==='touch'&&event.pointerId===doneTouch?.id&&
+      Math.hypot(event.clientX-doneTouch.x,event.clientY-doneTouch.y)<=12)setEditing(false);
+  doneTouch=null;
+});
+desktopDone.addEventListener('pointercancel',()=>{doneTouch=null;});
+desktopDone.addEventListener('click',()=>setEditing(false));
 let emptyHomeTap=null,emptyHomeHold=null;
 const emptyHomeTarget=target=>target instanceof Element&&target.closest('.home')&&!target.closest('.app-item,button,input,select,a,label');
 const cancelEmptyHomeHold=()=>{clearTimeout(emptyHomeHold);emptyHomeHold=null;emptyHomeTap=null;};

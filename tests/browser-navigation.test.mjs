@@ -43,9 +43,20 @@ test('touching the Incognito device chooser while the keyboard is open opens it 
  assert.equal(f.effects.filter(effect=>effect[0]==='panel').length,2);
 });
 test('a tap on empty desktop space still exits editing',async()=>{
- const f=setup();await f.click('edit-apps');assert.equal(f.context.editing,true);
+ const f=setup();f.context.editing=true;
  const event={isPrimary:true,button:0,pointerId:1,clientX:20,clientY:30,target:f.get('home')};
  f.get('home').events.get('pointerdown')(event);f.documentEvents.get('pointerup')(event);assert.equal(f.context.editing,false);
+});
+
+test('desktop Done exits even if touch release produces no click',()=>{
+ const f=setup(),done=f.get('edit-apps');
+ f.context.editing=true;
+ const event={isPrimary:true,pointerType:'touch',pointerId:1,clientX:20,clientY:30};
+ done.events.get('pointerup')(event);
+ assert.equal(f.context.editing,true);
+ done.events.get('pointerdown')(event);
+ done.events.get('pointerup')(event);
+ assert.equal(f.context.editing,false);
 });
 
 test('holding empty desktop space enters editing and releasing does not immediately exit it',()=>{

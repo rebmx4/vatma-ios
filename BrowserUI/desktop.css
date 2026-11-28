@@ -394,6 +394,7 @@ body[data-wallpaper=solid] .desktop-controls {
   top: 50%;
   transform: translateY(-50%);
   min-height: 34px;
+  touch-action: manipulation;
   border-radius: 999px;
   background: var(--desktop-surface);
   color: var(--desktop-contrast);
@@ -417,10 +418,37 @@ body[data-wallpaper=solid] .desktop-controls {
 
 .desktop-dock[hidden] { display: none; }
 
-body:not(.editing) .app-remove,
 .desktop-dock-visibility[hidden] { display: none; }
 
 .home, .folder-overlay { -webkit-tap-highlight-color: transparent; }
+
+.app-item > .app-remove {
+  visibility: hidden;
+  opacity: 0;
+  scale: .75;
+  pointer-events: none;
+  transition: opacity 140ms ease, scale 180ms ease, visibility 140ms;
+}
+
+.editing .app-item > .app-remove {
+  visibility: visible;
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+}
+
+.app-item > .app-tile {
+  transition: scale 145ms ease-out, box-shadow 145ms ease-out, rotate 130ms ease-out, translate 130ms ease-out;
+}
+
+.editing .app-item:not(.drag-ghost) > .app-tile {
+  animation: atma-edit-sway var(--jiggle-duration, 510ms) ease-in-out var(--jiggle-delay, 0ms) infinite;
+}
+
+@keyframes atma-edit-sway {
+  0%, 100% { rotate: var(--jiggle-start, -1.3deg); translate: 0 -.35px; }
+  50% { rotate: var(--jiggle-end, 1.3deg); translate: 0 .35px; }
+}
 
 .desktop-dock-visibility {
   position: absolute;
@@ -452,14 +480,22 @@ body:not(.editing) .app-remove,
 .desktop-dock[data-muted] .desktop-dock-grid { opacity: .36; filter: grayscale(1); }
 
 .editing .app-item[data-folder-drop] .app-tile {
-  animation: none;
-  transform: scale(.88);
-  box-shadow: 0 0 0 4px var(--desktop-glass-shine);
+  scale: .88;
+  box-shadow: 0 0 0 4px var(--desktop-glass-shine), 0 0 0 8px var(--desktop-surface);
 }
 
-.editing .app-item[data-folder-drop] .app-remove { visibility: hidden; }
+.editing .app-item[data-folder-drop] .app-remove {
+  visibility: hidden;
+  opacity: 0;
+  scale: .75;
+  pointer-events: none;
+}
+
+.editing .app-item > .app-tile[data-settling] { animation: none; }
 
 .drag-ghost .app-tile { box-shadow: none; }
+.folder-drag-exit { pointer-events: none; }
+.folder-drag-exit .scrim { opacity: 0; transition: opacity 220ms ease-out; }
 
 .desktop-dock::before {
   content: '';

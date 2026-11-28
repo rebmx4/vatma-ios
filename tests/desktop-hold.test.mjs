@@ -10,7 +10,7 @@ function tileFixture({editing=true,app={id:'custom-image',name:'Saved website',t
  const page={Element,document:{events:new Map(),addEventListener(name,handler){this.events.set(name,handler);},createElement:()=>new Element(),body:{setPointerCapture(){}}},gesture:null,editing,suppressClickUntil:0,DESKTOP_HOLD_MS:Number(source.match(/DESKTOP_HOLD_MS\s*=\s*(\d+)/)[1]),
   $:()=>({scrollLeft:0}),isFolder:()=>false,usesTranslatedShortcutLabel:()=>false,appLabel:app=>app.name,brand:()=>'',paintShortcutIcon(){},icon:()=>'',setTimeout:()=>1,navigator:{},shortcutMessageCount:()=>0,messageCounts:{},
   poolFor:()=>[app],findEntry:(apps,id)=>({entry:apps.find(app=>app.id===id)}),activate:app=>opened.push(app.id),
-  clearTimeout(){},clearHover(){},removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4})};
+  clearTimeout(){},clearHover(){},removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4}),reducedMotion:{matches:true}};
  vm.createContext(page);
  const itemBegin=source.indexOf('function createItem('),itemEnd=source.indexOf('function activate(',itemBegin);
  const holdBegin=source.indexOf('function beginGesture('),holdEnd=source.indexOf('function clearHover(',holdBegin);
