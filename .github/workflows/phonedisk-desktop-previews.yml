@@ -7,6 +7,7 @@ on:
       - '.github/workflows/phonedisk-desktop-previews.yml'
       - 'PhoneDisk/Companion/Tests/capture_desktop.py'
       - 'PhoneDisk/Companion/desktop.py'
+      - 'PhoneDisk/Companion/desktop_theme.py'
       - 'PhoneDisk/Companion/macos/build.sh'
 
 permissions:
@@ -35,11 +36,11 @@ jobs:
             'pyobjc-framework-Cocoa==11.1'
       - name: Verify and capture the macOS window
         run: |
-          "$RUNNER_TEMP/phonedisk-preview/bin/python" PhoneDisk/Companion/Tests/capture_desktop.py out/macos.png
+          "$RUNNER_TEMP/phonedisk-preview/bin/python" PhoneDisk/Companion/Tests/capture_desktop.py out/macos
       - uses: actions/upload-artifact@v4
         with:
           name: phonedisk-preview-macos
-          path: out/macos.png
+          path: out/macos-*.png
           if-no-files-found: error
           retention-days: 7
 
@@ -52,17 +53,17 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-tk python3-cryptography \
-            python3-ifaddr python3-qrcode python3-zeroconf xvfb xauth imagemagick openbox
+          sudo apt-get install -y --no-install-recommends python3-tk python3-gi python3-cryptography \
+            python3-ifaddr python3-qrcode python3-zeroconf xvfb xauth imagemagick openbox dbus-daemon
           sed 's/<name>Clearlooks<\/name>/<name>Onyx<\/name>/' /etc/xdg/openbox/rc.xml > "$RUNNER_TEMP/phonedisk-openbox.xml"
-          xvfb-run -a -s '-screen 0 1440x900x24' bash -ec '
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' bash -ec '
             openbox --config-file "$RUNNER_TEMP/phonedisk-openbox.xml" >/tmp/phonedisk-preview-wm.log 2>&1 &
             sleep 1
-            /usr/bin/python3 PhoneDisk/Companion/Tests/capture_desktop.py out/linux.png
+            /usr/bin/python3 PhoneDisk/Companion/Tests/capture_desktop.py out/linux
           '
       - uses: actions/upload-artifact@v4
         with:
           name: phonedisk-preview-linux
-          path: out/linux.png
+          path: out/linux-*.png
           if-no-files-found: error
           retention-days: 7
