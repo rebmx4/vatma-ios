@@ -143,7 +143,14 @@ def validate_icons(root):
             require(png_header(folder / row["filename"]) == (1024, 1024, 8, icon_types[appearance]), "Wrong PNG dimensions or color type for icon appearance")
 
 
+def validate_photo_library_usage(info):
+    description = info.get("NSPhotoLibraryAddUsageDescription")
+    require(isinstance(description, str) and description.strip(), "Missing photo library add permission description")
+    require("NSPhotoLibraryUsageDescription" not in info, "Full photo library access is not needed to save images")
+
+
 def validate_plist(info, root=ROOT):
+    validate_photo_library_usage(info)
     require(info["UIDeviceFamily"] == [1, 2], "Plist must support iPhone and iPad")
     languages = ("ru", "en", "es", "de", "fr", "pt-BR", "it", "zh-Hans", "ko", "ja")
     require(tuple(info["CFBundleLocalizations"]) == languages, "Unexpected supported languages")

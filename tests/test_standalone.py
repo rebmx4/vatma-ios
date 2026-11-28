@@ -27,6 +27,7 @@ def packaged_info():
             "CFBundleExecutable": "ATMA", "CFBundleShortVersionString": verify_ipa.MARKETING_VERSION, "CFBundleVersion": "7",
             "MinimumOSVersion": "17.0", "UIDeviceFamily": [1, 2],
             "UIBackgroundModes": ["audio"],
+            "NSPhotoLibraryAddUsageDescription": "ATMA asks to add the selected image to Photos.",
             "CFBundleIcons": icons, "CFBundleIcons~ipad": copy.deepcopy(icons),
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True, "NSAllowsArbitraryLoadsInWebContent": True}}
 
@@ -64,6 +65,17 @@ class StandaloneConfigTests(unittest.TestCase):
                 validate.validate_plist({**source, "UIBackgroundModes": modes})
             with self.assertRaises(ValueError):
                 verify_ipa.validate_info({**packaged_info(), "UIBackgroundModes": modes}, "7")
+
+    def test_photo_saving_requires_add_only_permission(self):
+        source = plistlib.loads((ROOT / "BrowserResources/Info.plist").read_bytes())
+        for original, validator in ((source, validate.validate_plist),
+                                    (packaged_info(), lambda info: verify_ipa.validate_info(info, "7"))):
+            missing = original.copy()
+            missing.pop("NSPhotoLibraryAddUsageDescription")
+            with self.assertRaisesRegex(ValueError, "Missing photo library add permission"):
+                validator(missing)
+            with self.assertRaisesRegex(ValueError, "Full photo library access"):
+                validator({**original, "NSPhotoLibraryUsageDescription": "Full access"})
 
     def test_real_bundled_certificate_pins_and_tampering(self):
         validate.validate_certificates(ROOT / "assets/certificates")

@@ -6,6 +6,7 @@ import plistlib
 import re
 import zipfile
 from app_identity import BUNDLE_ID
+from validate import validate_photo_library_usage
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_SETTINGS = json.loads((ROOT / "project.yml").read_text(encoding="utf-8"))["settings"]["base"]
@@ -14,6 +15,7 @@ ALTERNATES = {f"AppIconA1{i:02d}" for i in range(1, 11)}
 
 
 def validate_info(info, expected_build):
+    validate_photo_library_usage(info)
     expected = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "ATMA",
                 "CFBundleDisplayName": "ATMA", "CFBundleExecutable": "ATMA",
                 "CFBundleShortVersionString": MARKETING_VERSION, "CFBundleVersion": str(expected_build)}

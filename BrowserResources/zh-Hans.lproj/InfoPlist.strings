@@ -1,3 +1,4 @@
 "NSCameraUsageDescription" = "当你允许当前网站使用摄像头时，ATMA 会请求摄像头权限。";
+"NSPhotoLibraryAddUsageDescription" = "ATMA 会在将你选中的图片存入照片图库时请求许可。";
 "NSMicrophoneUsageDescription" = "当你允许当前网站使用麦克风时，ATMA 会请求麦克风权限。";
 "NSFaceIDUsageDescription" = "启用后，Face ID 可保护你对 ATMA 私密桌面的访问。";

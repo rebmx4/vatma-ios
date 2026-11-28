@@ -1,2 +1,3 @@
 "NSCameraUsageDescription" = "ATMA requests camera access when you allow the website you opened to use it.";
+"NSPhotoLibraryAddUsageDescription" = "ATMA asks to add the image you choose to your photo library.";
 "NSMicrophoneUsageDescription" = "ATMA requests microphone access when you allow the website you opened to use it.";

@@ -1,2 +1,3 @@
 "NSCameraUsageDescription" = "ATMA richiede l’accesso alla fotocamera quando consenti al sito aperto di usarla.";
+"NSPhotoLibraryAddUsageDescription" = "ATMA chiede il permesso di salvare in Foto l’immagine che hai scelto.";
 "NSMicrophoneUsageDescription" = "ATMA richiede l’accesso al microfono quando consenti al sito aperto di usarlo.";
