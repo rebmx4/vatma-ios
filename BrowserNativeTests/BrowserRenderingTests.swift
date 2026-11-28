@@ -304,11 +304,7 @@ final class BrowserRenderingTests: XCTestCase {
     }
 
     private func openManualShortcutEditor() async throws {
-        _ = try await script("document.getElementById('settings').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('desktop-menu-settings')", in: controller.ui)
-        _ = try await script("document.getElementById('desktop-menu-settings').click(); return true;", in: controller.ui)
-        try await waitFor("!!document.getElementById('add-desktop-app')", in: controller.ui)
-        _ = try await script("document.getElementById('add-desktop-app').click(); return true;", in: controller.ui)
+        _ = try await rpc("panel", body: ["panel": "add"])
         try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
     }
 
