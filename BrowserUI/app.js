@@ -698,6 +698,9 @@ function activate(app,scope='public') {
 }
 function renderApps() {
   $('lock-private').hidden=!vaultKey;
+  // A save can arrive while the native toolbar is still only footer-height.
+  // Redraw when the home viewport returns, even if it matches its previous size.
+  renderedDesktopViewport=null;
   if(state?.mode==='browse'||['blank','incognito'].includes(document.body.dataset.surface))return;
   if(document.body.hasAttribute('data-desktop-search'))renderDesktopQuickAccess();
   if(document.body.dataset.runtime==='ios'&&state&&Math.abs(innerHeight-state.height)>1)return;
