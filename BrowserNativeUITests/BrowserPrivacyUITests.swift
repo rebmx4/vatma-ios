@@ -7,7 +7,8 @@ final class BrowserPrivacyUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
-        app.launchArguments = ["-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU", "--atma-ui-diagnostics"]
+        // Keep the Russian desktop separate from the unit-test host's saved regional layout.
+        app.launchArguments = ["-atma.ui.loopback.port", "28917", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU", "--atma-ui-diagnostics"]
         app.launch()
         XCTAssertTrue(button(["Меню браузера", "Browser menu"]).waitForExistence(timeout: 60))
     }

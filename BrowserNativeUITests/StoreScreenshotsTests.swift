@@ -8,7 +8,8 @@ final class StoreScreenshotsTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
-        app.launchArguments = ["-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
+        // Keep the Russian desktop separate from the unit-test host's saved regional layout.
+        app.launchArguments = ["-atma.ui.loopback.port", "28917", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
         app.launch()
     }
 

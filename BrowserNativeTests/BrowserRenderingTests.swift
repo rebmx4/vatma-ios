@@ -307,7 +307,7 @@ final class BrowserRenderingTests: XCTestCase {
         let destination = base.appendingPathComponent("slow").absoluteString
         try controller.open(destination)
         let rejection = try await script("try {await window.webkit.messageHandlers.atma.postMessage({action:'current-site'});return '';} catch(error){return String(error.message||error);}", in: controller.ui) as? String
-        XCTAssertTrue(rejection?.contains("Р”РѕР¶РґРёС‚РµСЃСЊ") == true || rejection?.contains("РЎС‚СЂР°РЅРёС†Р°") == true,
+        XCTAssertTrue(rejection?.contains("Дождитесь") == true || rejection?.contains("Страница") == true,
                       "Quick-add must reject the preceding document during navigation: \(String(describing: rejection))")
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(30, 70, 220)")
         try await waitFor("document.getElementById('address').value===\(renderingJSONString(destination)) && !document.getElementById('pin-site').disabled", in: controller.ui)
