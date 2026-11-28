@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 internal static class Program
 {
@@ -137,16 +138,57 @@ internal sealed class Backend : IDisposable
     }
 }
 
-internal static class DesktopPalette
+internal sealed class DesktopPalette
 {
-    internal static readonly Color Surface = Color.FromArgb(22, 22, 22);
-    internal static readonly Color Outline = Color.FromArgb(49, 49, 49);
-    internal static readonly Color Muted = Color.FromArgb(180, 180, 180);
-    internal static readonly Color Green = Color.FromArgb(164, 200, 174);
-    internal static readonly Color Selection = Color.FromArgb(41, 58, 48);
-    internal static readonly Color Red = Color.FromArgb(239, 168, 165);
+    internal static readonly DesktopPalette Light = new DesktopPalette(false);
+    internal static readonly DesktopPalette Dark = new DesktopPalette(true);
     internal const TextFormatFlags Line = TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter |
         TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+
+    internal readonly bool IsDark;
+    internal readonly Color Background, Surface, Outline, Text, Muted, Accent, Selection, Danger;
+    internal readonly Color Control, ControlOutline, Primary, PrimaryOutline, Hover, Pressed, Signal, SignalOutline;
+
+    private DesktopPalette(bool dark)
+    {
+        IsDark = dark;
+        Background = Shade(0xf4f5f3, 0x000000);
+        Surface = Shade(0xffffff, 0x161616);
+        Outline = Shade(0xdce3de, 0x313131);
+        Text = Shade(0x1b211e, 0xf4f4f4);
+        Muted = Shade(0x54605a, 0xb4b4b4);
+        Accent = Shade(0x315a42, 0xa4c8ae);
+        Selection = Shade(0xe2ede6, 0x293a30);
+        Danger = Shade(0x963b37, 0xefa8a5);
+        Control = Shade(0xf1f3f1, 0x252525);
+        ControlOutline = Shade(0xdce1dd, 0x373737);
+        Primary = Shade(0xe7f0e9, 0x26362c);
+        PrimaryOutline = Shade(0xcbded2, 0x40574a);
+        Hover = Shade(0xe9eeea, 0x343834);
+        Pressed = Shade(0xe1eae3, 0x303c34);
+        Signal = Shade(0xedf3ee, 0x1b221e);
+        SignalOutline = Shade(0xd8e5dc, 0x343c37);
+    }
+
+    private Color Shade(int light, int dark)
+    {
+        return Color.FromArgb(unchecked((int)0xff000000) | (IsDark ? dark : light));
+    }
+
+    internal static DesktopPalette FromSystem()
+    {
+        const string path = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+        try {
+            return Object.Equals(Registry.GetValue(path, "AppsUseLightTheme", 1), 0) ? Dark : Light;
+        } catch (System.Security.SecurityException) { return Light; }
+        catch (UnauthorizedAccessException) { return Light; }
+    }
+
+    internal static DesktopPalette For(Control control)
+    {
+        var window = control.FindForm() as DesktopForm;
+        return window == null ? Light : window.Palette;
+    }
 
     internal static void Round(Graphics graphics, Rectangle bounds, int radius, Color fill, Color outline)
     {
@@ -173,25 +215,63 @@ internal static class DesktopPalette
 
 internal class DesktopForm : Form
 {
+    private DesktopPalette palette = DesktopPalette.Light;
+    internal DesktopPalette Palette { get { return palette; } }
+    internal static readonly object MutedText = new object();
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
     protected override void OnHandleCreated(EventArgs args)
     {
         base.OnHandleCreated(args);
+        ReadAppearance(true);
+    }
+
+    protected override void OnActivated(EventArgs args)
+    {
+        base.OnActivated(args);
+        ReadAppearance(false);
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        const int settingChange = 0x001a;
+        const int themeChanged = 0x031a;
+        if (IsHandleCreated && (message.Msg == settingChange || message.Msg == themeChanged))
+            ReadAppearance(false);
+    }
+
+    private void ReadAppearance(bool force)
+    {
+        var updated = DesktopPalette.FromSystem();
+        if (!force && updated == palette) return;
+        palette = updated;
+        ApplyColors(this, palette.Background);
+        Invalidate(true);
+
         if (SystemInformation.HighContrast) return;
         const int useImmersiveDarkMode = 20;
         const int windowCornerPreference = 33;
         const int captionColor = 35;
         const int textColor = 36;
-        int dark = 1;
+        int dark = palette.IsDark ? 1 : 0;
         int round = 2;
-        int caption = ColorTranslator.ToWin32(Color.Black);
-        int text = ColorTranslator.ToWin32(Color.WhiteSmoke);
+        int caption = ColorTranslator.ToWin32(palette.Background);
+        int text = ColorTranslator.ToWin32(palette.Text);
         DwmSetWindowAttribute(Handle, useImmersiveDarkMode, ref dark, sizeof(int));
         DwmSetWindowAttribute(Handle, windowCornerPreference, ref round, sizeof(int));
         DwmSetWindowAttribute(Handle, captionColor, ref caption, sizeof(int));
         DwmSetWindowAttribute(Handle, textColor, ref text, sizeof(int));
+    }
+
+    private void ApplyColors(Control control, Color background)
+    {
+        if (control is DesktopCard) background = palette.Surface;
+        control.BackColor = background;
+        control.ForeColor = control.Tag == MutedText ? palette.Muted : palette.Text;
+        foreach (Control child in control.Controls) ApplyColors(child, background);
     }
 }
 
@@ -200,22 +280,26 @@ internal sealed class DesktopCard : TableLayoutPanel
     internal DesktopCard()
     {
         DoubleBuffered = true;
-        BackColor = DesktopPalette.Surface;
     }
 
     protected override void OnPaintBackground(PaintEventArgs args)
     {
-        args.Graphics.FillRectangle(Brushes.Black, args.ClipRectangle);
-        DesktopPalette.Round(args.Graphics, ClientRectangle, 22, BackColor, DesktopPalette.Outline);
+        var palette = DesktopPalette.For(this);
+        using (var brush = new SolidBrush(palette.Background))
+            args.Graphics.FillRectangle(brush, args.ClipRectangle);
+        DesktopPalette.Round(args.Graphics, ClientRectangle, 22, palette.Surface, palette.Outline);
     }
 }
 
 internal sealed class NetworkLabel : Label
 {
+    internal bool Online;
+
     protected override void OnPaint(PaintEventArgs args)
     {
-        DesktopPalette.Round(args.Graphics, ClientRectangle, 15, Color.FromArgb(27, 34, 30), Color.FromArgb(52, 60, 55));
-        TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle, ForeColor,
+        var palette = DesktopPalette.For(this);
+        DesktopPalette.Round(args.Graphics, ClientRectangle, 15, palette.Signal, palette.SignalOutline);
+        TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle, Online ? palette.Accent : palette.Muted,
             DesktopPalette.Line | TextFormatFlags.HorizontalCenter);
     }
 }
@@ -223,11 +307,13 @@ internal sealed class NetworkLabel : Label
 internal sealed class SoftButton : Button
 {
     private readonly bool primary;
+    private readonly bool destructive;
     private bool hover;
 
     internal SoftButton(string title, bool primary, bool destructive)
     {
         this.primary = primary;
+        this.destructive = destructive;
         Text = title;
         AutoSize = true;
         MinimumSize = new Size(0, 32);
@@ -236,8 +322,6 @@ internal sealed class SoftButton : Button
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
         UseVisualStyleBackColor = false;
-        BackColor = DesktopPalette.Surface;
-        ForeColor = primary ? DesktopPalette.Green : destructive ? DesktopPalette.Red : Color.WhiteSmoke;
         Cursor = Cursors.Hand;
         MouseEnter += delegate { hover = true; Invalidate(); };
         MouseLeave += delegate { hover = false; Invalidate(); };
@@ -247,15 +331,17 @@ internal sealed class SoftButton : Button
 
     protected override void OnPaint(PaintEventArgs args)
     {
+        var palette = DesktopPalette.For(this);
         using (var brush = new SolidBrush(BackColor))
             args.Graphics.FillRectangle(brush, ClientRectangle);
-        var fill = primary ? Color.FromArgb(38, 54, 44) : Color.FromArgb(37, 37, 37);
-        if (hover) fill = Capture ? Color.FromArgb(48, 60, 52) : Color.FromArgb(52, 56, 52);
-        var border = Focused && ShowFocusCues ? DesktopPalette.Green :
-            primary ? Color.FromArgb(64, 87, 74) : Color.FromArgb(55, 55, 55);
+        var fill = primary ? palette.Primary : palette.Control;
+        if (hover) fill = Capture ? palette.Pressed : palette.Hover;
+        var border = Focused && ShowFocusCues ? palette.Accent :
+            primary ? palette.PrimaryOutline : palette.ControlOutline;
+        var text = primary ? palette.Accent : destructive ? palette.Danger : palette.Text;
         DesktopPalette.Round(args.Graphics, ClientRectangle, 11, fill, border);
         TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle,
-            Enabled ? ForeColor : DesktopPalette.Muted, DesktopPalette.Line | TextFormatFlags.HorizontalCenter);
+            Enabled ? text : palette.Muted, DesktopPalette.Line | TextFormatFlags.HorizontalCenter);
     }
 }
 
@@ -271,8 +357,6 @@ internal sealed class DesktopList : ListView
         MultiSelect = false;
         HideSelection = false;
         HeaderStyle = ColumnHeaderStyle.Nonclickable;
-        BackColor = DesktopPalette.Surface;
-        ForeColor = Color.WhiteSmoke;
         BorderStyle = BorderStyle.None;
         Margin = new Padding(0);
         OwnerDraw = true;
@@ -292,25 +376,27 @@ internal sealed class DesktopList : ListView
 
     protected override void OnDrawColumnHeader(DrawListViewColumnHeaderEventArgs args)
     {
+        var palette = DesktopPalette.For(this);
         using (var brush = new SolidBrush(BackColor))
-        using (var pen = new Pen(DesktopPalette.Outline)) {
+        using (var pen = new Pen(palette.Outline)) {
             args.Graphics.FillRectangle(brush, args.Bounds);
             args.Graphics.DrawLine(pen, args.Bounds.Left, args.Bounds.Bottom - 1, args.Bounds.Right, args.Bounds.Bottom - 1);
         }
         var text = Rectangle.Inflate(args.Bounds, -4, 0);
-        TextRenderer.DrawText(args.Graphics, args.Header.Text, Font, text, DesktopPalette.Muted,
+        TextRenderer.DrawText(args.Graphics, args.Header.Text, Font, text, palette.Muted,
             DesktopPalette.Line | TextFormatFlags.EndEllipsis);
     }
 
     protected override void OnDrawItem(DrawListViewItemEventArgs args)
     {
+        var palette = DesktopPalette.For(this);
         var bounds = new Rectangle(args.Bounds.Left, args.Bounds.Top, ClientSize.Width, args.Bounds.Height);
         using (var brush = new SolidBrush(BackColor))
             args.Graphics.FillRectangle(brush, bounds);
         if (args.Item.Selected) {
             var selected = Rectangle.Inflate(bounds, 0, -1);
-            var outline = Focused && args.Item.Focused && ShowFocusCues ? DesktopPalette.Green : DesktopPalette.Selection;
-            DesktopPalette.Round(args.Graphics, selected, 7, DesktopPalette.Selection, outline);
+            var outline = Focused && args.Item.Focused && ShowFocusCues ? palette.Accent : palette.Selection;
+            DesktopPalette.Round(args.Graphics, selected, 7, palette.Selection, outline);
         }
 
         int left = bounds.Left;
@@ -318,7 +404,7 @@ internal sealed class DesktopList : ListView
             int width = Columns[index].Width;
             var text = new Rectangle(left + 4, bounds.Top, width - 8, bounds.Height);
             TextRenderer.DrawText(args.Graphics, args.Item.SubItems[index].Text, Font, text,
-                index == 0 ? ForeColor : DesktopPalette.Muted, DesktopPalette.Line | TextFormatFlags.EndEllipsis);
+                index == 0 ? palette.Text : palette.Muted, DesktopPalette.Line | TextFormatFlags.EndEllipsis);
             left += width;
         }
     }
@@ -330,13 +416,27 @@ internal sealed class DesktopList : ListView
     }
 }
 
+internal sealed class MenuColors : ProfessionalColorTable
+{
+    private readonly DesktopPalette palette;
+
+    internal MenuColors(DesktopPalette palette) { this.palette = palette; }
+    public override Color ToolStripDropDownBackground { get { return palette.Surface; } }
+    public override Color ImageMarginGradientBegin { get { return palette.Surface; } }
+    public override Color ImageMarginGradientMiddle { get { return palette.Surface; } }
+    public override Color ImageMarginGradientEnd { get { return palette.Surface; } }
+    public override Color MenuBorder { get { return palette.Outline; } }
+    public override Color MenuItemSelected { get { return palette.Selection; } }
+    public override Color MenuItemBorder { get { return palette.Selection; } }
+}
+
 internal sealed class MainWindow : DesktopForm
 {
     private readonly Backend backend;
     private readonly NotifyIcon tray;
     private readonly DesktopList folders = new DesktopList("Папка", "Путь", "Назначение");
     private readonly DesktopList phones = new DesktopList("Имя", "Доступные папки");
-    private readonly Label status = new Label { AutoSize = true, ForeColor = DesktopPalette.Muted, Margin = new Padding(0) };
+    private readonly Label status = new Label { AutoSize = true, Tag = MutedText, Margin = new Padding(0) };
     private readonly NetworkLabel network = new NetworkLabel { AutoSize = true, Anchor = AnchorStyles.Right,
         Padding = new Padding(11, 6, 11, 6), Margin = new Padding(10, 0, 0, 0) };
     private Dictionary<string, object> state;
@@ -349,8 +449,6 @@ internal sealed class MainWindow : DesktopForm
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(790, 545);
         MinimumSize = new Size(655, 500);
-        BackColor = Color.Black;
-        ForeColor = Color.WhiteSmoke;
         Font = new Font("Segoe UI", 10f);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24, 18, 24, 14),
@@ -379,6 +477,11 @@ internal sealed class MainWindow : DesktopForm
         menu.Items.Add("Открыть «Мой диск»", null, delegate { ShowWindow(); });
         menu.Items.Add("Разрешить подключения", null, delegate { AllowNetwork(); });
         menu.Items.Add("Выйти", null, delegate { exit = true; Close(); });
+        menu.Opening += delegate {
+            var colors = DesktopPalette.FromSystem();
+            menu.Renderer = new ToolStripProfessionalRenderer(new MenuColors(colors));
+            foreach (ToolStripItem item in menu.Items) item.ForeColor = colors.Text;
+        };
         tray = new NotifyIcon { Icon = Icon, Text = "Мой диск", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += delegate { ShowWindow(); };
         FormClosing += delegate(object sender, FormClosingEventArgs e) {
@@ -486,7 +589,8 @@ internal sealed class MainWindow : DesktopForm
         if ((bool)state["hasNetwork"]) routes.Add("Домашняя сеть");
         if ((bool)state["hasTailnet"]) routes.Add("Tailscale");
         network.Text = routes.Count > 0 ? "●  " + String.Join(" · ", routes) : "○  Нет сети";
-        network.ForeColor = routes.Count > 0 ? DesktopPalette.Green : DesktopPalette.Muted;
+        network.Online = routes.Count > 0;
+        network.Invalidate();
         status.Text = shared.Count == 0 ? "Добавьте папку, чтобы подключить iPhone."
             : !(bool)state["hasNetwork"] ? "Подключите компьютер к домашней сети, чтобы создать QR-код."
             : phones.Items.Count == 0 ? "Папка готова. Нажмите «Подключить телефон»." : "Окно можно свернуть.";
@@ -528,7 +632,7 @@ internal sealed class MainWindow : DesktopForm
     {
         return new DesktopForm { Text = title, StartPosition = FormStartPosition.CenterParent, ClientSize = size,
             FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false,
-            ShowInTaskbar = false, BackColor = Color.Black, ForeColor = Color.WhiteSmoke, Font = Font };
+            ShowInTaskbar = false, Font = Font };
     }
 
     private void PairPhone()
@@ -545,7 +649,7 @@ internal sealed class MainWindow : DesktopForm
             var hint = new Label { Text = "Наведите камеру iPhone на QR-код и нажмите на ссылку. Код также можно считать в «Моём диске» через «Добавить компьютер». Оба устройства должны быть в одной сети Wi-Fi.",
                 AutoSize = true, MaximumSize = new Size(380, 0) };
             var canvas = new CodePanel { Dock = DockStyle.Fill };
-            var expires = new Label { AutoSize = true, ForeColor = DesktopPalette.Muted };
+            var expires = new Label { AutoSize = true, Tag = MutedText };
             var paired = PhoneList(backend.Call("state")).Select(phone => (string)phone["id"]).ToArray();
             var until = DateTime.UtcNow;
             Action renew = delegate {
@@ -596,8 +700,7 @@ internal sealed class MainWindow : DesktopForm
         var phone = PhoneList(state).First(record => (string)record["id"] == device);
         var granted = Dict(phone["scopes"]);
         using (var prompt = Dialog("Права доступа · " + phone["name"], new Size(485, 470))) {
-            var list = new CheckedListBox { Dock = DockStyle.Fill, BackColor = DesktopPalette.Surface, ForeColor = Color.WhiteSmoke,
-                CheckOnClick = true, BorderStyle = BorderStyle.None };
+            var list = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, BorderStyle = BorderStyle.None };
             var choices = new List<Tuple<string, string>>();
             var labels = new Dictionary<string, string> { { "view", "Просмотр" }, { "download", "Скачивание" },
                 { "create", "Запись" }, { "delete", "Удаление" } };
