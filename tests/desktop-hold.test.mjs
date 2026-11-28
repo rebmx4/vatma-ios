@@ -14,8 +14,9 @@ function tileFixture({editing=true,app={id:'custom-image',name:'Saved website',t
  vm.createContext(page);
  const itemBegin=source.indexOf('function createItem('),itemEnd=source.indexOf('function activate(',itemBegin);
  const holdBegin=source.indexOf('function beginGesture('),holdEnd=source.indexOf('function clearHover(',holdBegin);
+ const swipeBegin=source.indexOf('function swipeDesktopDragPage('),swipeEnd=source.indexOf("document.addEventListener('pointermove'",swipeBegin);
  const releaseBegin=source.indexOf('async function endGesture('),releaseEnd=source.indexOf("document.addEventListener('pointerup', event=>endGesture(event))",releaseBegin);
- vm.runInContext(source.slice(itemBegin,itemEnd)+source.slice(holdBegin,holdEnd)+source.slice(releaseBegin,releaseEnd),page);
+ vm.runInContext(source.slice(itemBegin,itemEnd)+source.slice(holdBegin,holdEnd)+source.slice(swipeBegin,swipeEnd)+source.slice(releaseBegin,releaseEnd),page);
  const item=page.createItem(app,null,0,scope);
  const event=target=>({button:0,pointerId:1,clientX:20,clientY:30,target:{closest:selector=>selector===target?{}:null},preventDefault(){}});
  return{page,item,event,opened};
@@ -59,6 +60,23 @@ test('a completed drop removes the dragged artwork before rendering its new slot
  f.page.updatePool=async()=>{order.push('render');assert.equal(f.page.gesture,null);};
  await f.page.endGesture(f.event('.app-tile'));
  assert.deepEqual(order,['remove','render']);
+});
+
+test('a second finger turns one page and lifting it preserves the first finger’s drag',async()=>{
+ const f=tileFixture(),turns=[];
+ const current=f.page.gesture={pointerId:1,active:true,pageSwipe:{pointerId:2,x:140,y:80}};
+ f.page.turnDesktopDragPage=(drag,direction)=>{assert.equal(drag,current);turns.push(direction);};
+ const swipe={pointerId:2,clientX:70,clientY:81,preventDefault(){}};
+ f.page.swipeDesktopDragPage(current,swipe);
+ f.page.swipeDesktopDragPage(current,{...swipe,clientX:10});
+ await f.page.endGesture(swipe);
+ assert.deepEqual(turns,[1]);
+ assert.equal(current.pageSwipe,null);
+ assert.equal(f.page.gesture,current);
+ current.pageSwipe={pointerId:3,x:30,y:60};
+ await f.page.endGesture({...swipe,pointerId:3,clientX:120,clientY:61});
+ assert.deepEqual(turns,[1,-1]);
+ assert.equal(f.page.gesture,current);
 });
 
 test('opening the editor consumes its release click and accepts the next deliberate press',async()=>{

@@ -72,6 +72,8 @@ body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::aft
   touch-action: pan-x pan-y;
 }
 
+.home .desktop-pages[data-icon-grabbed] { touch-action: none; }
+
 .home .desktop-page {
   grid-template-rows: repeat(var(--desktop-page-rows, 5), minmax(calc(60px + 17px * var(--text-scale, 1)), 1fr));
   grid-auto-flow: row;

@@ -712,7 +712,7 @@ function gridMetrics() {
   const height=innerHeight-footer-oldTop-8-dotsMargin-14;
   return{columns,rows:Math.max(1,Math.floor((height-14+gap)/(cell+gap)))};
 }
-function showDesktopPage(page) { $('apps').scrollTo({left:page*$('apps').clientWidth,behavior:reducedMotion.matches?'instant':'smooth'}); }
+function showDesktopPage(page,immediate=false) { $('apps').scrollTo({left:page*$('apps').clientWidth,behavior:immediate||reducedMotion.matches?'instant':'smooth'}); }
 function updateDesktopPageIndicators() {
   [...$('apps').children].forEach((page,index)=>{page.inert=index!==desktopPage;});
   [...$('desktop-dots').children].forEach((dot,index)=>{
@@ -720,14 +720,16 @@ function updateDesktopPageIndicators() {
     dot.setAttribute('aria-current',index===desktopPage?'page':'false');
   });
 }
-$('apps').addEventListener('scroll',event=>{
-  if(event.target!==$('apps')||!$('apps').clientWidth)return;
-  const next=Math.round($('apps').scrollLeft/$('apps').clientWidth);
+function selectVisibleDesktopPage(next) {
   if(next!==desktopPage){
     desktopPage=next;updateDesktopPageIndicators();
     const scope=currentScope();
     if($('desktop-dock').dataset.scope!==scope)renderDesktopDock(scope);
   }
+}
+$('apps').addEventListener('scroll',event=>{
+  if(event.target!==$('apps')||!$('apps').clientWidth)return;
+  selectVisibleDesktopPage(Math.round($('apps').scrollLeft/$('apps').clientWidth));
   clearTimeout(pageLockTimer);pageLockTimer=setTimeout(()=>{if(vaultKey&&currentScope()==='public'&&Date.now()>autoLockAfter)lockVault();},220);
 });
 let quickAccessExpanded=false;
@@ -863,15 +865,19 @@ $('apps').addEventListener('pointerup',event=>{
 });
 function beginGesture(event, app, parentId,scope='public') {
   if (event.button !== 0 || gesture) return;
-  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')), fromDock:Boolean(event.target.closest('.desktop-dock')) };
-  if (editing) { event.preventDefault(); capturePointer(current); }
+  const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, pointerType:event.pointerType, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')), fromDock:Boolean(event.target.closest('.desktop-dock')) };
+  if (editing) { event.preventDefault(); capturePointer(current); setDesktopGrab(current,true); }
   current.hold = setTimeout(() => {
     if (gesture !== current) return;
     current.held = true; capturePointer(current); setEditing(true);
+    setDesktopGrab(current,true);
     navigator.vibrate?.(12);
   }, DESKTOP_HOLD_MS);
 }
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
+function setDesktopGrab(current,grabbed) {
+  if(current.pointerType==='touch')$('apps').toggleAttribute('data-icon-grabbed',grabbed);
+}
 function clearHover() {
   if (!gesture)return;
   clearTimeout(gesture.hoverTimer);
@@ -883,7 +889,7 @@ function turnDesktopDragPage(current,direction) {
   if(gesture!==current)return;
   const first=current.scope==='private'?privatePageStart:0;
   const count=current.scope==='private'?privatePageCount:publicPages+Number(Boolean(current.previewPage));
-  const next=desktopPage+direction;
+  const next=(current.destinationPage??desktopPage)+direction;
   if(next<first||next>first+count)return;
   if(next===first+count){
     if(current.previewPage||count>=MAX_DESKTOP_PAGES)return;
@@ -891,12 +897,60 @@ function turnDesktopDragPage(current,direction) {
     current.previewPage={scope:current.scope,index:next,firstSlot:count*columns*rows};
     renderApps();
   }
+  current.destinationPage=next;
   showDesktopPage(next);
   clearHover();
-  setTimeout(()=>{if(gesture===current)updateDropTarget(current.lastX,current.lastY,current);},380);
+  clearTimeout(current.pageSettleTimer);
+  current.pageSettleTimer=setTimeout(()=>{if(gesture===current)updateDropTarget(current.lastX,current.lastY,current);},380);
+}
+function positionDesktopDrag(current,x,y) {
+  current.ghost.style.left=`${x-current.offsetX}px`;
+  current.ghost.style.top=`${y-current.offsetY}px`;
+  current.lastX=x;current.lastY=y;
+}
+function startDesktopDrag(current) {
+  const root=current.parentId?$('folder-pages'):document.querySelector('.home');
+  const original=[...(root?.querySelectorAll('.app-item')||[])].find(item=>item.dataset.app===current.id&&item.dataset.scope===current.scope);
+  if(!original)return false;
+  current.active=true;clearTimeout(current.hold);suppressClickUntil=Date.now()+1000;
+  const tile=original.querySelector('.app-tile');
+  const rect=tile.getBoundingClientRect(),width=tile.offsetWidth*.92;
+  const ghost=current.ghost=original.cloneNode(true);
+  ghost.classList.add('drag-ghost');ghost.setAttribute('aria-hidden','true');
+  const artwork=ghost.querySelector('.app-tile');
+  ghost.replaceChildren(artwork);
+  ghost.style.width=artwork.style.width=`${width}px`;
+  current.offsetX=(current.x-rect.x)*width/rect.width;
+  current.offsetY=(current.y-rect.y)*width/rect.height;
+  positionDesktopDrag(current,current.x,current.y);
+  document.body.append(ghost);original.classList.add('dragging');
+  return true;
+}
+$('apps').addEventListener('pointerdown',event=>{
+  const current=gesture;
+  if(!current||panel||!editing||current.pointerType!=='touch'||event.pointerType!=='touch'||
+      current.pointerId===event.pointerId||current.pageSwipe)return;
+  if(!current.active&&!startDesktopDrag(current))return;
+  clearTimeout(current.pageTimer);
+  current.pageDirection=0;
+  current.pageSwipe={pointerId:event.pointerId,x:event.clientX,y:event.clientY};
+  capturePointer(current.pageSwipe);
+  event.preventDefault();
+},true);
+function swipeDesktopDragPage(current,event) {
+  const swipe=current.pageSwipe;
+  event.preventDefault();
+  if(swipe.turned)return;
+  const dx=event.clientX-swipe.x,dy=event.clientY-swipe.y;
+  if(Math.abs(dx)<36||Math.abs(dx)<Math.abs(dy)*1.2)return;
+  swipe.turned=true;
+  turnDesktopDragPage(current,dx<0?1:-1);
 }
 document.addEventListener('pointermove', event => {
-  const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
+  const current=gesture;
+  if(!current)return;
+  if(event.pointerId===current.pageSwipe?.pointerId){swipeDesktopDragPage(current,event);return;}
+  if(event.pointerId!==current.pointerId)return;
   const distance = Math.hypot(event.clientX-current.x, event.clientY-current.y);
   if(current.swipe){event.preventDefault();$('apps').scrollLeft=current.scrollStart-(event.clientX-current.x);return;}
   if (!current.active && distance > 7) {
@@ -906,26 +960,12 @@ document.addEventListener('pointermove', event => {
       else gesture=null;
       return;
     }
-    current.active = true; clearTimeout(current.hold); suppressClickUntil = Date.now()+1000;
-    const original = [...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===current.id&&item.dataset.scope===current.scope);
-    if(!original){gesture=null;return;}
-    const tile = original.querySelector('.app-tile');
-    const rect = tile.getBoundingClientRect();
-    current.ghost = original.cloneNode(true); current.ghost.classList.add('drag-ghost');
-    current.ghost.setAttribute('aria-hidden','true');
-    const artwork = current.ghost.querySelector('.app-tile');
-    current.ghost.replaceChildren(artwork);
-    const width=tile.offsetWidth*.92;
-    current.ghost.style.width = artwork.style.width = `${width}px`;
-    current.offsetX = (current.x-rect.x)*width/rect.width;
-    current.offsetY = (current.y-rect.y)*width/rect.height;
-    document.body.append(current.ghost); original.classList.add('dragging');
+    if(!startDesktopDrag(current))return;
   }
   if (!current.active) return;
   event.preventDefault();
-  current.ghost.style.left = `${event.clientX-current.offsetX}px`; current.ghost.style.top = `${event.clientY-current.offsetY}px`;
-  current.lastX=event.clientX;current.lastY=event.clientY;
-  if(!panel) {
+  positionDesktopDrag(current,event.clientX,event.clientY);
+  if(!panel&&!current.pageSwipe) {
     const r=$('apps').getBoundingClientRect();
     const direction=event.clientY>=r.top&&event.clientY<=r.bottom?(event.clientX<r.left+25?-1:event.clientX>r.right-25?1:0):0;
     if(direction!==current.pageDirection){clearTimeout(current.pageTimer);current.pageDirection=direction;
@@ -1026,8 +1066,21 @@ function animateShortcutDrop(current,result,from,joined) {
   }
 }
 async function endGesture(event, cancelled = false) {
-  const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
-  clearTimeout(current.hold); clearTimeout(current.pageTimer);
+  const current=gesture;
+  if(!current)return;
+  if(event.pointerId===current.pageSwipe?.pointerId){
+    if(!cancelled)swipeDesktopDragPage(current,event);
+    current.pageSwipe=null;
+    return;
+  }
+  if(event.pointerId!==current.pointerId)return;
+  clearTimeout(current.hold);clearTimeout(current.pageTimer);clearTimeout(current.pageSettleTimer);
+  setDesktopGrab(current,false);
+  if(!cancelled&&Number.isInteger(current.destinationPage)){
+    const viewport=$('apps'),index=current.destinationPage;
+    if(Math.abs(viewport.scrollLeft-index*viewport.clientWidth)>1){showDesktopPage(index,true);clearHover();}
+    selectVisibleDesktopPage(index);
+  }
   // Recheck after scrolling even when the pointer stayed still at the edge.
   if(current.active&&!cancelled)updateDropTarget(event.clientX,event.clientY,current);
   clearTimeout(current.hoverTimer);
@@ -1674,7 +1727,10 @@ function lockVault() {
     $('address').value='';
     $('address').dispatchEvent(new Event('input',{bubbles:true}));
   }
-  if(gesture?.scope==='private'){clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);gesture.ghost?.remove();gesture=null;}
+  if(gesture?.scope==='private'){
+    clearTimeout(gesture.hold);clearTimeout(gesture.hoverTimer);clearTimeout(gesture.pageTimer);clearTimeout(gesture.pageSettleTimer);
+    setDesktopGrab(gesture,false);gesture.ghost?.remove();gesture=null;
+  }
   if(folderScope==='private'&&$('overlay').classList.contains('folder-drag-exit'))renderPanel();
   if((panel==='folder'&&folderScope==='private')||(panel==='edit'&&editorScope==='private')||(panel==='add'&&editorScope==='private'))setPanel(null,{immediate:true});
   renderApps();
