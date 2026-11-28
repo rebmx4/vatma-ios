@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {bundledSiteArtwork} from '../BrowserUI/desktop-defaults.js';
 const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
 function setup(privateBrowsing=true,iconUrl='https://cdn.private.example/site.png'){
  const requests=[],images=[],elements=new Map(),metadataRequests=[],writes=[],unlocks=[];
@@ -9,6 +10,7 @@ function setup(privateBrowsing=true,iconUrl='https://cdn.private.example/site.pn
  const logo='data:image/png;base64,site-artwork';
  const element=id=>{if(!elements.has(id))elements.set(id,{dataset:{},innerHTML:'',setAttribute(key,value){this[key]=value;},getAttribute(key){return this[key];},replaceChildren(value){this.content=value;}});return elements.get(id);};
  const context={
+  bundledSiteArtwork,restartPinShine(){},
   URL,crypto,$:element,state:{activeTabId:'site',mode:'browse',url,siteName:'Private',privateBrowsing,iconUrl},apps:[],vaultApps:[],vaultKey:null,
   poolFor:scope=>scope==='private'?context.vaultApps:context.apps,
   updatePool:async(scope,entries)=>{writes.push(scope);context[scope==='private'?'vaultApps':'apps']=entries;},
@@ -22,6 +24,19 @@ function setup(privateBrowsing=true,iconUrl='https://cdn.private.example/site.pn
  return {context,element,requests,images,metadataRequests,logo,writes,unlocks};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+test('results show the search engine logo and follow the selected site after navigation',async()=>{
+ const f=setup(true);
+ f.context.state.url='https://www.google.com/search?q=vk';
+ f.context.updateQuickAdd();
+ const google=f.images[0];
+ assert.match(google.source,/google\.com\.png$/);
+ f.context.state.url='https://m.vk.ru/feed';
+ f.context.updateQuickAdd();
+ const vk=f.images[1];google.load();vk.load();
+ assert.match(vk.source,/\/vk\.png$/);
+ assert.equal(f.element('pin-site-art').content,vk);
+ assert.deepEqual(f.requests,[]);
+});
 for(const icon of ['https://cdn.private.example/site.png',''])test('Incognito quick-add uses the local globe without resolving an external '+(icon?'declared icon':'fallback favicon'),()=>{
  const f=setup(true,icon);f.context.updateQuickAdd();
  assert.deepEqual(f.metadataRequests,[]);assert.deepEqual(f.requests,[]);assert.equal(f.images.length,0);

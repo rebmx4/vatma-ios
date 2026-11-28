@@ -1,5 +1,6 @@
-import {APPEARANCE_KEY,ICON_CHOICES,WALLPAPERS,wallpaperForTheme,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
-import {createInitialDesktop,bundledShortcutArtwork,hasTranslatedDesktopLabel} from './desktop-defaults.js';
+import {APPEARANCE_KEY,ACCENT_CHOICES,accentColors,ICON_CHOICES,WALLPAPERS,wallpaperForTheme,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
+import {createInitialDesktop,bundledShortcutArtwork,bundledSiteArtwork,hasTranslatedDesktopLabel} from './desktop-defaults.js';
+import {duplicateShortcut} from './workspace-model.js';
 import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry, desktopPageCount, MAX_DESKTOP_PAGES, FOLDER_PAGE_SIZE, MAX_FOLDER_SHORTCUTS } from './workspace-model.js';
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview,showTabsHistory} from './tabs-view.js';
@@ -36,6 +37,7 @@ function bindInterfaceLanguage(select) {
   });
 }
 const paths = {
+  copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
   search: '<circle cx="10.7" cy="10.7" r="6.7"/><path d="m16 16 4.8 4.8"/>',
   translate: '<path d="M2 6h11M7.5 3v3m3.5 0c-1 5-4 8-9 10m2-7c1 3 3 5 6 6m3 6 4.5-10L22 21m-7.5-3h6"/>',
   left: '<path d="m14.5 5-7 7 7 7"/>', right: '<path d="m9.5 5 7 7-7 7"/>',
@@ -109,7 +111,8 @@ let messageCounts={},messagePollBusy=false,messagePollTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
-const DESKTOP_HOLD_MS = 750; // iPhone SpringBoard 26.4.1: 0.6875s failed, 0.75s entered editing.
+const DESKTOP_HOLD_MS = 1000;
+const ICON_EDIT_HOLD_MS = 1500;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=1;
 let renderedDesktopViewport;
@@ -121,6 +124,7 @@ let vaultKey=null, vaultApps=[], vaultWrite=Promise.resolve(), vaultIdleTimer, p
 let pinDigits='',firstPin=null,pinBusy=false,pinEpoch=0,pendingVaultMove=null,pendingVaultAdd=false,autoLockAfter=0;
 let pinSetup='choice',biometricStatus={available:false,kind:'none'},enableBiometryAfterPIN=false;
 let filePreviewUrl=null;
+let fileViewGeneration=0;
 let disposeMediaPanel;
 const desktopSurfaceKey=`atma-preview-desktop-tab:${context}`;
 let desktopTabId=null;try{desktopTabId=sessionStorage.getItem(desktopSurfaceKey);}catch{}
@@ -151,13 +155,23 @@ function syncDockVisibility() {
 dockVisibility.addEventListener('click',()=>changeAppearance({showDock:!appearance.showDock}));
 function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
+  const {base,ink,onBase}=accentColors(appearance.accent,resolved);
+  document.body.style.setProperty('--app-accent',base);
+  document.body.style.setProperty('--app-accent-text',ink);
+  document.body.style.setProperty('--app-on-accent',onBase);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
   syncDockVisibility();
   applyWallpaper();
   if (panel === 'wallpaper') renderWallpapers();
   renderToolbarMessageBadge();
-  if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==appearance.theme){nativeThemeSent=appearance.theme;api('appearance',{theme:appearance.theme}).catch(error=>{nativeThemeSent=undefined;reportError(error.message);});}
+  const nativeKey=[appearance.theme,base,ink].join('/');
+  if(window.webkit?.messageHandlers?.atma&&nativeThemeSent!==nativeKey){
+    nativeThemeSent=nativeKey;
+    api('appearance',{theme:appearance.theme,accent:base,accentText:ink}).catch(error=>{
+      if(nativeThemeSent===nativeKey){nativeThemeSent=undefined;reportError(error.message);}
+    });
+  }
 }
 async function changeAppearance(patch) {
   let next=normalizeAppearance({...appearance,...patch});
@@ -174,6 +188,10 @@ async function changeAppearance(patch) {
 function updateAppearanceControls() {
   const modes=['auto','light','dark'],control=$('theme-control');
   if(control){
+    for(const choice of document.querySelectorAll('[data-accent-choice]')){
+      choice.setAttribute('aria-pressed',String(choice.dataset.accentChoice===appearance.accent));
+    }
+    $('custom-accent').value=accentColors(appearance.accent,document.body.dataset.theme).base;
     control.style.setProperty('--theme-index',String(modes.indexOf(appearance.theme)));
     for(const mode of modes)$(`theme-${mode}`).checked=appearance.theme===mode;
     $('theme-description').textContent=appearance.theme==='auto'?`Автоматическая · сейчас ${resolveTheme('auto',systemColorScheme.matches)==='dark'?'тёмная':'светлая'}`:appearance.theme==='dark'?'Тёмная тема':'Светлая тема';
@@ -194,6 +212,23 @@ function renderAppearance() {
   const theme=document.createElement('section');theme.className='appearance-section';
   theme.innerHTML=`<h2 class="appearance-title">Тема</h2><div class="theme-control" id="theme-control"><span class="theme-thumb" aria-hidden="true"></span>${[['auto','Авто'],['light','Светлая'],['dark','Тёмная']].map(([value,label])=>`<label><input type="radio" name="atma-interface-theme" id="theme-${value}" value="${value}" aria-label="${value==='auto'?'Автоматическая тема':label+' тема'}"><span>${label}</span></label>`).join('')}</div><p class="theme-description" id="theme-description"></p>`;
   root.append(theme);for(const input of theme.querySelectorAll('input'))input.addEventListener('change',()=>changeAppearance({theme:input.value}));
+  const colors=document.createElement('section');colors.className='appearance-section accent-settings';
+  colors.innerHTML=`<h2 class="appearance-title">Цвет приложения</h2><div class="accent-grid"></div><div class="accent-options"><button type="button" data-accent-choice="auto">Авто</button><label>Свой цвет <input id="custom-accent" type="color"></label></div>`;
+  for(const [label,hex] of ACCENT_CHOICES){
+    const button=document.createElement('button');button.type='button';button.dataset.accentChoice=hex;
+    button.setAttribute('aria-label',localization.t(label));button.title=localization.t(label);
+    button.style.setProperty('--swatch',hex);button.innerHTML='<span></span>';
+    colors.querySelector('.accent-grid').append(button);
+  }
+  colors.addEventListener('click',event=>{
+    const choice=event.target.closest('[data-accent-choice]');
+    if(choice)changeAppearance({accent:choice.dataset.accentChoice});
+  });
+  const custom=colors.querySelector('input');
+  const selectCustom=()=>{if(custom.value!==appearance.accent)changeAppearance({accent:custom.value});};
+  custom.addEventListener('input',selectCustom);
+  custom.addEventListener('change',selectCustom);
+  root.append(colors);
   const languageRow=document.createElement('label');
   languageRow.className='setting-row';
   languageRow.innerHTML=`<span>Язык интерфейса</span><select aria-label="Язык интерфейса">${interfaceLanguageOptions}</select>`;
@@ -250,6 +285,8 @@ function brand(app, useStoredIcon = false) {
     }
     if(useStoredIcon&&/^data:image\/png;base64,/i.test(app.iconUrl||''))
       return `<img src="${escape(app.iconUrl)}" alt="" draggable="false" decoding="sync">`;
+    const siteArtwork=bundledSiteArtwork(app.url);
+    if(siteArtwork)return `<img class="shortcut-brand-icon" src="${siteArtwork}" alt="" draggable="false">`;
   }
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
@@ -329,6 +366,8 @@ function paintShortcutIcon(target,app,scope){
   });
 }
 let pinSiteBusy=false,pinSiteArtKey='',pendingVaultSite=null;
+const pendingShortcutHighlights=new Map();
+let pinShinePage='';
 function normalizedSiteUrl(value) {
   try{const url=new URL(value);return /^https?:$/.test(url.protocol)?url.href:'';}catch{return '';}
 }
@@ -340,7 +379,7 @@ function savedSite(url,scope) {return flattenApps(poolFor(scope)).some(app=>norm
 function updateQuickAdd() {
   const button=$('pin-site'),url=normalizedSiteUrl(state?.url);
   button.hidden=state?.mode!=='browse'||!url;
-  if(button.hidden){pinSiteArtKey='';return;}
+  if(button.hidden){pinSiteArtKey='';pinShinePage='';return;}
   const name=state.siteName||state.title||new URL(url).hostname;
   const scope=shortcutDestination(),saved=!pinSiteBusy&&savedSite(url,scope);
   button.dataset.saved=String(saved);button.disabled=pinSiteBusy||saved||Boolean(state.loading);
@@ -348,20 +387,31 @@ function updateQuickAdd() {
     :saved?`${name} уже на рабочем столе`:`Добавить ${name} на рабочий стол`;
   button.setAttribute('aria-label',label);
   button.title=button.getAttribute('aria-label');$('pin-site-badge').innerHTML=icon(saved?'check':'plus');
-  const key=JSON.stringify([state.activeTabId,url,scope,Boolean(state.loading)]);
+  const page=JSON.stringify([state.activeTabId,url,scope]);
+  if(page!==pinShinePage){
+    pinShinePage=page;
+    restartPinShine(button);
+  }
+  const key=JSON.stringify([page,Boolean(state.loading)]);
   if(key===pinSiteArtKey)return;pinSiteArtKey=key;
   const art=$('pin-site-art');art.innerHTML=icon('globe');delete art.dataset.logo;
+  const bundled=bundledSiteArtwork(url);
+  if(bundled)showQuickAddLogo(art,key,bundled);
   if(scope==='private'||state.loading)return;
-  void paintQuickAddLogo(art,key,{url,iconUrl:state.iconUrl||''});
+  void paintQuickAddLogo(art,key,{url});
 }
 async function paintQuickAddLogo(art,key,site) {
   const metadata=await api('current-site').catch(()=>null);
   if(pinSiteArtKey!==key)return;
   const iconUrl=await resolveShortcutIcon(normalizedSiteUrl(metadata?.url)===site.url?metadata:site);
   if(!iconUrl||pinSiteArtKey!==key)return;
+  showQuickAddLogo(art,key,iconUrl);
+}
+function showQuickAddLogo(art,key,iconUrl) {
   const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';
+  art.pendingLogo=image;
   image.addEventListener('load',()=>{
-    if(pinSiteArtKey!==key)return;
+    if(pinSiteArtKey!==key||art.pendingLogo!==image)return;
     art.dataset.logo='true';
     art.replaceChildren(image);
   });
@@ -386,7 +436,11 @@ async function saveCurrentSite(target) {
     if(!canSave()||savedSite(url,scope))return;
     const entry={id:`custom-${crypto.randomUUID()}`,name:site.siteName||site.title||new URL(url).hostname,url,iconUrl,color:'#337b96',custom:true,messageNotifications:false};
     const previous=poolFor(scope),items=freezeSlots(freezeSlots([...previous,entry],4),6);
-    try{await updatePool(scope,items);}catch(error){
+    try{
+      await updatePool(scope,items);
+      pendingShortcutHighlights.set(scope,{id:entry.id});
+      if(state.mode==='home')requestAnimationFrame(revealSavedShortcut);
+    }catch(error){
       if(poolFor(scope)===items)await updatePool(scope,previous).catch(()=>{});
       throw error;
     }
@@ -675,6 +729,32 @@ function renderApps() {
   updateDesktopPageIndicators();
   renderDesktopDock(currentScope());
   animatePositions($('apps'), previous);
+  if(pendingShortcutHighlights.size)requestAnimationFrame(revealSavedShortcut);
+}
+function restartPinShine(button){
+  button.querySelector('.shortcut-shine')?.remove();
+  const shine=document.createElement('span');
+  shine.className='shortcut-shine';
+  shine.setAttribute('aria-hidden','true');
+  button.insertBefore(shine,$('pin-site-badge'));
+}
+function revealSavedShortcut(){
+  if(state?.mode!=='home'||panel||document.body.dataset.surface!=='home')return;
+  const scope=currentScope(),pending=pendingShortcutHighlights.get(scope);
+  if(!pending||scope==='private'&&!vaultKey)return;
+  const item=$('apps').querySelector(`[data-app="${CSS.escape(pending.id)}"][data-scope="${scope}"]`);
+  if(!item)return;
+  const page=Number(item.closest('.desktop-page').dataset.page);
+  if(pending.started===undefined){
+    pending.started=performance.now();
+    showDesktopPage(page,true);
+    selectVisibleDesktopPage(page);
+    setTimeout(()=>{if(pendingShortcutHighlights.get(scope)===pending)pendingShortcutHighlights.delete(scope);},1550);
+  }
+  const tile=item.querySelector('.app-tile');
+  if(tile.classList.contains('new-shortcut'))return;
+  tile.style.setProperty('--shine-delay',`${pending.started-performance.now()}ms`);
+  tile.classList.add('new-shortcut');
 }
 function desktopCell(app,slot,scope,animationIndex=slot) {
   const item=app?createItem(app,null,animationIndex,scope):document.createElement('div');
@@ -870,12 +950,20 @@ function beginGesture(event, app, parentId,scope='public') {
   if (event.button !== 0 || gesture) return;
   const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, pointerType:event.pointerType, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')), fromDock:Boolean(event.target.closest('.desktop-dock')) };
   if (editing) { event.preventDefault(); capturePointer(current); setDesktopGrab(current,true); }
+  if(!editing&&app.url&&app.type!=='system'&&!isFolder(app)){
+    current.menuTimer=setTimeout(()=>{
+      if(gesture!==current||current.swipe)return;
+      current.held=true;current.menuShown=true;capturePointer(current);
+      showShortcutMenu(app,current);
+    },DESKTOP_HOLD_MS);
+  }
   current.hold = setTimeout(() => {
     if (gesture !== current) return;
+    if(current.menuShown){closeShortcutMenu();current.menuShown=false;}
     current.held = true; capturePointer(current); setEditing(true);
     setDesktopGrab(current,true);
     navigator.vibrate?.(12);
-  }, DESKTOP_HOLD_MS);
+  }, editing?DESKTOP_HOLD_MS:ICON_EDIT_HOLD_MS);
 }
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
 function setDesktopGrab(current,grabbed) {
@@ -887,6 +975,51 @@ function clearHover() {
   gesture.folderDropTile?.removeAttribute('data-folder-drop');
   gesture.folderDropTile=null;
   gesture.targetId=null;gesture.targetSlot=null;gesture.targetDockSlot=null;gesture.hoverKey=null;gesture.combine=false;
+}
+function closeShortcutMenu() {
+  $('shortcut-popup')?.remove();
+}
+function showShortcutMenu(app,press) {
+  closeShortcutMenu();
+  const {scope}=press;
+  const root=document.createElement('div');root.id='shortcut-popup';
+  const menu=document.createElement('div');menu.className='shortcut-popup-card';
+  menu.setAttribute('role','group');menu.setAttribute('aria-label',appLabel(app));
+  const actions=[
+    ['Поделиться','share',async entry=>{
+      if(window.webkit?.messageHandlers?.atma)await api('share-shortcut',{url:entry.url});
+      else if(navigator.share)await navigator.share({title:entry.name,url:entry.url});
+      else throw new Error(localization.t('Не удалось поделиться ссылкой'));
+    }],
+    ['Копировать','copy',async entry=>{
+      const {columns,rows}=gridMetrics();
+      const result=duplicateShortcut(poolFor(scope),entry.id,'custom-'+crypto.randomUUID(),columns,columns*rows);
+      if(result.error)throw new Error(localization.t(result.error));
+      await updatePool(scope,result.items);
+    }],
+    ['Переименовать','edit',entry=>openAppEditor(entry,scope,'name')],
+    ['Сменить иконку','image',entry=>openAppEditor(entry,scope,'icon')],
+    ['Удалить','trash',async entry=>{
+      if(scope==='public'&&pendingVaultMove===entry.id)pendingVaultMove=null;
+      await updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),entry.id));
+    }]
+  ];
+  for(const [label,glyph,run] of actions){
+    const button=document.createElement('button');button.type='button';
+    button.innerHTML=`<span>${escape(localization.t(label))}</span>${icon(glyph)}`;
+    button.onclick=async()=>{
+      closeShortcutMenu();
+      if(scope==='private'&&!vaultKey)return;
+      const entry=findEntry(poolFor(scope),app.id)?.entry;
+      if(entry)try{await run(entry);}catch(error){if(error.name!=='AbortError')reportError(error.message);}
+    };
+    menu.append(button);
+  }
+  root.onclick=event=>{if(event.target===root)closeShortcutMenu();};
+  root.append(menu);document.body.append(root);
+  const width=menu.offsetWidth,height=menu.offsetHeight;
+  menu.style.left=Math.max(8,Math.min(innerWidth-width-8,press.x-width/2))+'px';
+  menu.style.top=Math.max(8,Math.min(innerHeight-height-8,press.y+height+24<=innerHeight?press.y+16:press.y-height-16))+'px';
 }
 function turnDesktopDragPage(current,direction) {
   if(gesture!==current)return;
@@ -958,7 +1091,8 @@ document.addEventListener('pointermove', event => {
   if(current.swipe){event.preventDefault();$('apps').scrollLeft=current.scrollStart-(event.clientX-current.x);return;}
   if (!current.active && distance > 7) {
     if (!editing) {
-      clearTimeout(current.hold);
+      clearTimeout(current.hold);clearTimeout(current.menuTimer);
+      if(current.menuShown){closeShortcutMenu();gesture=null;suppressReleaseClick=true;return;}
       if(!panel&&!current.fromDock&&Math.abs(event.clientX-current.x)>Math.abs(event.clientY-current.y)){current.swipe=true;capturePointer(current);event.preventDefault();}
       else gesture=null;
       return;
@@ -1077,6 +1211,11 @@ async function endGesture(event, cancelled = false) {
     return;
   }
   if(event.pointerId!==current.pointerId)return;
+  clearTimeout(current.menuTimer);
+  if(current.menuShown){
+    if(cancelled)closeShortcutMenu();
+    suppressReleaseClick=true;
+  }
   clearTimeout(current.hold);clearTimeout(current.pageTimer);clearTimeout(current.pageSettleTimer);
   setDesktopGrab(current,false);
   if(!cancelled&&Number.isInteger(current.destinationPage)){
@@ -1214,6 +1353,7 @@ async function setPanel(name, options = {}) {
   try { await action('panel', { panel: name }); } catch {}
 }
 function renderPanel() {
+  closeShortcutMenu();
   const error = $('sheet-error');
   error.hidden = true;
   error.textContent = '';
@@ -1248,7 +1388,7 @@ function renderPanel() {
   else if(panel==='tabs')renderTabs();
   else if(panel==='private-device')renderPrivateDevices();
   else if(panel==='cookies')renderCookieBrowser($('sheet-content'),{api,onBack:()=>setPanel(null),reportError,t:localization.t,backLabel:'Рабочий стол'});
-  else if (panel === 'files') {$('sheet-title').textContent='Файлы';renderFiles();}
+  else if (panel === 'files') {$('sheet-title').textContent='Загрузки';renderFiles();}
   else if (panel === 'wallpaper') renderWallpapers();
   else if (panel === 'add') renderAppForm();
   else if (panel === 'about') $('sheet-content').innerHTML = window.webkit?.messageHandlers?.atma?'<div class="setting-card"><div class="setting-row">Независимый браузер ATMA на WebKit Apple</div></div><p class="sheet-note">Сайты открываются через системный WebKit текущего iPhone или iPad. Cookie и входы сохраняются в браузере.</p>':'<div class="setting-card"><div class="setting-row">Локальный прототип ATMA в Responsively</div></div><p class="sheet-note">Это предпросмотр интерфейса. Работа сайтов в приложении iOS использует системный WebKit.</p><p class="sheet-note">Уведомления, синхронизация, перевод и диктовка Apple в этом этапе не подключены.</p>';
@@ -1275,6 +1415,7 @@ window.atmaShowDownload=async fileID=>{
   if(fileID&&panel==='files')await showFile(fileID);
 };
 async function renderFiles(preserveSearch=false){
+  if(preserveSearch!==true)fileViewGeneration++;
   const search=preserveSearch===true?$('file-search')?.value??'':'';
   $('sheet-content').classList.remove('cookie-browser');
   if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
@@ -1284,25 +1425,44 @@ async function renderFiles(preserveSearch=false){
   fileList.before(transfers);paintDownloadTransfers();
   $('file-search').value=search;
   $('files-refresh').addEventListener('click',renderFiles);
-  const cookieFolder=document.createElement('button');cookieFolder.className='cookies-folder';cookieFolder.id='open-cookies';cookieFolder.innerHTML=`${icon('globe')}<span><strong>Cookie сайтов</strong><small>Просмотр и выборочное удаление</small></span>${icon('right')}`;
-  cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,reportError}));$('file-list').before(cookieFolder);
+  const savedHeading=document.createElement('h3');
+  savedHeading.className='saved-heading';savedHeading.textContent=state?.downloadLabels?.done||localization.t('Загрузки');
+  fileList.before(savedHeading);
   try{
     const {files}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
     function list(){
       const filter=$('file-search').value.toLocaleLowerCase(),visible=files.filter(file=>file.name.toLocaleLowerCase().includes(filter));$('file-list').replaceChildren();
+      savedHeading.hidden=!visible.length;
       if(!visible.length){if(filter||transfers.hidden)$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
       for(const file of visible){
         const button=document.createElement('button');button.className='file-row';button.dataset.file=file.id;
         button.innerHTML=`${fileSymbol(file)}<span class="file-details"><strong data-no-translate>${escape(file.name)}</strong><small>${new Date(file.modified).toLocaleDateString(localization.language)} · ${fileSize(file.size)}</small></span>${icon('right')}`;
-        button.addEventListener('click',()=>showFile(file.id));$('file-list').append(button);
+        button.addEventListener('click',()=>showFile(file.id));fileList.append(button);
+        if(state?.downloadLabels){
+          const controls=document.createElement('div');controls.className='transfer-actions saved-actions';
+          const retry=state.downloadTasks?.find(task=>task.fileID===file.id&&task.retry);
+          if(retry)addFileAction(controls,state.downloadLabels.retry,()=>transferAction('retry',retry.id));
+          addFileAction(controls,state.downloadLabels.delete,async()=>{
+            if(!window.confirm(state.downloadLabels.deleteQuestion+'\n'+file.name))return;
+            await api('file/delete',{fileId:file.id});if(panel==='files'&&$('file-list')===fileList)await renderFiles(true);
+          });
+          fileList.append(controls);
+        }
       }
     }
     $('file-search').addEventListener('input',list);list();
   }catch(error){if(panel==='files'&&$('file-list')===fileList)reportError(error.message);}
 }
+function addFileAction(root,label,run){
+  const button=document.createElement('button');button.type='button';button.textContent=label;
+  button.onclick=async()=>{button.disabled=true;try{await run();}catch(error){reportError(error.message);}finally{button.disabled=false;}};
+  root.append(button);
+}
 async function showFile(id){
+  const generation=++fileViewGeneration;
+  const isCurrent=()=>panel==='files'&&generation===fileViewGeneration;
   try{
-    const file=await api('file',{fileId:id});if(panel!=='files')return;
+    const file=await api('file',{fileId:id});if(!isCurrent())return;
     if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
     $('sheet-content').innerHTML=`<button class="file-back" id="file-back">${icon('left')}Загрузки</button><h2 class="file-title" data-no-translate>${escape(file.name)}</h2><p class="file-meta">${fileSize(file.size)}</p><div id="file-preview" class="file-preview"></div>`;
     $('file-back').addEventListener('click',renderFiles);
@@ -1313,8 +1473,8 @@ async function showFile(id){
       const remove=settingButton(labels.delete,'trash',async()=>{
         if(!window.confirm(labels.deleteQuestion+'\n'+file.name))return;
         remove.disabled=true;
-        try{await api('file/delete',{fileId:id});if(panel==='files')await renderFiles();}
-        catch(error){remove.disabled=false;reportError(error.message);}
+        try{await api('file/delete',{fileId:id});if(isCurrent())await renderFiles();}
+        catch(error){if(isCurrent()){remove.disabled=false;reportError(error.message);}}
       });
       $('file-preview').before(remove);
     }
@@ -1336,7 +1496,7 @@ async function showFile(id){
       if(file.kind==='image')element.alt=file.name;else element.title=file.name;
       $('file-preview').append(element);
     }else{$('file-preview').textContent=file.note;}
-  }catch(error){reportError(error.message);}
+  }catch(error){if(isCurrent())reportError(error.message);}
 }
 function settingsPickers(container) {
   for(const select of container.querySelectorAll('select')) {
@@ -1534,7 +1694,7 @@ function openAddShortcut() {
   }
   return setPanel('add');
 }
-function renderAppForm(app) {
+function renderAppForm(app,field) {
   const editorPanel=panel,version=++appEditorVersion;
   const scope=editorScope,key=vaultKey;
   const submitLabel=app?'Сохранить':scope==='private'?'Добавить на приватный стол':'Добавить на рабочий стол';
@@ -1548,6 +1708,23 @@ function renderAppForm(app) {
   urlInput.addEventListener('input',updateMessageChoice);updateMessageChoice();
   $('app-form').addEventListener('submit', async event => {
     event.preventDefault(); reportError(''); const form = new FormData(event.currentTarget); let url;
+    if(app&&field){
+      if(panel!==editorPanel||version!==appEditorVersion||scope==='private'&&(!vaultKey||vaultKey!==key))return;
+      const found=findEntry(poolFor(scope),app.id);
+      if(!found)return;
+      const name=String(form.get('name')).trim();
+      if(field==='name'&&!name)return reportError('Введите название приложения');
+      const button=event.currentTarget.querySelector('[type="submit"]');
+      if(button.disabled)return;
+      button.disabled=true;
+      const change=field==='name'?{name}:{iconStyle:normalizeShortcutIconStyle(form.get('iconStyle'))};
+      found.list[found.index]={...found.entry,...change};
+      try{
+        await saveApps(scope,{layoutChanged:false});
+        if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);
+      }catch(error){reportError(error.message);}finally{button.disabled=false;}
+      return;
+    }
     try { const raw = String(form.get('url')).trim(); url = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
     catch { return reportError('Введите корректный адрес http или https'); }
     const name=String(form.get('name')).trim();if(!name)return reportError('Введите название приложения');
@@ -1571,6 +1748,15 @@ function renderAppForm(app) {
     }catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=submitLabel;}}
   });
   if(!app)return;
+  if(field){
+    const form=$('app-form');
+    for(const control of form.querySelectorAll('.field,.shortcut-icon-picker,.message-choice')){
+      control.hidden=field==='name'?!control.contains(form.elements.name):!control.matches('.shortcut-icon-picker');
+    }
+    $('sheet-title').textContent=localization.t(field==='name'?'Переименовать':'Сменить иконку');
+    if(field==='name'){form.elements.name.focus();form.elements.name.select();}
+    return;
+  }
   let pressedMove=false;
   const moveButton=settingButton(scope==='private'?'Вернуть на обычную страницу':'Перенести на закрытую страницу','lock',async event=>{
     // A touch released on the desktop can also produce a click after the editor opens.
@@ -1596,7 +1782,10 @@ function renderAppForm(app) {
   moveButton.addEventListener('pointercancel',()=>{pressedMove=false;});
   $('sheet-content').append(moveButton);
 }
-async function openAppEditor(app,scope='public') { editorScope=scope;await setPanel('edit');renderAppForm(app); }
+async function openAppEditor(app,scope='public',field) {
+  editorScope=scope;await setPanel('edit');
+  if(panel==='edit'&&(scope!=='private'||vaultKey))renderAppForm(app,field);
+}
 async function requestVault() {
   if(panel==='pin'&&(pinBusy||pinSetup==='biometry'))return;
   if(vaultKey){
@@ -1756,6 +1945,7 @@ function detachFromLayout(app) {
 }
 function lockVault() {
   if(!vaultKey)return;
+  closeShortcutMenu();
   vaultKey=null;vaultApps=[];clearTimeout(vaultIdleTimer);
   for(const page of $('apps').querySelectorAll('.private-page'))page.remove();
   if($('desktop-dock').dataset.scope==='private')renderDesktopDock('public');
@@ -1785,6 +1975,8 @@ window.addEventListener('storage',event=>{
 $('address-form').addEventListener('submit', event => {
   event.preventDefault(); const value = $('address').value.trim(); if (!value) return;
   const scope=currentScope(),matching=document.body.dataset.surface==='home'?flattenApps(poolFor(scope)).find(app=>[app.name,appLabel(app)].some(name=>name.toLocaleLowerCase()===value.toLocaleLowerCase())):null;
+  document.body.classList.remove('address-submit-hold');
+  closeDesktopSearch();
   if(matching)activate(matching,scope);else launch(value,scope);
 });
 function holdSubmitLayout(input,button,className){
@@ -1897,7 +2089,27 @@ $('share-page').addEventListener('click', async () => {
 $('refresh').addEventListener('click', () => action('refresh').catch(() => {}));
 $('show-original').addEventListener('click', () => action('translation/toggle').catch(() => reportError('Не удалось запустить перевод страницы')));
 $('scrim').addEventListener('click', () => setPanel(null)); $('sheet-close').addEventListener('click', () => setPanel(null));
+const downloadsHandle=$('downloads-handle');
+let handleDrag=null;
+downloadsHandle.addEventListener('pointerdown',event=>{
+  if(panel!=='files'||event.button!==0||!event.isPrimary)return;
+  handleDrag={id:event.pointerId,y:event.clientY};
+  downloadsHandle.setPointerCapture(event.pointerId);
+});
+downloadsHandle.addEventListener('pointermove',event=>{
+  if(handleDrag?.id!==event.pointerId||panel!=='files')return;
+  $('sheet').style.translate='0 '+Math.max(0,event.clientY-handleDrag.y)+'px';
+});
+function endHandleDrag(event){
+  if(handleDrag?.id!==event.pointerId)return;
+  const distance=event.clientY-handleDrag.y;
+  handleDrag=null;$('sheet').style.removeProperty('translate');
+  if(panel==='files'&&event.type==='pointerup'&&distance>=48)setPanel(null);
+}
+for(const name of ['pointerup','pointercancel','lostpointercapture'])downloadsHandle.addEventListener(name,endHandleDrag);
+downloadsHandle.addEventListener('click',event=>{if(event.detail===0&&panel==='files')setPanel(null);});
 document.addEventListener('keydown', event => {
+  if(event.key==='Escape'&&$('shortcut-popup')){closeShortcutMenu();return;}
   if(panel==='pin'&&(/^\d$/.test(event.key)||event.key==='Backspace')){event.preventDefault();pinKey(event.key==='Backspace'?'back':event.key);return;}
   if(event.key==='Escape'){if(panel)setPanel(null);else if(editing)setEditing(false);}
 });

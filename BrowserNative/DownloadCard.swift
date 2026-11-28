@@ -1,4 +1,5 @@
 import UIKit
+import QuickLook
 
 @MainActor
 final class DownloadCard: UIVisualEffectView {
@@ -13,6 +14,8 @@ final class DownloadCard: UIVisualEffectView {
     private let progress = UIProgressView(progressViewStyle: .default)
     private let primary = UIButton(type: .system)
     private let secondary = UIButton(type: .system)
+    private let listButton = UIButton(type: .system)
+    private var listAction: (() -> Void)?
     private var primaryAction: (() -> Void)?
     private var secondaryAction: (() -> Void)?
     private var presentationKey = ""
@@ -34,7 +37,12 @@ final class DownloadCard: UIVisualEffectView {
         secondary.configuration = .plain()
         primary.addTarget(self, action: #selector(tapPrimary), for: .touchUpInside)
         secondary.addTarget(self, action: #selector(tapSecondary), for: .touchUpInside)
-        let buttons = UIStackView(arrangedSubviews: [secondary, primary])
+        listButton.configuration = .plain()
+        listButton.configuration?.image = UIImage(systemName: "list.bullet")
+        listButton.accessibilityIdentifier = "download-list"
+        listButton.addTarget(self, action: #selector(tapList), for: .touchUpInside)
+        listButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        let buttons = UIStackView(arrangedSubviews: [secondary, primary, listButton])
         buttons.distribution = .fillProportionally
         buttons.spacing = 8
         let stack = UIStackView(arrangedSubviews: [title, detail, progress, buttons])
@@ -51,8 +59,16 @@ final class DownloadCard: UIVisualEffectView {
         ])
     }
     required init?(coder: NSCoder) { fatalError("Use init()") }
+    func applyAccent(_ color: UIColor, text: UIColor) {
+        progress.progressTintColor = color
+        primary.configuration?.baseForegroundColor = text
+        primary.configuration?.baseBackgroundColor = color
+        secondary.configuration?.baseForegroundColor = text
+        listButton.configuration?.baseForegroundColor = text
+    }
     @objc private func tapPrimary() { primaryAction?() }
     @objc private func tapSecondary() { secondaryAction?() }
+    @objc private func tapList() { listAction?() }
 
     func hide() {
         guard !isHidden else { return }
@@ -61,10 +77,12 @@ final class DownloadCard: UIVisualEffectView {
         progress.observedProgress = nil
         primaryAction = nil
         secondaryAction = nil
+        listAction = nil
     }
 
     func show(key: String, title heading: String, detail subtitle: String,
               progress observed: Progress?, primary label: String, secondary other: String?,
+              listLabel: String? = nil, listAction: (() -> Void)? = nil,
               action: @escaping () -> Void, secondaryAction: @escaping () -> Void) {
         guard key != presentationKey else { return }
         presentationKey = key
@@ -75,6 +93,10 @@ final class DownloadCard: UIVisualEffectView {
         progress.isHidden = observed == nil
         progress.observedProgress = observed
         primary.configuration?.title = label
+        primary.isHidden = label.isEmpty
+        listButton.isHidden = listAction == nil
+        listButton.accessibilityLabel = listLabel
+        self.listAction = listAction
         secondary.configuration?.title = other
         secondary.isHidden = other == nil
         primaryAction = action
@@ -83,14 +105,21 @@ final class DownloadCard: UIVisualEffectView {
     }
 }
 
+private final class DownloadPreview: QLPreviewController, QLPreviewControllerDataSource {
+    var file: NSURL!
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { file }
+}
+
 extension BrowserController {
     var downloadLabels: [String: String] {
         DownloadCard.translations[downloadLanguage] ?? DownloadCard.translations["en"] ?? [:]
     }
 
     func updateDownloadCard() {
+        if panel == "files" { downloadCard.hide(); return }
         let labels = downloadLabels
-        let visible = downloads.tasks.filter { $0.tabID == model.activeTabId || panel == "files" }
+        let visible = downloads.tasks.filter { $0.tabID == model.activeTabId }
         let running = downloads.tasks.filter { ["connecting","running","cancelling"].contains($0.status) }
         let notice = downloads.notice
         let task = visible.first { $0.status == "confirm" }
@@ -113,12 +142,23 @@ extension BrowserController {
             let heading = ongoing ? "\(labels["count"] ?? "Downloads") · \(running.count)" : labels[task.status] ?? task.status
             downloadCard.show(key: key, title: heading, detail: task.name,
                 progress: ongoing && task.total > 0 ? task.download?.progress : nil,
-                primary: labels[finished ? "show" : "downloads"] ?? "Downloads", secondary: ongoing ? labels["cancel"] : "×",
-                action: { [weak self] in
+                primary: finished ? (labels["show"] ?? "Open file") : "", secondary: ongoing ? labels["cancel"] : "×",
+                listLabel: labels["downloads"] ?? "Downloads", listAction: { [weak self] in
                     guard let self else { return }
-                    if !ongoing { self.downloads.dismissNotice() }
-                    self.ui.callAsyncJavaScript("await window.atmaShowDownload(fileID)", arguments: ["fileID": task.fileID ?? ""],
-                                                in: nil, in: .page, completionHandler: nil)
+                    self.ui.callAsyncJavaScript("await window.atmaShowDownload('')", arguments: [:], in: nil, in: .page, completionHandler: nil)
+                },
+                action: { [weak self] in
+                    guard let self, let fileID = task.fileID, self.presentedViewController == nil else { return }
+                    self.downloads.dismissNotice()
+                    if let file = try? self.downloads.fileURL(id: fileID), QLPreviewController.canPreview(file as NSURL) {
+                        let preview = DownloadPreview()
+                        preview.file = file as NSURL
+                        preview.dataSource = preview
+                        self.present(preview, animated: true)
+                    } else {
+                        self.ui.callAsyncJavaScript("await window.atmaShowDownload(fileID)", arguments: ["fileID": fileID],
+                                                    in: nil, in: .page, completionHandler: nil)
+                    }
                 }, secondaryAction: { [weak self] in
                     if ongoing { self?.downloads.cancel(id) } else { self?.downloads.dismissNotice() }
                 })

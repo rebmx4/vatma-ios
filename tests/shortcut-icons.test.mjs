@@ -5,13 +5,15 @@ import vm from 'node:vm';
 import * as websiteIcons from '../BrowserUI/assets/site-icons.js';
 import * as shortcutArtwork from '../BrowserUI/assets/shortcut-artwork.js';
 import * as messageBadges from '../BrowserUI/assets/message-badges.js';
-import {bundledShortcutArtwork} from '../BrowserUI/desktop-defaults.js';
+import {bundledShortcutArtwork,bundledSiteArtwork} from '../BrowserUI/desktop-defaults.js';
 const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
 function setup(){
  const effects=[],elements=new Map(),apps=[];
  const element=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',hidden:false,disabled:false,value:'',append(){},addEventListener(type,handler){this[type]=handler;},elements:{namedItem:name=>element(name)}});return elements.get(id);};
  const context={...shortcutArtwork,...messageBadges,bundledShortcutArtwork,appEditorVersion:0,panel:'edit',URL,crypto:{randomUUID:()=> 'icon-test'},Date,FormData:class{constructor(form){this.values=form;}get(key){return this.values[key];}},$ :element,escape:String,state:{mode:'browse',profileId:'iphone-13-pro-max'},editorScope:'public',vaultKey:null,pinSiteBusy:false,apps,updateQuickAdd(){},normalizedSiteUrl: url=>new URL(url).href,savedSite:()=>false,freezeSlots:value=>value,poolFor:()=>apps,findEntry:(pool,id)=>{const index=pool.findIndex(app=>app.id===id);return index<0?null:{list:pool,index,entry:pool[index]};},resolveShortcutIcon:async site=>{effects.push(['icon',site.url]);return 'data:image/png;base64,site-icon';},api:async()=>({url:'https://example.com/account',profileId:'iphone-13-pro-max',title:'Example',iconUrl:''}),saveApps:async()=>effects.push(['save',context.apps[0]?.iconUrl]),settingButton:()=>({addEventListener(){}}),setPanel:async name=>effects.push(['panel',name]),reportError:message=>effects.push(['error',message])};
  const vaultApps=[];
+ context.bundledSiteArtwork=bundledSiteArtwork;
+ context.pendingShortcutHighlights=new Map();
  context.state.url='https://example.com/account';
  context.shortcutDestination=()=>context.state.privateDesktop?'private':'public';
  context.poolFor=scope=>scope==='private'?vaultApps:context.apps;
@@ -30,6 +32,7 @@ test('manual shortcut creation resolves and stores the website icon',async()=>{
 });
 test('quick add resolves a durable website icon before storing the shortcut',async()=>{
   const f=setup();await f.context.saveCurrentSite();assert.equal(f.context.apps[0].iconUrl,'data:image/png;base64,site-icon');
+  assert.equal(f.context.pendingShortcutHighlights.get('public').id,f.context.apps[0].id);
   assert.deepEqual(f.effects,[['icon','https://example.com/account'],['save','data:image/png;base64,site-icon']]);
 });
 test('quick add of a messaging site saves without interrupting browsing or enabling the count',async()=>{

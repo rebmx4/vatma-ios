@@ -143,9 +143,14 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "preferences": try preferences(body)
         case "back": currentRenderer?.goBack()
         case "forward": currentRenderer?.goForward()
-        case "share-page":
-            guard mode == "browse", presentedViewController == nil,
-                  let page = currentRenderer, let url = page.url,
+        case "share-page", "share-shortcut":
+            let address: URL?
+            if action == "share-shortcut" {
+                address = try AddressResolver.validated(try string("url", body))
+            } else {
+                address = mode == "browse" ? currentRenderer?.url : nil
+            }
+            guard presentedViewController == nil, let url = address,
                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
                 throw BrowserFailure.invalid("Не удалось поделиться ссылкой")
             }

@@ -12,6 +12,7 @@ function tileFixture({editing=true,app={id:'custom-image',name:'Saved website',t
   poolFor:()=>[app],findEntry:(apps,id)=>({entry:apps.find(app=>app.id===id)}),activate:app=>opened.push(app.id),
   clearTimeout(){},clearHover(){},removeEntry(){},updatePool(){},freezeSlots(){},gridMetrics:()=>({columns:4}),reducedMotion:{matches:true}};
  vm.createContext(page);
+ page.ICON_EDIT_HOLD_MS=Number(source.match(/ICON_EDIT_HOLD_MS\s*=\s*(\d+)/)[1]);
  const itemBegin=source.indexOf('function createItem('),itemEnd=source.indexOf('function activate(',itemBegin);
  const holdBegin=source.indexOf('function beginGesture('),holdEnd=source.indexOf('function clearHover(',holdBegin);
  const swipeBegin=source.indexOf('function swipeDesktopDragPage('),swipeEnd=source.indexOf("document.addEventListener('pointermove'",swipeBegin);

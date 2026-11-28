@@ -13,14 +13,14 @@ body[data-theme=dark] {
   --chrome-glass:rgba(39,39,39,.84); --chrome-sheet:#292929c9;
   --chrome-rim:inset 0 1px 3px #ffffff30,inset 0 -1px 3px #ffffff12,0 3px 10px #0004;
   --chrome-input:var(--chrome-glass); --chrome-input-focus:#333333ed;
-  --chrome-accent:#bcbfff; --chrome-active:#ffffff1f;
+  --chrome-accent:var(--appearance-accent); --chrome-active:#ffffff1f;
 }
 body[data-theme=light] {
   --chrome-base:#f4f4f4; --chrome-text:#222; --chrome-muted:#555;
   --chrome-glass:#fafafae0; --chrome-sheet:#f6f6f6d9;
   --chrome-rim:inset 0 1px 3px #fffe,inset 0 -1px 3px #0001,0 3px 10px #0002;
   --chrome-input:#3a3a3ec2; --chrome-input-focus:#343438cc;
-  --chrome-accent:#393bb0; --chrome-active:#5358d920;
+  --chrome-accent:var(--appearance-accent); --chrome-active:var(--appearance-select);
 }
 body[data-theme][data-surface]:is([data-surface=blank],[data-surface=incognito]),
 body[data-theme][data-surface=incognito] .incognito-start,
@@ -42,6 +42,34 @@ body[data-theme] .site-add-art {
   box-shadow:var(--chrome-rim); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
 }
 body[data-theme] .site-add-art[data-logo] { background:#fbfbfc }
+.shortcut-shine {
+  position:absolute; inset:0; border-radius:inherit; overflow:hidden; pointer-events:none;
+}
+@media (prefers-reduced-motion:no-preference) {
+  .shortcut-shine::after, .app-tile.new-shortcut::after {
+    content:""; position:absolute; inset:-30% -40%; pointer-events:none;
+    background:
+      radial-gradient(ellipse 7% 38% at 50% 50%,#fffffbd4,transparent),
+      radial-gradient(ellipse 19% 46% at 48% 50%,#fff5e57d,transparent),
+      radial-gradient(ellipse 14% 40% at 60% 51%,#59667b52,transparent);
+    transform:translate(-72%,26%) rotate(-28deg);
+  }
+  .shortcut-shine::after { animation:pin-metal-shine 20s linear 3s both }
+  #pin-site[data-saved=true] .shortcut-shine { visibility:hidden }
+  .app-tile.new-shortcut::after { animation:added-metal-shine 1.5s cubic-bezier(.36,0,.38,1) var(--shine-delay,0ms) both }
+  @keyframes pin-metal-shine {
+    0%,15%,30%,55%,80% {
+      visibility:visible; transform:translate(-72%,26%) rotate(-28deg);
+      animation-timing-function:cubic-bezier(.36,0,.38,1);
+    }
+    7.5%,22.5%,37.5%,62.5%,87.5% { visibility:visible; transform:translate(72%,-26%) rotate(-28deg) }
+    7.51%,22.51%,37.51%,62.51%,87.51%,100% { visibility:hidden; transform:translate(-72%,26%) rotate(-28deg) }
+  }
+  @keyframes added-metal-shine {
+    from { transform:translate(-72%,26%) rotate(-28deg) }
+    to { transform:translate(72%,-26%) rotate(-28deg) }
+  }
+}
 .site-add-art > svg { width:24px; height:24px }
 body[data-theme] .site-add-badge { background:#e6e6eb; color:#28282e; opacity:1 }
 body[data-theme=light] .site-add-badge { background:#3d4048; color:#fff }

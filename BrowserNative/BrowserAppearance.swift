@@ -4,6 +4,14 @@ enum BrowserAppearancePolicy {
     static let alternateIDs = (1...10).map { String(format: "a1-%02d", $0) }
     static let themes = ["auto", "light", "dark"]
 
+    static func color(_ value: Any?) -> UIColor? {
+        guard let hex = value as? String, hex.first == "#", hex.utf8.count == 7,
+              let rgb = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+        return UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+                       green: CGFloat((rgb >> 8) & 255) / 255,
+                       blue: CGFloat(rgb & 255) / 255, alpha: 1)
+    }
+
     static func assetName(for icon: String) throws -> String? {
         if icon == "default" { return nil }
         guard let index = alternateIDs.firstIndex(of: icon) else {
@@ -27,6 +35,10 @@ extension BrowserController {
             throw BrowserFailure.invalid("Theme must be auto, light or dark.")
         }
         nativeTheme = theme
+        if let accent = BrowserAppearancePolicy.color(body["accent"]),
+           let text = BrowserAppearancePolicy.color(body["accentText"]) {
+            downloadCard.applyAccent(accent, text: text)
+        }
         overrideUserInterfaceStyle = theme == "dark" ? .dark : theme == "light" ? .light : .unspecified
         refreshNativeBackdrop()
         return ["theme": theme]

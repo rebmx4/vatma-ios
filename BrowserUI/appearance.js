@@ -3,6 +3,22 @@
   ...Array.from({length:10},(_,index)=>({id:`a1-${String(index+1).padStart(2,'0')}`,label:String(index+1),x:12+(index%5)*304,y:164+Math.floor(index/5)*316,size:304})),
 ]);
 export const APPEARANCE_KEY='atma-preview-appearance';
+export const ACCENT_CHOICES=[
+  ['Голубой','#68b7ff'],['Индиго','#444cc5'],['Сиреневый','#bba2cc'],['Розовый','#cc9ead'],
+  ['Терракотовый','#cc9988'],['Персиковый','#c9aa86'],['Шалфейный','#9eaf95'],['Бирюзовый','#85b4ac'],
+  ['Графитовый','#99a5b5'],['Красный ATMA','#e60218'],
+];
+export function accentColors(preference,theme) {
+  const dark=theme==='dark';
+  const base=preference==='auto'?(dark?'#444cc5':'#68b7ff'):preference;
+  const rgb=base.slice(1).match(/../g).map(channel=>parseInt(channel,16));
+  const luminance=rgb.reduce((sum,channel,i)=>{
+    const s=channel/255;
+    return sum+[.2126,.7152,.0722][i]*(s<=.04045?s/12.92:((s+.055)/1.055)**2.4);
+  },0);
+  const ink=rgb.map(channel=>Math.round(dark?channel*.48+255*.52:channel*.55).toString(16).padStart(2,'0')).join('');
+  return {base,ink:'#'+ink,onBase:luminance>.179?'#111111':'#ffffff'};
+}
 export const WALLPAPERS = [
   {id:'auto', label:'Авто'},
   {id:'graphite', label:'Графит', image:'/assets/wallpapers/graphite.jpg', tone:'dark'},
@@ -25,6 +41,7 @@ export function normalizeAppearance(value) {
   const number=Number(source.textSize??100);
   return {
     showDock:source.showDock!==false,
+    accent:typeof source.accent==='string'&&/^#[0-9a-f]{6}$/i.test(source.accent)?source.accent.toLowerCase():'auto',
     theme:['auto','light','dark'].includes(source.theme)?source.theme:'auto',
     textSize:Number.isFinite(number)?Math.min(130,Math.max(85,Math.round(number/5)*5)):100,
     icon:ICON_CHOICES.some(icon=>icon.id===source.icon)?source.icon:'default',

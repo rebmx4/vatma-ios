@@ -1,5 +1,5 @@
-body[data-theme=light]{--ink:#282622;--muted:#656158;--appearance-surface:#f1f0ed;--appearance-card:#faf9f6;--appearance-control:#e9e7e2;--appearance-line:#d5d1c8;--appearance-muted:#656158;--appearance-select:#eae3d3;--appearance-accent:#745d25;--appearance-accent-ink:#fff;--appearance-chrome:#f1f0ed;color-scheme:light}
-body[data-theme=dark]{--ink:#e5e2dc;--muted:#aaa79f;--appearance-surface:#101010;--appearance-card:#191919;--appearance-control:#242424;--appearance-line:#393939;--appearance-muted:#aaa79f;--appearance-select:#343024;--appearance-accent:#cdb77a;--appearance-accent-ink:#101010;--appearance-chrome:#101010;color-scheme:dark}
+body[data-theme=light]{--ink:#282622;--muted:#656158;--appearance-surface:#f1f0ed;--appearance-card:#faf9f6;--appearance-control:#e9e7e2;--appearance-line:#d5d1c8;--appearance-muted:#656158;--appearance-select:color-mix(in srgb,var(--app-accent,#68b7ff) 18%,var(--appearance-card));--appearance-accent:var(--app-accent-text,#39658c);--appearance-accent-ink:#fff;--appearance-chrome:#f1f0ed;color-scheme:light}
+body[data-theme=dark]{--ink:#e5e2dc;--muted:#aaa79f;--appearance-surface:#101010;--appearance-card:#191919;--appearance-control:#242424;--appearance-line:#393939;--appearance-muted:#aaa79f;--appearance-select:color-mix(in srgb,var(--app-accent,#444cc5) 24%,var(--appearance-card));--appearance-accent:var(--app-accent-text,#a5a9e3);--appearance-accent-ink:#101010;--appearance-chrome:#101010;color-scheme:dark}
 body[data-theme] .overlay:not(.pin-overlay):not(.folder-overlay):not(.tabs-overlay) .sheet,body[data-theme] .settings-picker{background:var(--appearance-surface);color:var(--ink)}
 body[data-theme] :is(.setting-card,.setting-row,.model-list,.model-row,.file-list,.file-row,.file-text,.field input,.picker-options button){background:var(--appearance-card);color:var(--ink);border-color:var(--appearance-line)}
 body[data-theme] :is(.model-search,.family-tabs button,.secondary-button,.sheet-close){background:var(--appearance-control);color:var(--appearance-muted)}
@@ -69,3 +69,15 @@ body[data-theme] .pin-keypad button.pin-small{background:transparent}
 body[data-theme] .pin-dots i{border-color:var(--ink)}
 body[data-theme] .pin-dots i.filled{background:var(--ink)}
 body[data-runtime=ios] .home-indicator{visibility:hidden}
+.accent-settings{padding:15px 14px;border-radius:17px;background:var(--appearance-card)}
+.accent-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+.accent-grid button{min-height:44px;display:grid;place-items:center;background:transparent;border:0;padding:0}
+.accent-grid button span{width:24px;height:24px;background:var(--swatch);border-radius:50%;box-shadow:inset 0 0 0 1px #0001}
+.accent-grid button[aria-pressed=true] span{outline:2px solid var(--ink);outline-offset:3px}
+.accent-options{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+.accent-options button,.accent-options label{display:flex;align-items:center;min-height:44px;gap:8px;border:0;padding:0 12px;border-radius:14px;font:inherit;color:var(--ink);background:var(--appearance-control)}
+.accent-options button[aria-pressed=true]{color:var(--appearance-accent);background:var(--appearance-select)}
+.accent-options input{width:32px;height:26px;border:0;padding:0;background:none}
+@media(min-width:540px){.accent-grid{grid-template-columns:repeat(10,minmax(0,1fr))}}
+button.sheet-close{padding:0;display:grid;place-items:center;line-height:1}
+button.sheet-close svg{display:block;margin:0}

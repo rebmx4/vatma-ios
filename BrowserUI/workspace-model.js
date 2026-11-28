@@ -169,3 +169,36 @@ export function removeEntry(entries, id) {
   found.list.splice(found.index, 1, ...children);
   return collapseSingletonFolders(items);
 }
+
+export function duplicateShortcut(entries,id,newId,columns,capacity) {
+  const items=freezeSlots(entries,columns),source=findEntry(items,id);
+  if(!source?.entry.url||isFolder(source.entry)||source.entry.type==='system')return {items:entries};
+  const copy={...source.entry,id:newId,artworkId:source.entry.artworkId||source.entry.id};
+  delete copy.slots;delete copy.dockSlot;
+  if(source.parent){
+    if(source.list.length>=MAX_FOLDER_SHORTCUTS)return {error:'В папке уже 45 ярлыков'};
+  }else{
+    const dock=arrangeDock(items),dockSlot=dock.indexOf(source.entry);
+    if(dockSlot>=0&&dock.includes(null)){
+      const positions=dock.map((_,i)=>i).filter(i=>!dock[i]);
+      copy.dockSlot=positions.sort((a,b)=>Math.abs(a-dockSlot)-Math.abs(b-dockSlot))[0];
+    }else{
+      const grid=arrangeEntries(items,columns),limit=Math.max(MAX_DESKTOP_PAGES,desktopPageCount(grid,capacity))*capacity;
+      const occupied=new Map(grid.map(({entry,slot})=>[slot,entry]));
+      let target=dockSlot>=0?firstFreeSlot(grid):source.entry.slots[columns]+1;
+      let free=target;
+      while(free<limit&&occupied.has(free))free++;
+      if(free<limit){
+        for(let i=free;i>target;i--)occupied.get(i-1).slots[columns]=i;
+      }else{
+        target=dockSlot>=0?limit-1:source.entry.slots[columns]-1;
+        free=target;while(free>=0&&occupied.has(free))free--;
+        if(free<0)return {error:'На рабочем столе можно создать до 10 страниц'};
+        for(let i=free;i<target;i++)occupied.get(i+1).slots[columns]=i;
+      }
+      copy.slots={[columns]:target};
+    }
+  }
+  source.list.splice(source.index+1,0,copy);
+  return {items};
+}

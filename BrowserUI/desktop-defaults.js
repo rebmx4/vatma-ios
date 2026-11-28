@@ -34,11 +34,20 @@ export function createInitialDesktop(deviceRegion, previewLocale) {
   return preset.map(app=>({...app}));
 }
 
+const siteHost=url=>new URL(url).hostname.replace(/^www\./,'');
+const artworkByHost=new Map(Array.from(bundledArtwork.values(),({url,path})=>[siteHost(url),path]));
+for(const [mobile,desktop] of [['m.vk.com','vk.com'],['m.vk.ru','vk.com'],['vk.ru','vk.com'],['m.youtube.com','youtube.com']]){
+  artworkByHost.set(mobile,artworkByHost.get(desktop));
+}
+export function bundledSiteArtwork(url) {
+  try{return artworkByHost.get(siteHost(url))||'';}catch{return '';}
+}
+
 export function bundledShortcutArtwork(app) {
-  const stock=bundledArtwork.get(app.id);
+  const stock=bundledArtwork.get(app.artworkId||app.id);
   return !app.custom&&stock&&stock.url===app.url?stock.path:null;
 }
 
 export function hasTranslatedDesktopLabel(app) {
-  return !app.custom&&RUSSIAN_DESKTOP.some(stock=>stock.id===app.id&&stock.name===app.name&&stock.url===app.url);
+  return !app.custom&&RUSSIAN_DESKTOP.some(stock=>stock.id===(app.artworkId||app.id)&&stock.name===app.name&&stock.url===app.url);
 }
