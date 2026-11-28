@@ -7,8 +7,8 @@ import UniformTypeIdentifiers
 final class DownloadService: NSObject, WKDownloadDelegate {
     private var paths: [String: URL] = [:]
     private var active: [ObjectIdentifier: WKDownload] = [:]
-    private var reserved = Set<String>()
-    private var destinations: [ObjectIdentifier: String] = [:]
+    // Only publish completed transfers in the directory visible to the iOS Files picker.
+    private var transfers: [ObjectIdentifier: (temporary: URL, filename: String)] = [:]
     private var sourceTabs: [ObjectIdentifier: String] = [:]
     private(set) var completionVersion = 0
     var didChange: ((String?, String?) -> Void)?
@@ -31,12 +31,18 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey], options: [.skipsHiddenFiles])
         paths.removeAll()
         let rows = try files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url -> [String: Any]? in
-            guard !reserved.contains(url.path), let safe = try safeFile(url, root: root) else { return nil }
-            let id = SHA256.hash(data: Data(safe.lastPathComponent.utf8)).map { String(format: "%02x", $0) }.joined()
-            paths[id] = safe
-            return try metadata(safe, id: id)
+            do {
+                guard let safe = try safeFile(url, root: root) else { return nil }
+                let id = SHA256.hash(data: Data(safe.lastPathComponent.utf8)).map { String(format: "%02x", $0) }.joined()
+                let row = try metadata(safe, id: id)
+                paths[id] = safe
+                return row
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                // Files can rename or remove an item while the panel is refreshing.
+                return nil
+            }
         }
-        return ["files": rows]
+        return ["files": rows, "downloading": !active.isEmpty]
     }
 
     func fileURL(id: String) throws -> URL {
@@ -52,6 +58,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         var result = try metadata(url, id: id)
         let size = result["size"] as? Int ?? 0
         let kind = result["kind"] as? String ?? "other"
+        result["canSaveToPhotos"] = kind == "image" || kind == "video"
         if kind == "text" {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
@@ -97,40 +104,79 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         download.delegate = self
     }
 
+    func start(_ url: URL, in page: WKWebView, tabID: String) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            page.startDownload(using: URLRequest(url: url)) { download in
+                self.attach(download, tabID: tabID)
+                continuation.resume()
+            }
+        }
+    }
+
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
                   completionHandler: @escaping (URL?) -> Void) {
         do {
-            let root = try safeFolder()
-            let name = DownloadFilename.make(suggestedFilename)
-            var destination = root.appendingPathComponent(name)
-            while FileManager.default.fileExists(atPath: destination.path) || reserved.contains(destination.path) {
-                destination = root.appendingPathComponent(DownloadFilename.make(suggestedFilename, suffix: UUID().uuidString))
+            if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                throw BrowserFailure.invalid("HTTP \(http.statusCode) · \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))")
             }
-            reserved.insert(destination.path)
-            destinations[ObjectIdentifier(download)] = destination.path
-            completionHandler(destination)
-        } catch { completionHandler(nil); didChange?(sourceTabs[ObjectIdentifier(download)], error.localizedDescription) }
+            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            var filename = DownloadFilename.make(suggestedFilename)
+            if (filename as NSString).pathExtension.isEmpty, let mime = response.mimeType,
+               mime != "application/octet-stream", let type = UTType(mimeType: mime),
+               let ext = type.preferredFilenameExtension {
+                filename += "." + ext
+            }
+            transfers[ObjectIdentifier(download)] = (temporary, filename)
+            completionHandler(temporary)
+        } catch {
+            // WebKit can follow a nil destination with a generic cancellation callback.
+            let tabID = sourceTabs[ObjectIdentifier(download)]
+            release(download)
+            completionHandler(nil)
+            didChange?(tabID, error.localizedDescription)
+        }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         let tabID = sourceTabs[ObjectIdentifier(download)]
-        release(download); didChange?(tabID, nil)
+        guard let transfer = transfers[ObjectIdentifier(download)] else { return }
+        do {
+            _ = try publishFile(transfer.temporary, suggestedFilename: transfer.filename)
+            release(download); didChange?(tabID, nil)
+        } catch {
+            release(download); didChange?(tabID, error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    func publishFile(_ temporary: URL, suggestedFilename: String) throws -> URL {
+        let root = try safeFolder()
+        var name = DownloadFilename.make(suggestedFilename)
+        while true {
+            let target = root.appendingPathComponent(name)
+            do {
+                try FileManager.default.moveItem(at: temporary, to: target)
+                return target
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
+                name = DownloadFilename.make(suggestedFilename, suffix: UUID().uuidString)
+            }
+        }
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        let tabID = sourceTabs[ObjectIdentifier(download)]
-        if let path = destinations[ObjectIdentifier(download)], let root = try? safeFolder(),
-           let partial = try? safeFile(URL(fileURLWithPath: path), root: root) {
-            try? FileManager.default.removeItem(at: partial)
-        }
-        release(download); didChange?(tabID, error.localizedDescription)
+        guard let tabID = sourceTabs[ObjectIdentifier(download)] else { return }
+        let failure = error as NSError
+        let cancelled = failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled
+        release(download); didChange?(tabID, cancelled ? nil : error.localizedDescription)
     }
 
     private func release(_ download: WKDownload) {
         let id = ObjectIdentifier(download)
         active.removeValue(forKey: id)
         sourceTabs.removeValue(forKey: id)
-        if let path = destinations.removeValue(forKey: id) { reserved.remove(path) }
+        if let transfer = transfers.removeValue(forKey: id) {
+            try? FileManager.default.removeItem(at: transfer.temporary)
+        }
         completionVersion += 1
     }
 

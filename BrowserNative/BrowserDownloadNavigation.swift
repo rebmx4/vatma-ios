@@ -1,17 +1,15 @@
 import UIKit
 import WebKit
+import Photos
+import UniformTypeIdentifiers
 
 extension BrowserController {
-    func downloadCurrentAddress() throws {
+    func downloadCurrentAddress() async throws {
         guard mode == "browse", let page = currentRenderer, let url = page.url,
               ["http", "https"].contains(url.scheme ?? "") else {
             throw BrowserFailure.invalid("Open a web address before downloading.")
         }
-        let tabID = model.activeTabId
-        page.startDownload(using: URLRequest(url: url)) { [weak self] download in
-            guard let self else { download.cancel { _ in }; return }
-            self.downloads.attach(download, tabID: tabID)
-        }
+        await downloads.start(url, in: page, tabID: model.activeTabId)
     }
 
     func exportDownload(_ id: String) throws {
@@ -20,6 +18,23 @@ extension BrowserController {
         }
         let file = try downloads.fileURL(id: id)
         present(UIDocumentPickerViewController(forExporting: [file], asCopy: true), animated: true)
+    }
+
+    func saveDownloadToPhotos(_ id: String) async throws {
+        guard panel == "files" else { throw BrowserFailure.invalid("Open Downloads first.") }
+        let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard permission == .authorized || permission == .limited else {
+            throw BrowserFailure.invalid("Разрешите ATMA добавлять файлы в «Фото» в настройках iOS.")
+        }
+        let file = try downloads.fileURL(id: id)
+        let type = UTType(filenameExtension: file.pathExtension)
+        let resource: PHAssetResourceType
+        if type?.conforms(to: .image) == true { resource = .photo }
+        else if type?.conforms(to: .movie) == true { resource = .video }
+        else { throw BrowserFailure.invalid("Unsupported Photos format.") }
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetCreationRequest.forAsset().addResource(with: resource, fileURL: file, options: nil)
+        }
     }
 
     func expectDownload(_ webView: WKWebView, url: URL, knownNavigation: Bool) {

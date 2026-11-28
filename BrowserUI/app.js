@@ -1237,7 +1237,9 @@ function renderPanel() {
   else if (panel === 'settings') renderSettings();
   else if (panel === 'desktop-menu') renderDesktopMenu();
   else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{reportError('Не удалось открыть страницу');}}});
-  else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,t:localization.t,openTab:async tabId=>{await action('tabs/select',{tabId});}});
+  else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,t:localization.t,
+    openDownloads:document.body.dataset.runtime==='ios'?()=>setPanel('files'):null,
+    openTab:async tabId=>{await action('tabs/select',{tabId});}});
   else if(panel==='appearance')renderAppearance();
   else if(panel==='app-icon')renderAppIconPicker();
   else if(panel==='tabs')renderTabs();
@@ -1268,7 +1270,11 @@ async function renderFiles(preserveSearch=false){
   const cookieFolder=document.createElement('button');cookieFolder.className='cookies-folder';cookieFolder.id='open-cookies';cookieFolder.innerHTML=`${icon('globe')}<span><strong>Cookie сайтов</strong><small>Просмотр и выборочное удаление</small></span>${icon('right')}`;
   cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,reportError}));$('file-list').before(cookieFolder);
   try{
-    const {files}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
+    const {files,downloading}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
+    if(downloading){
+      const status=document.createElement('p');status.className='sheet-note';status.setAttribute('role','status');
+      status.textContent=localization.t('Идёт скачивание…');fileList.before(status);
+    }
     function list(){
       const filter=$('file-search').value.toLocaleLowerCase(),visible=files.filter(file=>file.name.toLocaleLowerCase().includes(filter));$('file-list').replaceChildren();
       if(!visible.length){$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
@@ -1289,6 +1295,14 @@ async function showFile(id){
     $('file-back').addEventListener('click',renderFiles);
     if(document.body.dataset.runtime==='ios')$('file-preview').before(
       settingButton('Сохранить в «Файлы»','share',()=>api('file/export',{fileId:id}).catch(error=>reportError(error.message))));
+    if(document.body.dataset.runtime==='ios'&&file.canSaveToPhotos){
+      const save=settingButton('Сохранить в «Фото»','image',async()=>{
+        save.disabled=true;
+        try{await api('file/photos',{fileId:id});save.textContent=localization.t('Сохранено в «Фото»');}
+        catch(error){save.disabled=false;reportError(localization.t(error.message));}
+      });
+      $('file-preview').before(save);
+    }
     if(file.kind==='text'){const pre=document.createElement('pre');pre.className='file-text';pre.textContent=file.text+(file.truncated?'\n\n'+localization.t('…Файл показан не полностью.'):'');$('file-preview').append(pre);}
     else if(['image','pdf','audio','video'].includes(file.kind)){
       const bytes=Uint8Array.from(atob(file.base64),char=>char.charCodeAt(0));filePreviewUrl=URL.createObjectURL(new Blob([bytes],{type:file.mime}));

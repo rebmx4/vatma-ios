@@ -13,7 +13,9 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         if ExternalLinkPolicy.isAppInstallationLink(url) {
             decisionHandler(.cancel); return
         }
-        if navigationAction.shouldPerformDownload, ["http", "https", "blob", "data"].contains(url.scheme ?? "") {
+        // Exporters also navigate a window to an object URL without an HTML download attribute.
+        let blobExport = url.scheme?.lowercased() == "blob" && navigationAction.targetFrame?.isMainFrame != false
+        if blobExport || (navigationAction.shouldPerformDownload && ["http", "https", "blob", "data"].contains(url.scheme?.lowercased() ?? "")) {
             if navigationAction.targetFrame?.isMainFrame == true {
                 expectDownload(webView, url: url, knownNavigation: false)
             }

@@ -107,6 +107,19 @@ final class BrowserMediaController: NSObject, WKScriptMessageHandler {
         didChange?()
     }
 
+    func downloadFile(tabID: String, downloads: DownloadService) async throws {
+        guard let view = owner, let binding = bindings[ObjectIdentifier(view)], binding.tabID == tabID else {
+            throw BrowserFailure.invalid("Media page is no longer open.")
+        }
+        let revision = binding.revision
+        let source = try await view.evaluateJavaScript("window.__atmaMediaPage?.downloadURL() ?? ''")
+        guard owner === view, bindings[ObjectIdentifier(view)] === binding, binding.revision == revision,
+              let address = source as? String, let url = try? AddressResolver.validated(address) else {
+            throw BrowserFailure.invalid("У этого видео нет прямой ссылки на файл.")
+        }
+        await downloads.start(url, in: view, tabID: tabID)
+    }
+
     func setPageVisible(_ view: WKWebView, visible: Bool, force: Bool = false) {
         guard let binding = bindings[ObjectIdentifier(view)], force || binding.pageVisible != visible else { return }
         binding.pageVisible = visible

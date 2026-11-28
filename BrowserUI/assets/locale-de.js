@@ -1,4 +1,10 @@
 export default {
+  "Скачать файл": "Datei laden",
+  "Сохранить в «Фото»": "In „Fotos“ sichern",
+  "Сохранено в «Фото»": "In „Fotos“ gesichert",
+  "Разрешите ATMA добавлять файлы в «Фото» в настройках iOS.": "Erlaube ATMA in den iOS-Einstellungen, Dateien zu „Fotos“ hinzuzufügen.",
+  "У этого видео нет прямой ссылки на файл.": "Für dieses Video gibt es keinen direkten Dateilink.",
+  "Идёт скачивание…": "Download läuft…",
   "На рабочем столе можно создать до 10 страниц": "Der Startbildschirm kann bis zu 10 Seiten haben",
   "В папке уже 45 ярлыков": "Dieser Ordner enthält bereits 45 Verknüpfungen",
   "Скрыть нижнюю панель": "Untere Leiste ausblenden",

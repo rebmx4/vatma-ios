@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const path=new URL('../BrowserUI/assets/site-media.js',import.meta.url);
+test('download offers a direct media file and skips live, protected or manifest sources',()=>{
+ const {api,video}=setup();
+ Object.assign(video,{currentSrc:'https://cdn.example/video?id=123',querySelectorAll:()=>[],getAttribute:()=>null});
+ assert.equal(api.downloadURL(),video.currentSrc);
+ assert.equal(api.state().downloadable,true);
+ for(const currentSrc of ['blob:https://example/id','https://cdn.example/live.m3u8?token=1','https://example/video.mpd','file:///video']){
+  video.currentSrc=currentSrc;
+  assert.equal(api.state().downloadable,false);
+ }
+ video.currentSrc='https://example/live';
+ video.querySelectorAll=()=>[{src:video.currentSrc,type:'application/vnd.apple.mpegurl'}];
+ assert.equal(api.downloadURL(),null);
+ video.querySelectorAll=()=>[];video.mediaKeys={};
+ assert.equal(api.downloadURL(),null);
+});
 function setup({queuedMediaEvents=false,mediaDevices}={}){
  const listeners=new Map(),pendingMediaEvents=[];
  const emit=(target,type)=>{const fire=()=>target.dispatchEvent(new Event(type));if(queuedMediaEvents)pendingMediaEvents.push(fire);else fire();};

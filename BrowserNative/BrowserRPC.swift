@@ -68,6 +68,14 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "media/state": reply(media.state, nil); return
         case "media/activate": media.activate(currentRenderer, reply: reply); return
         case "media/command": try media.command(body, reply: reply); return
+        case "media/download":
+            guard panel == "media" else { throw BrowserFailure.invalid("Open the media player first.") }
+            let id = try string("tabId", body)
+            Task {
+                do { try await media.downloadFile(tabID: id, downloads: downloads); reply(true, nil) }
+                catch { reply(nil, error.localizedDescription) }
+            }
+            return
         case "media/background":
             guard let enabled = body["enabled"] as? Bool else { throw BrowserFailure.invalid("Supply enabled:true or false.") }
             media.setBackground(enabled); reply(media.state, nil); return
@@ -201,7 +209,19 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         case "files": reply(try downloads.list(), nil); return
         case "file": reply(try downloads.preview(id: string("fileId", body)), nil); return
         case "file/export": try exportDownload(try string("fileId", body)); reply(true, nil); return
-        case "download-current": try downloadCurrentAddress(); reply(true, nil); return
+        case "file/photos":
+            let id = try string("fileId", body)
+            Task {
+                do { try await saveDownloadToPhotos(id); reply(true, nil) }
+                catch { reply(nil, error.localizedDescription) }
+            }
+            return
+        case "download-current":
+            Task {
+                do { try await downloadCurrentAddress(); reply(true, nil) }
+                catch { reply(nil, error.localizedDescription) }
+            }
+            return
         case "probe": throw BrowserFailure.invalid("A trustworthy fingerprint probe is not implemented on iOS.")
         case "snapshot": throw BrowserFailure.invalid("Use tab-previews for bounded native tab snapshots.")
         default: throw BrowserFailure.invalid("Unsupported native action: " + action)

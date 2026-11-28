@@ -1,4 +1,10 @@
 export default {
+  "Скачать файл": "Download file",
+  "Сохранить в «Фото»": "Save to Photos",
+  "Сохранено в «Фото»": "Saved to Photos",
+  "Разрешите ATMA добавлять файлы в «Фото» в настройках iOS.": "Allow ATMA to add items to Photos in iOS Settings.",
+  "У этого видео нет прямой ссылки на файл.": "This video has no direct file link.",
+  "Идёт скачивание…": "Downloading…",
   "На рабочем столе можно создать до 10 страниц": "The Home Screen can have up to 10 pages",
   "В папке уже 45 ярлыков": "This folder already has 45 shortcuts",
   "Скрыть нижнюю панель": "Hide the bottom dock",

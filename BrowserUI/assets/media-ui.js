@@ -1,4 +1,4 @@
-export function renderMediaPlayer(root,{api,openTab,t=value=>value}){
+export function renderMediaPlayer(root,{api,openTab,openDownloads,t=value=>value}){
  const glyph=path=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
  const play=glyph('<path d="m9 5 11 7-11 7Z" fill="currentColor"/>');
  const pause=glyph('<path d="M9 5v14m6-14v14" stroke-width="4"/>');
@@ -17,6 +17,7 @@ export function renderMediaPlayer(root,{api,openTab,t=value=>value}){
    <button class="media-pip" id="media-pip">${glyph('<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor"/>')}<span>Картинка в картинке</span></button>
    <p class="media-pip-note sheet-note" hidden>Маленькое окно недоступно для этого видео.</p>
    <button class="media-return" id="media-return">Открыть вкладку видео</button>
+   <button class="media-return" id="media-download" hidden>Скачать файл</button>
   </div>
   <label class="media-background"><span>Звук в фоне</span><input type="checkbox" id="media-background" role="switch" aria-label="Звук в фоне"></label>
   <p class="sheet-note">Маленькое окно показывает система. Возможности зависят от сайта и устройства.</p>
@@ -29,6 +30,7 @@ export function renderMediaPlayer(root,{api,openTab,t=value=>value}){
   $('.media-title').textContent=available?value.title||'ATMA':'';
   $('.media-empty').hidden=available;$('.media-controls').hidden=!available;
   $('#media-background').checked=value.backgroundEnabled!==false;
+  $('#media-download').hidden=!(openDownloads&&available&&value.downloadable&&value.ownerTabId);
   if(!available)return;
   const seekable=Number.isFinite(value.duration)&&value.duration>0;
   $('#media-seek').disabled=!seekable;$('#media-rewind').disabled=!seekable;$('#media-forward').disabled=!seekable;
@@ -47,6 +49,12 @@ export function renderMediaPlayer(root,{api,openTab,t=value=>value}){
  $('#media-forward').onclick=()=>run('media/command',{type:'skip',seconds:10});
  $('#media-pip').onclick=()=>run('media/command',{type:'pip'});
  $('#media-return').onclick=()=>value.ownerTabId&&openTab(value.ownerTabId).catch(()=>{});
+ $('#media-download').onclick=async()=>{
+  if(busy||disposed)return;
+  busy=true;epoch++;$('#media-download').disabled=true;
+  try{await api('media/download',{tabId:value.ownerTabId});if(!disposed)await openDownloads();}
+  catch(error){failure(error);}finally{busy=false;if(!disposed)$('#media-download').disabled=false;}
+ };
  $('#media-background').onchange=()=>run('media/background',{enabled:$('#media-background').checked});
  $('#media-seek').onpointerdown=()=>{dragging=true;};
  $('#media-seek').oninput=()=>{$('#media-position').textContent=clock(Number($('#media-seek').value));};

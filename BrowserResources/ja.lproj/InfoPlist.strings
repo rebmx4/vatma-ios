@@ -1,4 +1,4 @@
 "NSCameraUsageDescription" = "開いているサイトにカメラの使用を許可すると、ATMA がカメラへのアクセスを求めます。";
-"NSPhotoLibraryAddUsageDescription" = "ATMAは、選んだ画像を写真ライブラリに保存する際に許可を求めます。";
+"NSPhotoLibraryAddUsageDescription" = "ATMAは、選択した写真やビデオを写真ライブラリに保存する許可を求めます。";
 "NSMicrophoneUsageDescription" = "開いているサイトにマイクの使用を許可すると、ATMA がマイクへのアクセスを求めます。";
 "NSFaceIDUsageDescription" = "この機能を有効にすると、Face ID で ATMA のプライベートホームへのアクセスを保護できます。";

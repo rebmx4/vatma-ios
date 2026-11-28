@@ -27,6 +27,7 @@ def packaged_info():
             "CFBundleExecutable": "ATMA", "CFBundleShortVersionString": verify_ipa.MARKETING_VERSION, "CFBundleVersion": "7",
             "MinimumOSVersion": "17.0", "UIDeviceFamily": [1, 2],
             "UIBackgroundModes": ["audio"],
+            "UIFileSharingEnabled": True, "LSSupportsOpeningDocumentsInPlace": True,
             "NSPhotoLibraryAddUsageDescription": "ATMA asks to add the selected image to Photos.",
             "CFBundleIcons": icons, "CFBundleIcons~ipad": copy.deepcopy(icons),
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True, "NSAllowsArbitraryLoadsInWebContent": True}}

@@ -43,7 +43,14 @@ function installAtmaMediaPage(options = {}) {
       currentTime:Number.isFinite(video.currentTime)?Math.max(0,video.currentTime):0, duration,
       pip:video.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === video,
       pipAvailable:Boolean(video.webkitSupportsPresentationMode?.('picture-in-picture') || (document.pictureInPictureEnabled && video.requestPictureInPicture)),
-      backgroundEnabled:background, live:duration === null};
+      downloadable:!!downloadURL(video), backgroundEnabled:background, live:duration === null};
+  }
+  function downloadURL(video = select()) {
+    if (!video || video.srcObject || video.mediaKeys || !/^https?:\/\//i.test(video.currentSrc || '')) return null;
+    const source = [...video.querySelectorAll('source')].find(item => item.src === video.currentSrc);
+    if (/mpegurl|dash\+xml/i.test(source?.type || video.getAttribute('type') || '') ||
+        /\.(m3u8|mpd)(?:[?#]|$)/i.test(video.currentSrc)) return null;
+    return video.currentSrc;
   }
   function report(force = false) {
     const now = Date.now(); if (!force && now-lastSent < 900) return; lastSent = now;
@@ -176,7 +183,7 @@ function installAtmaMediaPage(options = {}) {
     if (document.pictureInPictureElement && document.exitPictureInPicture) await document.exitPictureInPicture();
     report(true); return state();
   }
-  window.__atmaMediaPage={state,element:select,command,setBackground,setPageVisible,setScreenLocked,release};
+  window.__atmaMediaPage={state,element:select,downloadURL,command,setBackground,setPageVisible,setScreenLocked,release};
   const observer = new MutationObserver(scan); observer.observe(document,{childList:true,subtree:true});
   setBackground(background); scan(); interval=setInterval(scan,1500);
   window.addEventListener('pagehide',()=>report(true));

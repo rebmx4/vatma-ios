@@ -47,6 +47,60 @@ final class BrowserDownloadTests: XCTestCase {
         XCTAssertEqual(tab.title, "Attachment")
     }
 
+    @MainActor
+    func testNavigatingToGeneratedFileDownloadsBytesWithoutReplacingThePage() async throws {
+        let fixture = try BrowserControllerFixture()
+        defer { fixture.close() }
+        let root = try await fixture.start()
+        let page = try await fixture.open(root)
+        let pageURL = page.url
+        let contents = UUID().uuidString
+        let service = fixture.controller.downloads
+        let previousVersion = service.completionVersion
+        let previous = try XCTUnwrap(service.list()["files"] as? [[String: Any]])
+        let oldIDs = Set(previous.compactMap { $0["id"] as? String })
+        _ = try await fixture.script("""
+            const url = URL.createObjectURL(new Blob([contents], {type:'application/octet-stream'}));
+            setTimeout(() => location.assign(url), 0);
+            return true;
+            """, in: page, arguments: ["contents": contents])
+        let deadline = Date().addingTimeInterval(12)
+        while service.completionVersion == previousVersion && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let rows = try XCTUnwrap(service.list()["files"] as? [[String: Any]])
+        let ids = rows.compactMap { $0["id"] as? String }.filter { !oldIDs.contains($0) }
+        XCTAssertEqual(ids.count, 1)
+        let savedURL = try service.fileURL(id: XCTUnwrap(ids.first))
+        defer { try? FileManager.default.removeItem(at: savedURL) }
+        XCTAssertEqual(try Data(contentsOf: savedURL), Data(contents.utf8))
+        XCTAssertEqual(page.url, pageURL)
+    }
+
+    @MainActor
+    func testRepeatedDownloadsKeepBothFilesAndLargeVideoCanBeSavedToPhotos() throws {
+        let service = DownloadService()
+        let name = "ATMA-" + UUID().uuidString + ".mp4"
+        let first = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: first); try? FileManager.default.removeItem(at: second) }
+        let large = Data(repeating: 42, count: 8 * 1024 * 1024 + 1)
+        try large.write(to: first)
+        try Data([1, 2, 3]).write(to: second)
+        let saved = try service.publishFile(first, suggestedFilename: name)
+        defer { try? FileManager.default.removeItem(at: saved) }
+        let duplicate = try service.publishFile(second, suggestedFilename: name)
+        defer { try? FileManager.default.removeItem(at: duplicate) }
+        XCTAssertNotEqual(saved, duplicate)
+        XCTAssertEqual(try Data(contentsOf: saved), large)
+        XCTAssertEqual(try Data(contentsOf: duplicate), Data([1, 2, 3]))
+        let rows = try XCTUnwrap(service.list()["files"] as? [[String: Any]])
+        let id = try XCTUnwrap(rows.first { $0["name"] as? String == name }?["id"] as? String)
+        let preview = try service.preview(id: id)
+        XCTAssertNil(preview["base64"])
+        XCTAssertEqual(preview["canSaveToPhotos"] as? Bool, true)
+    }
+
     func testOnlyExpectedNavigationPolicyInterruptionIsSuppressed() {
         let transition = DownloadNavigationTransition(tabID: "tab", url: "https://a.test/file", navigationID: "nav-1")
         let interruption = NSError(domain: "WebKitErrorDomain", code: 102)

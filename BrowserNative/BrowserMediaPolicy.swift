@@ -26,7 +26,8 @@ enum BrowserMediaPolicy {
         guard duration == nil || (duration! >= 0 && duration! <= 1_000_000_000) else { throw BrowserFailure.invalid("Invalid media duration.") }
         return ["available": true, "title": String((body["title"] as? String ?? "").prefix(200)),
                 "paused": paused, "currentTime": time, "duration": duration as Any? ?? NSNull(),
-                "pip": body["pip"] as? Bool == true, "pipAvailable": body["pipAvailable"] as? Bool == true]
+                "pip": body["pip"] as? Bool == true, "pipAvailable": body["pipAvailable"] as? Bool == true,
+                "downloadable": body["downloadable"] as? Bool == true]
     }
 
     static func matches(page: URL, scheme: String, host: String, port: Int) -> Bool {

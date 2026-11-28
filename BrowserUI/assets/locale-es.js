@@ -1,4 +1,10 @@
 export default {
+  "Скачать файл": "Descargar archivo",
+  "Сохранить в «Фото»": "Guardar en Fotos",
+  "Сохранено в «Фото»": "Guardado en Fotos",
+  "Разрешите ATMA добавлять файлы в «Фото» в настройках iOS.": "Permite que ATMA añada archivos a Fotos en los ajustes de iOS.",
+  "У этого видео нет прямой ссылки на файл.": "Este vídeo no tiene un enlace directo al archivo.",
+  "Идёт скачивание…": "Descargando…",
   "На рабочем столе можно создать до 10 страниц": "La pantalla de inicio admite hasta 10 páginas",
   "В папке уже 45 ярлыков": "Esta carpeta ya tiene 45 accesos directos",
   "Скрыть нижнюю панель": "Ocultar la barra inferior",

@@ -151,6 +151,7 @@ def validate_photo_library_usage(info):
 
 def validate_plist(info, root=ROOT):
     validate_photo_library_usage(info)
+    validate_files_access(info)
     require(info["UIDeviceFamily"] == [1, 2], "Plist must support iPhone and iPad")
     languages = ("ru", "en", "es", "de", "fr", "pt-BR", "it", "zh-Hans", "ko", "ja")
     require(tuple(info["CFBundleLocalizations"]) == languages, "Unexpected supported languages")
@@ -163,6 +164,11 @@ def validate_plist(info, root=ROOT):
     ats = info["NSAppTransportSecurity"]
     require(ats == {"NSAllowsLocalNetworking": True, "NSAllowsArbitraryLoadsInWebContent": True}, "Unexpected ATS scope")
     require(info.get("NSCameraUsageDescription") and info.get("NSMicrophoneUsageDescription"), "Missing website media permission descriptions")
+
+
+def validate_files_access(info):
+    require(all(info.get(key) is True for key in ("UIFileSharingEnabled", "LSSupportsOpeningDocumentsInPlace")),
+            "Downloads must be accessible from the system Files picker")
 
 
 def validate(root=ROOT):
@@ -198,7 +204,7 @@ def validate(root=ROOT):
                     require(len(text.splitlines()) < 400, "Swift source exceeds line limit")
                     imports = set(re.findall(r"\bimport\s+(\w+)", text))
                     require(imports <= {"UIKit", "Foundation", "CoreFoundation", "WebKit", "Network", "CryptoKit",
-                                        "Security", "LocalAuthentication", "UniformTypeIdentifiers",
+                                        "Security", "LocalAuthentication", "UniformTypeIdentifiers", "Photos",
                                         "AVFoundation", "MediaPlayer", "NaturalLanguage", "SwiftUI", "Translation"},
                             "Native code may import only approved Apple frameworks")
             require(path.suffix.lower() not in (".dylib", ".a", ".framework", ".xcframework"), "Embedded SDK binary is not an allowed product input")
