@@ -21,6 +21,7 @@ final class BrowserController: UIViewController {
     let blocker = SiteBlocker()
     let downloads = DownloadService()
     let downloadCard = DownloadCard(material: .systemThickMaterial)
+    var activeDownloadDocument: UIDocumentInteractionController?
     var downloadLanguage = Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en"
     private var downloadCardBottom: NSLayoutConstraint!
     lazy var pageTranslation = BrowserPageTranslation(browser: self)

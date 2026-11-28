@@ -1,5 +1,4 @@
 import UIKit
-import QuickLook
 
 @MainActor
 final class DownloadCard: UIVisualEffectView {
@@ -105,13 +104,12 @@ final class DownloadCard: UIVisualEffectView {
     }
 }
 
-private final class DownloadPreview: QLPreviewController, QLPreviewControllerDataSource {
-    var file: NSURL!
-    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
-    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { file }
-}
+extension BrowserController: UIDocumentInteractionControllerDelegate {
+    func documentInteractionControllerViewControllerForPreview(_ controller: UIDocumentInteractionController) -> UIViewController { self }
 
-extension BrowserController {
+    func documentInteractionControllerDidEndPreview(_ controller: UIDocumentInteractionController) {
+        if activeDownloadDocument === controller { activeDownloadDocument = nil }
+    }
     var downloadLabels: [String: String] {
         DownloadCard.translations[downloadLanguage] ?? DownloadCard.translations["en"] ?? [:]
     }
@@ -150,15 +148,15 @@ extension BrowserController {
                 action: { [weak self] in
                     guard let self, let fileID = task.fileID, self.presentedViewController == nil else { return }
                     self.downloads.dismissNotice()
-                    if let file = try? self.downloads.fileURL(id: fileID), QLPreviewController.canPreview(file as NSURL) {
-                        let preview = DownloadPreview()
-                        preview.file = file as NSURL
-                        preview.dataSource = preview
-                        self.present(preview, animated: true)
-                    } else {
-                        self.ui.callAsyncJavaScript("await window.atmaShowDownload(fileID)", arguments: ["fileID": fileID],
-                                                    in: nil, in: .page, completionHandler: nil)
+                    if let file = try? self.downloads.fileURL(id: fileID) {
+                        let document = UIDocumentInteractionController(url: file)
+                        document.delegate = self
+                        self.activeDownloadDocument = document
+                        if document.presentPreview(animated: true) { return }
+                        self.activeDownloadDocument = nil
                     }
+                    self.ui.callAsyncJavaScript("await window.atmaShowDownload(fileID)", arguments: ["fileID": fileID],
+                                                in: nil, in: .page, completionHandler: nil)
                 }, secondaryAction: { [weak self] in
                     if ongoing { self?.downloads.cancel(id) } else { self?.downloads.dismissNotice() }
                 })

@@ -4,6 +4,31 @@ import WebKit
 
 @MainActor
 final class BrowserLocalizationTests: XCTestCase {
+    func testDownloadActionsAcrossLanguagesAndThemes() throws {
+        let card = DownloadCard(material: .systemThickMaterial)
+        func buttons(in view: UIView) -> [UIButton] {
+            if let button = view as? UIButton { return [button] }
+            return view.subviews.flatMap { buttons(in: $0) }
+        }
+        for theme in [UIUserInterfaceStyle.light, .dark] {
+            card.overrideUserInterfaceStyle = theme
+            for language in BrowserPageTranslation.interfaceLanguages {
+                let labels = try XCTUnwrap(DownloadCard.translations[language])
+                let open = try XCTUnwrap(labels["show"]), list = try XCTUnwrap(labels["downloads"])
+                card.show(key: "\(theme.rawValue)/\(language)", title: "Report.pdf", detail: "",
+                          progress: nil, primary: open, secondary: "×", listLabel: list,
+                          listAction: {}, action: {}, secondaryAction: {})
+                let controls = buttons(in: card)
+                let queue = try XCTUnwrap(controls.first { $0.accessibilityIdentifier == "download-list" })
+                XCTAssertFalse(queue.isHidden)
+                XCTAssertNotNil(queue.configuration?.image)
+                XCTAssertTrue(queue.configuration?.title?.isEmpty ?? true)
+                XCTAssertEqual(queue.accessibilityLabel, list)
+                XCTAssertTrue(controls.contains { !$0.isHidden && $0.configuration?.title == open })
+            }
+        }
+    }
+
     func testNewInterfaceLanguagesCanBeSelectedAndPersist() async throws {
         let fixture = try BrowserControllerFixture()
         defer { fixture.close() }
