@@ -1,4 +1,6 @@
 export default {
+  "На рабочем столе можно создать до 10 страниц": "The Home Screen can have up to 10 pages",
+  "В папке уже 45 ярлыков": "This folder already has 45 shortcuts",
   "Скрыть нижнюю панель": "Hide the bottom dock",
   "Показать нижнюю панель": "Show the bottom dock",
   "Скачать по этому адресу": "Download from this address",

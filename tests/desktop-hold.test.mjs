@@ -56,7 +56,7 @@ test('a completed drop removes the dragged artwork before rendering its new slot
  f.page.panel=null;
  f.page.updateDropTarget=()=>{f.page.gesture.targetSlot=10;};
  f.page.placeEntry=()=>({changed:true,items:[]});
- f.page.updatePool=()=>{order.push('render');assert.equal(f.page.gesture,null);};
+ f.page.updatePool=async()=>{order.push('render');assert.equal(f.page.gesture,null);};
  await f.page.endGesture(f.event('.app-tile'));
  assert.deepEqual(order,['remove','render']);
 });
@@ -78,7 +78,7 @@ test('removing Mail changes only the current desktop and cancels a pending move 
  const mail={id:'mail',name:'Почта Mail',url:'https://e.mail.ru/',dockSlot:3};
  const privateMail={id:'mail',name:'Личная почта',url:'https://e.mail.ru/'};
  const f=tileFixture({app:mail}),pools={public:[mail],private:[privateMail]};
- Object.assign(f.page,{pendingVaultMove:'mail',vaultKey:{},freezeSlots,removeEntry,poolFor:scope=>pools[scope],updatePool:(scope,entries)=>{pools[scope]=entries;}});
+ Object.assign(f.page,{pendingVaultMove:'mail',vaultKey:{},freezeSlots,removeEntry,poolFor:scope=>pools[scope],updatePool:async(scope,entries)=>{pools[scope]=entries;}});
  let stopped=0;
  const event={stopPropagation(){stopped++;}};
  f.item.children.at(-1).events.get('pointerdown')(event);

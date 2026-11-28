@@ -1,4 +1,6 @@
 export default {
+  "На рабочем столе можно создать до 10 страниц": "L’écran d’accueil peut contenir jusqu’à 10 pages",
+  "В папке уже 45 ярлыков": "Ce dossier contient déjà 45 raccourcis",
   "Скрыть нижнюю панель": "Masquer la barre inférieure",
   "Показать нижнюю панель": "Afficher la barre inférieure",
   "Скачать по этому адресу": "Télécharger depuis cette adresse",

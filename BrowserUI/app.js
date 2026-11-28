@@ -1,6 +1,6 @@
 import {APPEARANCE_KEY,ICON_CHOICES,WALLPAPERS,wallpaperForTheme,normalizeAppearance,parseAppearance,resolveTheme,appIconArtwork} from './appearance.js';
 import {createInitialDesktop,bundledShortcutArtwork,hasTranslatedDesktopLabel} from './desktop-defaults.js';
-import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry } from './workspace-model.js';
+import { isFolder, flattenApps, findEntry, dropEntry, removeEntry, arrangeEntries, arrangeDock, shiftEntriesToOppositeEdge, collapseSingletonFolders, freezeSlots, placeEntry, placeDockEntry, desktopPageCount, MAX_DESKTOP_PAGES, FOLDER_PAGE_SIZE, MAX_FOLDER_SHORTCUTS } from './workspace-model.js';
 import { createVault, openVault, sealVault, pinVaultSecret, randomVaultSecret, createVaultWithSecret, openVaultWithSecret } from './vault.js';
 import {renderTabsOverview,showTabsHistory} from './tabs-view.js';
 import {observeDesktopViewport} from './desktop-viewport.js';
@@ -109,7 +109,7 @@ let shortcutLaunchVersion=0;
 let appEditorVersion=0;
 const DESKTOP_HOLD_MS = 750; // iPhone SpringBoard 26.4.1: 0.6875s failed, 0.75s entered editing.
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
-let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
+let desktopPage=0, publicPages=1;
 let renderedDesktopViewport;
 const ALIGNMENT_SNAPSHOT_KEY='atma-preview-alignment-origin';
 let alignmentSnapshot;try{alignmentSnapshot=JSON.parse(localStorage.getItem(ALIGNMENT_SNAPSHOT_KEY));}catch{}
@@ -247,7 +247,7 @@ function brand(app, useStoredIcon = false) {
       return `<img class="shortcut-brand-icon" src="${artwork}" alt="" draggable="false">`;
     }
     if(useStoredIcon&&/^data:image\/png;base64,/i.test(app.iconUrl||''))
-      return `<img src="${escape(app.iconUrl)}" alt="" draggable="false">`;
+      return `<img src="${escape(app.iconUrl)}" alt="" draggable="false" decoding="sync">`;
   }
   const content = {
     'atma-settings': `<g fill="#555c68">${Array.from({length:12},(_,i)=>`<rect x="28" y="8" width="6" height="11" rx="1.2" transform="rotate(${i*30} 31 31)"/>`).join('')}</g><circle cx="31" cy="31" r="19" fill="#555c68"/><circle cx="31" cy="31" r="15.2" fill="#d9dce2"/><circle cx="31" cy="31" r="11.4" fill="#626a77"/><circle cx="31" cy="31" r="6.7" fill="#c6cbd3"/><circle cx="31" cy="31" r="23.5" fill="none" stroke="#eceef1" stroke-width="1.6"/>`,
@@ -311,7 +311,13 @@ function paintShortcutIcon(target,app,scope){
   if(bundledShortcutArtwork(app)||normalizeShortcutIconStyle(app.iconStyle)!=='site')return;
   const source=app.iconUrl||'',url=app.url,id=app.id,key=vaultKey;
   const paint=source=>{if(!source)return;const image=new Image();image.alt='';image.draggable=false;image.referrerPolicy='no-referrer';image.addEventListener('load',()=>target.replaceChildren(image));image.src=source;};
-  if(/^data:image\/png;base64,/i.test(source)){paint(source);return;}
+  if(/^data:image\/png;base64,/i.test(source)){
+    const image=target.querySelector('img');
+    if(image?.getAttribute('src')===source){
+      image.addEventListener('error',()=>{target.innerHTML=brand(app);},{once:true});
+    }else paint(source);
+    return;
+  }
   resolveShortcutIcon(app).then(iconUrl=>{
     if(!iconUrl||scope==='private'&&(!vaultKey||key!==vaultKey))return;
     const current=findEntry(poolFor(scope),id)?.entry;
@@ -546,9 +552,17 @@ function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
   if(scope==='public')scheduleMessageBadgePoll();
   return scope==='private'?vaultWrite:Promise.resolve();
 }
-function updatePool(scope,items) { if(scope==='private')vaultApps=items;else apps=items;return saveApps(scope); }
+async function updatePool(scope,items) {
+  const {columns,rows}=gridMetrics(), capacity=columns*rows;
+  const priorPages=desktopPageCount(arrangeEntries(poolFor(scope),columns),capacity);
+  if(desktopPageCount(arrangeEntries(items,columns),capacity)>Math.max(MAX_DESKTOP_PAGES,priorPages))
+    throw new Error(localization.t('На рабочем столе можно создать до 10 страниц'));
+  if(scope==='private')vaultApps=items;else apps=items;
+  return saveApps(scope);
+}
 function setEditing(value) {
   if(editing===value)return;
+  if(!value&&gesture?.active)endGesture({pointerId:gesture.pointerId},true);
   editing = value; document.body.classList.toggle('editing', value);
   $('edit-apps').hidden = !value;
   $('edit-apps').innerHTML = value ? 'Готово' : icon('edit');
@@ -571,21 +585,21 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
   if (parentId) item.dataset.folder = parentId;
   item.style.setProperty('--jiggle-delay', `${-(index % 7) * 63}ms`);
   item.style.setProperty('--jiggle-duration', `${470 + (index % 5) * 19}ms`);
-  item.style.setProperty('--jiggle-start', index % 2 ? '1.3deg' : '-1.3deg');
-  item.style.setProperty('--jiggle-end', index % 2 ? '-1.3deg' : '1.3deg');
+  item.style.setProperty('--jiggle-start', index % 2 ? '2.15deg' : '-2.15deg');
+  item.style.setProperty('--jiggle-end', index % 2 ? '-2.15deg' : '2.15deg');
   item.classList.toggle('dragging', Boolean(gesture?.active && gesture.id === app.id && gesture.scope === scope));
   const tile = document.createElement('button'); tile.className = 'app-tile';
   tile.setAttribute('aria-label', `Открыть ${appLabel(app)}`);
   if (isFolder(app)) {
     item.classList.add('folder-item'); tile.classList.add('folder-tile');
-    tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,9).map(child=>`<span>${brand(child,quickAccess)}</span>`).join('')}</span>`;
+    tile.innerHTML = `<span class="folder-miniatures">${app.children.slice(0,FOLDER_PAGE_SIZE).map(child=>`<span>${brand(child,true)}</span>`).join('')}</span>`;
     for(const [index,miniature] of [...tile.querySelectorAll('.folder-miniatures > span')].entries()){
       const child=app.children[index];
       miniature.dataset.shortcut=child.id;
       if(!quickAccess)paintShortcutIcon(miniature,child,scope);
     }
   } else {
-    tile.innerHTML = brand(app,quickAccess);
+    tile.innerHTML = brand(app,true);
     if(!quickAccess)paintShortcutIcon(tile,app,scope);
   }
   // Pointer taps are handled by the gesture even if the grid replaces this button.
@@ -613,7 +627,7 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
       event.stopPropagation();
       if(scope==='private'&&!vaultKey)return;
       if(scope==='public'&&pendingVaultMove===app.id)pendingVaultMove=null;
-      updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),app.id));
+      updatePool(scope,removeEntry(freezeSlots(poolFor(scope),gridMetrics().columns),app.id)).catch(error=>reportError(error.message));
     });
     item.append(remove);
   }
@@ -631,22 +645,22 @@ function renderApps() {
   if(document.body.hasAttribute('data-desktop-search'))renderDesktopQuickAccess();
   if(document.body.dataset.runtime==='ios'&&state&&Math.abs(innerHeight-state.height)>1)return;
   renderedDesktopViewport=`${innerWidth}:${innerHeight}`;
-  const previous = positions($('apps'));
-  $('apps').replaceChildren();
+  const viewport=$('apps'), previous=positions(viewport);
+  const previousScope=viewport.children[desktopPage]?.dataset.scope;
+  const privateIndex=desktopPage-privatePageStart;
+  viewport.replaceChildren();
   const {columns,rows}=gridMetrics(), capacity=columns*rows;
-  const privateShortcut=findEntry(apps,'atma-private-desktop')?.entry;
-  if(privateShortcut&&!Number.isInteger(privateShortcut.slots?.[columns])){
-    privateShortcut.slots={...privateShortcut.slots,[columns]:capacity};
-    localStorage.setItem('atma-preview-apps',JSON.stringify(apps));
-  }
   const arranged=arrangeEntries(apps,columns);
-  const pageCount=Math.max(publicPages,Math.ceil((Math.max(-1,...arranged.map(p=>p.slot))+1)/capacity));
-  publicPages=pageCount;
+  publicPages=desktopPageCount(arranged,capacity);
+  const pageCount=publicPages+Number(gesture?.previewPage?.scope==='public');
   renderDesktopPages(arranged,'public',pageCount,0,columns,rows);
   privatePageStart=pageCount;
   const privateLayout=arrangeEntries(vaultApps,columns);
-  privatePageCount=vaultKey?Math.max(1,Math.ceil((Math.max(-1,...privateLayout.map(p=>p.slot))+1)/capacity)):0;
+  const savedPrivatePages=vaultKey?desktopPageCount(privateLayout,capacity):0;
+  privatePageCount=savedPrivatePages+Number(Boolean(vaultKey&&gesture?.previewPage?.scope==='private'));
   renderDesktopPages(privateLayout,'private',privatePageCount,pageCount,columns,rows);
+  if(previousScope==='public')desktopPage=Math.min(desktopPage,pageCount-1);
+  if(previousScope==='private'&&privatePageCount)desktopPage=privatePageStart+Math.min(privateIndex,privatePageCount-1);
   desktopPage=Math.max(0,Math.min(desktopPage,pageCount+privatePageCount-1));
   $('apps').scrollLeft=desktopPage*$('apps').clientWidth;
   $('desktop-dots').replaceChildren();
@@ -865,6 +879,22 @@ function clearHover() {
   gesture.folderDropTile=null;
   gesture.targetId=null;gesture.targetSlot=null;gesture.targetDockSlot=null;gesture.hoverKey=null;gesture.combine=false;
 }
+function turnDesktopDragPage(current,direction) {
+  if(gesture!==current)return;
+  const first=current.scope==='private'?privatePageStart:0;
+  const count=current.scope==='private'?privatePageCount:publicPages+Number(Boolean(current.previewPage));
+  const next=desktopPage+direction;
+  if(next<first||next>first+count)return;
+  if(next===first+count){
+    if(current.previewPage||count>=MAX_DESKTOP_PAGES)return;
+    const {columns,rows}=gridMetrics();
+    current.previewPage={scope:current.scope,index:next,firstSlot:count*columns*rows};
+    renderApps();
+  }
+  showDesktopPage(next);
+  clearHover();
+  setTimeout(()=>{if(gesture===current)updateDropTarget(current.lastX,current.lastY,current);},380);
+}
 document.addEventListener('pointermove', event => {
   const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
   const distance = Math.hypot(event.clientX-current.x, event.clientY-current.y);
@@ -899,11 +929,7 @@ document.addEventListener('pointermove', event => {
     const r=$('apps').getBoundingClientRect();
     const direction=event.clientY>=r.top&&event.clientY<=r.bottom?(event.clientX<r.left+25?-1:event.clientX>r.right-25?1:0):0;
     if(direction!==current.pageDirection){clearTimeout(current.pageTimer);current.pageDirection=direction;
-      if(direction)current.pageTimer=setTimeout(()=>{let next=desktopPage+direction;
-        if(current.scope==='private'){if(next<privatePageStart||next>=privatePageStart+privatePageCount)return;}
-        else {if(next<0)return;if(next>=publicPages){publicPages=next+1;localStorage.setItem('atma-preview-page-count',publicPages);renderApps();}}
-        showDesktopPage(next);clearHover();setTimeout(()=>{if(gesture===current)updateDropTarget(current.lastX,current.lastY,current)},380);
-      },500);
+      if(direction)current.pageTimer=setTimeout(()=>turnDesktopDragPage(current,direction),500);
     }
   }
   if (panel === 'folder' && current.parentId === openFolderId) {
@@ -918,6 +944,7 @@ function updateDropTarget(x,y,current) {
   if(!panel) {
     const viewport=$('apps'),bounds=viewport.getBoundingClientRect();
     if(x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom){
+      if(current.previewPage&&(x<bounds.left+25||x>bounds.right-25)){clearHover();return;}
       const padding=getComputedStyle(viewport.parentElement);
       x=Math.max(bounds.left+parseFloat(padding.paddingLeft)+1,Math.min(x,bounds.right-parseFloat(padding.paddingRight)-1));
     }
@@ -962,6 +989,7 @@ function updateDropTarget(x,y,current) {
   if(canCombine)current.hoverTimer = setTimeout(() => {
     if (gesture !== current || current.targetId !== targetId) return;
     current.combine = true;
+    if(isFolder(targetEntry)&&targetEntry.children.length>=MAX_FOLDER_SHORTCUTS)return;
     current.folderDropTile=target;
     target.setAttribute('data-folder-drop','');
   }, 330);
@@ -1027,8 +1055,12 @@ async function endGesture(event, cancelled = false) {
     }
     current.ghost.remove();
     gesture = null; suppressClickUntil=Date.now()+350;
-    if (result.changed) updatePool(current.scope,result.items);
+    if(current.previewPage&&(!result.changed||!Number.isInteger(targetSlot)||targetSlot<current.previewPage.firstSlot))
+      desktopPage=Math.min(desktopPage,current.previewPage.index-1);
+    if (result.changed) updatePool(current.scope,result.items).catch(error=>{renderApps();reportError(error.message);});
+    else if(current.previewPage)renderApps();
     else for(const item of document.querySelectorAll('.app-item.dragging'))item.classList.remove('dragging');
+    if(result.folderFull)reportError('В папке уже 45 ярлыков');
     if(from)animateShortcutDrop(current,result,from,joined);
   } else {
     gesture=null;
@@ -1083,11 +1115,11 @@ function renderFolder() {
   $('sheet-title').textContent=folder.name;
   $('sheet-content').innerHTML=`<div class="folder-heading"><input id="folder-name" aria-label="Название папки" maxlength="32" value="${escape(folder.name)}"><button id="folder-done"></button></div><div class="folder-card"><div class="folder-pages" id="folder-pages"></div><div class="folder-dots" id="folder-dots"></div></div><p class="folder-hint"></p>`;
   syncFolderEditing();
-  for(let start=0;start<folder.children.length;start+=9){
+  for(let start=0;start<folder.children.length;start+=FOLDER_PAGE_SIZE){
     const grid=document.createElement('div'); grid.className='folder-page';
-    folder.children.slice(start,start+9).forEach((app,index)=>grid.append(createItem(app,folder.id,index,folderScope)));
+    folder.children.slice(start,start+FOLDER_PAGE_SIZE).forEach((app,index)=>grid.append(createItem(app,folder.id,index,folderScope)));
     $('folder-pages').append(grid);
-    const dot=document.createElement('button'); dot.setAttribute('aria-label',`Страница ${start/9+1}`);
+    const dot=document.createElement('button'); dot.setAttribute('aria-label',`Страница ${start/FOLDER_PAGE_SIZE+1}`);
     dot.addEventListener('click',()=>$('folder-pages').scrollTo({left:grid.offsetLeft,behavior:reducedMotion.matches?'instant':'smooth'})); $('folder-dots').append(dot);
   }
   const updateDots=()=>{const index=Math.round($('folder-pages').scrollLeft/$('folder-pages').clientWidth);[...$('folder-dots').children].forEach((dot,i)=>dot.classList.toggle('active',i===index));};
@@ -1323,7 +1355,6 @@ function renderSettings() {
   const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
   card.append(settingButton('Приватный стол','lock',requestVault));
-  card.append(settingButton('Добавить страницу рабочего стола','plus',async()=>{publicPages++;localStorage.setItem('atma-preview-page-count',publicPages);await setPanel(null);renderApps();showDesktopPage(publicPages-1);}));
   const addDesktopButton=settingButton('Добавить веб-приложение','plus',openAddShortcut);addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
   const probe=settingButton('Проверить, что видит сайт', 'phone', async () => { try { await action('probe'); } catch {} });probe.disabled=state?.capabilities?.probe===false;card.append(probe);
   card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; }));
@@ -1439,8 +1470,14 @@ function renderAppForm(app) {
     delete entry.profileId;
     if (!entry.name) return;
     const pool=poolFor(scope);
-    if (app) { const found=findEntry(pool,app.id); if(found) found.list.splice(found.index,1,{...entry,slots:app.slots}); } else pool.push(entry);
-    try{await saveApps(scope,{layoutChanged:!app});if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);}catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=submitLabel;}}
+    try {
+      if(app){
+        const found=findEntry(pool,app.id);
+        if(found)found.list.splice(found.index,1,{...entry,slots:app.slots});
+        await saveApps(scope,{layoutChanged:false});
+      }else await updatePool(scope,[...pool,entry]);
+      if(panel===editorPanel&&version===appEditorVersion)await setPanel(null);
+    }catch(error){reportError(error.message);}finally{if(submit){submit.disabled=false;submit.textContent=submitLabel;}}
   });
   if(!app)return;
   let pressedMove=false;
@@ -1453,10 +1490,8 @@ function renderAppForm(app) {
     try{
       if(scope==='private'){
         if(!vaultKey||vaultKey!==key)return;
-        apps.push(detachFromLayout(app));
-        await saveApps();
-        vaultApps=removeEntry(vaultApps,app.id);
-        await saveApps('private');
+        await updatePool('public',[...apps,detachFromLayout(app)]);
+        await updatePool('private',removeEntry(vaultApps,app.id));
         await setPanel(null);
         showDesktopPage(0);
       }else{
@@ -1464,7 +1499,7 @@ function renderAppForm(app) {
         if(vaultKey)await finishVaultUnlock();
         else await requestVault();
       }
-    }finally{moveButton.disabled=false;}
+    }catch(error){reportError(error.message);}finally{moveButton.disabled=false;}
   });
   moveButton.addEventListener('pointerdown',()=>{pressedMove=true;});
   moveButton.addEventListener('pointercancel',()=>{pressedMove=false;});
@@ -1610,7 +1645,10 @@ async function finishVaultUnlock() {
     const moveId=pendingVaultMove;
     pendingVaultMove=null;
     const found=findEntry(apps,moveId);
-    if(found){vaultApps.push(detachFromLayout(found.entry));await saveApps('private');apps=removeEntry(freezeSlots(apps,gridMetrics().columns),moveId);await saveApps();}
+    if(found){
+      await updatePool('private',[...vaultApps,detachFromLayout(found.entry)]);
+      await updatePool('public',removeEntry(freezeSlots(apps,gridMetrics().columns),moveId));
+    }
   }
   const showHome=document.body.dataset.surface!=='home';
   await setPanel(null,{keepVaultAction:true});
@@ -1649,7 +1687,6 @@ window.addEventListener('storage',event=>{
   if(event.key===APPEARANCE_KEY){appearance=parseAppearance(event.newValue);applyAppearance();renderApps();if(panel==='folder')renderFolder();if(panel==='appearance')updateAppearanceControls();if(panel==='app-icon')renderAppIconPicker();}
   if(event.key==='atma-preview-apps'&&event.newValue&&!gesture){try{apps=JSON.parse(event.newValue);renderApps();updateQuickAdd();}catch{}}
   if(event.key==='atma-preview-vault'){try{vaultRecord=JSON.parse(event.newValue);}catch{}lockVault();pinEpoch++;firstPin=null;pinDigits='';pinBusy=false;if(panel==='pin')renderPIN();}
-  if(event.key==='atma-preview-page-count'){publicPages=Math.max(2,Number(event.newValue)||2);renderApps();}
 });
 $('address-form').addEventListener('submit', event => {
   event.preventDefault(); const value = $('address').value.trim(); if (!value) return;

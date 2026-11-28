@@ -1,6 +1,14 @@
 export const isFolder = entry => entry?.type === 'folder';
 export const flattenApps = entries => entries.flatMap(entry => isFolder(entry) ? entry.children : [entry]);
 export const DOCK_SIZE = 4;
+export const MAX_DESKTOP_PAGES = 10;
+export const FOLDER_PAGE_SIZE = 9;
+export const MAX_FOLDER_SHORTCUTS = FOLDER_PAGE_SIZE * 5;
+
+export function desktopPageCount(layout, capacity) {
+  const lastSlot=layout.reduce((last,{slot})=>Math.max(last,slot),-1);
+  return Math.max(1,Math.ceil((lastSlot+1)/capacity));
+}
 
 export function arrangeDock(entries) {
   const dock = Array(DOCK_SIZE).fill(null);
@@ -120,10 +128,14 @@ export function dropEntry(entries, sourceId, targetId, options = {}) {
   if (!source || sourceId === targetId || (targetId && !target)) return unchanged();
   const destination = options.destinationFolderId ? findEntry(items, options.destinationFolderId)?.entry : null;
   if (options.destinationFolderId && (!isFolder(destination) || isFolder(source.entry))) return unchanged();
+  if (destination && source.parent !== destination && destination.children.length >= MAX_FOLDER_SHORTCUTS)
+    return { ...unchanged(), folderFull:true };
   if (target?.parent && target.parent !== destination) return unchanged();
   let folderId;
   if (options.combine && target && !target.parent && !isFolder(source.entry) && !destination) {
     if (source.parent === target.entry) return unchanged();
+    if (isFolder(target.entry) && target.entry.children.length >= MAX_FOLDER_SHORTCUTS)
+      return { ...unchanged(), folderFull:true };
     source.list.splice(source.index, 1);
     delete source.entry.dockSlot;
     if (isFolder(target.entry)) {

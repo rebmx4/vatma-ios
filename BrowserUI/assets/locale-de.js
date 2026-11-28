@@ -1,4 +1,6 @@
 export default {
+  "На рабочем столе можно создать до 10 страниц": "Der Startbildschirm kann bis zu 10 Seiten haben",
+  "В папке уже 45 ярлыков": "Dieser Ordner enthält bereits 45 Verknüpfungen",
   "Скрыть нижнюю панель": "Untere Leiste ausblenden",
   "Показать нижнюю панель": "Untere Leiste einblenden",
   "Скачать по этому адресу": "Von dieser Adresse laden",

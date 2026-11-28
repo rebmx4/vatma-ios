@@ -1,4 +1,6 @@
 export default {
+  "На рабочем столе можно создать до 10 страниц": "La schermata Home può avere fino a 10 pagine",
+  "В папке уже 45 ярлыков": "Questa cartella contiene già 45 collegamenti",
   "Скрыть нижнюю панель": "Nascondi la barra inferiore",
   "Показать нижнюю панель": "Mostra la barra inferiore",
   "Скачать по этому адресу": "Scarica da questo indirizzo",

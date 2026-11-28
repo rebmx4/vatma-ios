@@ -446,14 +446,14 @@ body[data-wallpaper=solid] .desktop-controls {
 }
 
 @keyframes atma-edit-sway {
-  0%, 100% { rotate: var(--jiggle-start, -1.3deg); translate: 0 -.35px; }
-  50% { rotate: var(--jiggle-end, 1.3deg); translate: 0 .35px; }
+  0%, 100% { rotate: var(--jiggle-start, -2.15deg); translate: -.35px -.65px; }
+  50% { rotate: var(--jiggle-end, 2.15deg); translate: .35px .65px; }
 }
 
 .desktop-dock-visibility {
   position: absolute;
   z-index: 3;
-  inset: 50% auto auto 50%;
+  inset: -4px auto auto 50%;
   translate: -50% -50%;
   display: grid;
   place-items: center;
@@ -478,6 +478,10 @@ body[data-wallpaper=solid] .desktop-controls {
 
 .desktop-dock-visibility svg { width: 12px; height: 12px; }
 .desktop-dock[data-muted] .desktop-dock-grid { opacity: .36; filter: grayscale(1); }
+
+@media (max-width: 360px) {
+  .desktop-dock .app-remove { top: -1px; }
+}
 
 .editing .app-item[data-folder-drop] .app-tile {
   scale: .88;

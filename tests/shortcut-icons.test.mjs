@@ -15,10 +15,14 @@ function setup(){
  context.state.url='https://example.com/account';
  context.shortcutDestination=()=>context.state.privateDesktop?'private':'public';
  context.poolFor=scope=>scope==='private'?vaultApps:context.apps;
- context.updatePool=async(scope,entries)=>{assert.equal(scope,'public');context.apps=entries;await context.saveApps(scope);};
+ context.updatePool=async(scope,entries)=>{
+  if(scope==='private')vaultApps.splice(0,vaultApps.length,...entries);
+  else context.apps=entries;
+  await context.saveApps(scope);
+ };
  vm.createContext(context);
  for(const [startMarker,endMarker] of [['function brand(','async function api('],['function openAddShortcut(','async function openAppEditor('],['async function saveCurrentSite(','function updateTabSurface(']]){const start=source.indexOf(startMarker),end=source.indexOf(endMarker,start);assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),context);}
- return {context,apps,vaultApps,effects,element};
+ return {context,get apps(){return context.apps;},vaultApps,effects,element};
 }
 test('manual shortcut creation resolves and stores the website icon',async()=>{
  const f=setup();f.context.renderAppForm();await f.element('app-form').submit({preventDefault(){},currentTarget:{name:'Example',url:'example.com'}});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {arrangeDock,arrangeEntries,dropEntry,placeDockEntry,placeEntry,removeEntry,shiftEntriesToOppositeEdge} from '../BrowserUI/workspace-model.js';
+import {arrangeDock,arrangeEntries,desktopPageCount,dropEntry,MAX_DESKTOP_PAGES,MAX_FOLDER_SHORTCUTS,placeDockEntry,placeEntry,removeEntry,shiftEntriesToOppositeEdge} from '../BrowserUI/workspace-model.js';
 
 const shortcut=(id,slot)=>({id,name:id,slots:{4:slot}});
 const folder=()=>({id:'folder',type:'folder',name:'Папка',slots:{4:4},children:[shortcut('a',0),shortcut('b',1)]});
@@ -38,7 +38,7 @@ test('a second double tap restores saved positions, including after an app resta
 
 test('editing shortcut metadata keeps the pending double-tap restoration',async()=>{
   const source=fs.readFileSync(new URL('../BrowserUI/app.js',import.meta.url),'utf8');
-  const start=source.indexOf('function saveApps('),end=source.indexOf('\nfunction updatePool(',start);
+  const start=source.indexOf('function saveApps('),end=source.indexOf('\nasync function updatePool(',start);
   const saved=new Map([['alignment','origin']]);
   const context={apps:[shortcut('site',12)],alignmentSnapshot:{columns:4,positions:{site:0}},ALIGNMENT_SNAPSHOT_KEY:'alignment',
     localStorage:{setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},
@@ -52,6 +52,29 @@ test('editing shortcut metadata keeps the pending double-tap restoration',async(
 test('a shortcut can be placed in an empty lower cell',()=>{
   const result=placeEntry([shortcut('a',0),shortcut('b',1)],'a',19,4);
   assert.equal(result.items.find(item=>item.id==='a').slots[4],19);
+});
+
+test('desktop page count follows written shortcut positions',()=>{
+  const capacity=20;
+  const initial=[shortcut('a',0),shortcut('b',1)];
+  const count=entries=>desktopPageCount(arrangeEntries(entries,4),capacity);
+  assert.equal(count(initial),1);
+  const moved=placeEntry(initial,'b',capacity*(MAX_DESKTOP_PAGES-1),4).items;
+  assert.equal(count(moved),MAX_DESKTOP_PAGES);
+  assert.equal(count(placeEntry(moved,'b',1,4).items),1);
+});
+
+test('a full folder accepts reordering while preserving a shortcut dropped from outside',()=>{
+  const children=Array.from({length:MAX_FOLDER_SHORTCUTS-1},(_,index)=>shortcut('child-'+index,index));
+  const pool=[{...folder(),children},shortcut('one-more',0),shortcut('outside',1)];
+  const filled=dropEntry(pool,'one-more','folder',{combine:true,columns:4}).items;
+  assert.equal(filled[0].children.length,45);
+  const refused=dropEntry(filled,'outside','folder',{combine:true,columns:4});
+  assert.equal(refused.folderFull,true);
+  assert.equal(refused.items,filled);
+  const inside=dropEntry(filled,'child-0','child-2',{destinationFolderId:'folder'});
+  assert.equal(inside.changed,true);
+  assert.equal(inside.items[0].children.length,45);
 });
 
 test('extracting from a two-item folder promotes the remaining shortcut in its slot',()=>{
