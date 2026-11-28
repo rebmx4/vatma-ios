@@ -123,6 +123,7 @@ export function dropEntry(entries, sourceId, targetId, options = {}) {
   if (target?.parent && target.parent !== destination) return unchanged();
   let folderId;
   if (options.combine && target && !target.parent && !isFolder(source.entry) && !destination) {
+    if (source.parent === target.entry) return unchanged();
     source.list.splice(source.index, 1);
     delete source.entry.dockSlot;
     if (isFolder(target.entry)) {
@@ -131,7 +132,12 @@ export function dropEntry(entries, sourceId, targetId, options = {}) {
     } else {
       folderId = options.newFolderId || `folder-${crypto.randomUUID()}`;
       const index = items.findIndex(item => item.id === targetId);
-      items.splice(index, 1, { id: folderId, type: 'folder', name: 'Папка', slots:target.entry.slots, children: [target.entry, source.entry] });
+      const {dockSlot, slots} = target.entry;
+      delete target.entry.dockSlot;
+      items.splice(index, 1, {
+        id: folderId, type: 'folder', name: options.newFolderName || 'Папка',
+        slots, dockSlot, children: [target.entry, source.entry]
+      });
     }
   } else {
     const list = destination ? destination.children : items;

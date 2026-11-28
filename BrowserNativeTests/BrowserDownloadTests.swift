@@ -2,6 +2,37 @@ import XCTest
 @testable import ATMA
 
 final class BrowserDownloadTests: XCTestCase {
+    @MainActor
+    func testDownloadingCurrentAddressLeavesItsTabOpenAndPreservesFileBytes() async throws {
+        let fixture = try BrowserControllerFixture()
+        defer { fixture.close() }
+        _ = try await fixture.start()
+        let resource = "atma-download-" + UUID().uuidString + ".html"
+        let body = Data("<!doctype html><title>Download sample</title><p>Keep this tab open.</p>".utf8)
+        let server = try BrowserRenderingFixtureServer(resources: ["/" + resource: body])
+        defer { server.stop() }
+        let url = try await server.start().appendingPathComponent(resource)
+        _ = try await fixture.rpc("open", body: ["url": url.absoluteString])
+        let page = try XCTUnwrap(fixture.controller.currentRenderer)
+        try await fixture.wait("document.title === 'Download sample'", in: page)
+        let service = fixture.controller.downloads
+        let previousCompletion = service.completionVersion
+        _ = try await fixture.rpc("download-current")
+        let deadline = Date().addingTimeInterval(12)
+        while service.completionVersion == previousCompletion && Date() < deadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertGreaterThan(service.completionVersion, previousCompletion)
+        let files = try XCTUnwrap(service.list()["files"] as? [[String: Any]])
+        let file = try XCTUnwrap(files.first { $0["name"] as? String == resource })
+        let id = try XCTUnwrap(file["id"] as? String)
+        let saved = try service.fileURL(id: id)
+        defer { try? FileManager.default.removeItem(at: saved) }
+        XCTAssertEqual(try Data(contentsOf: saved), body)
+        XCTAssertTrue(fixture.controller.currentRenderer === page)
+        XCTAssertEqual(page.url, url)
+    }
+
     func testDownloadTerminalStatePreservesTabMetadata() {
         var tab = BrowserTab(profileId: "profile")
         tab.url = "https://a.test/file"; tab.title = "Attachment"

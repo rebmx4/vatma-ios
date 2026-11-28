@@ -39,6 +39,7 @@ final class BrowserController: UIViewController {
     var nativeError: String?
     var addressEditingTabID: String?
     var tabPreviews: [String: TabPreview] = [:]
+    let tabPreviewStore = TabPreviewStore()
     var previewCaptures: [String: TabPreviewCapture] = [:]
     var tabPreviewVersion = 0
     var tabPreviewDocuments: [String: Int] = [:]
@@ -344,7 +345,7 @@ final class BrowserController: UIViewController {
                 "preferredLanguages": Locale.preferredLanguages,
                 "timezone": TimeZone.autoupdatingCurrent.identifier, "profiles": model.profiles,
                 "tabs": tabOverviewState(), "tabPreviewVersion": tabPreviewVersion,
-                "activeTabId": model.activeTabId, "media": media.state]
+                "activeTabId": model.activeTabId, "media": media.state, "downloadsVersion": downloads.completionVersion]
     }
 
     func publish() {

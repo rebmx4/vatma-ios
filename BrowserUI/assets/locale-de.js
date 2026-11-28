@@ -1,4 +1,8 @@
 export default {
+  "Скрыть нижнюю панель": "Untere Leiste ausblenden",
+  "Показать нижнюю панель": "Untere Leiste einblenden",
+  "Скачать по этому адресу": "Von dieser Adresse laden",
+  "Сохранить в «Файлы»": "In „Dateien“ sichern",
   "Нижняя панель": "Untere Leiste",
   "Поделиться": "Teilen",
   "Не удалось поделиться ссылкой": "Link konnte nicht geteilt werden",

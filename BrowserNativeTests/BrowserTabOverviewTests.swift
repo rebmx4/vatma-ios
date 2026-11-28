@@ -3,6 +3,33 @@ import XCTest
 
 @MainActor
 final class BrowserTabOverviewTests: XCTestCase {
+    func testSnapshotPersistsForExactOrdinaryTabAndNeverForPrivateTabs() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = try XCTUnwrap(URL(string: "https://example.org/folder"))
+        let tab = BrowserTab(profileId: BrowserModel.actualProfile, url: url.absoluteString)
+        let store = TabPreviewStore(directory: directory)
+        let bytes = Data([1, 2, 3])
+        store.save(bytes, url: url, for: tab)
+        XCTAssertEqual(TabPreviewStore(directory: directory).preview(for: tab)?.source, "data:image/jpeg;base64,AQID")
+        var navigated = tab
+        navigated.url = "https://example.org/other"
+        XCTAssertNil(store.preview(for: navigated))
+        for isIncognito in [false, true] {
+            var protected = tab
+            protected.privateBrowsing = isIncognito
+            protected.privateDesktopBrowsing = !isIncognito
+            XCTAssertNil(store.preview(for: protected))
+            protected.id = UUID().uuidString
+            store.save(bytes, url: url, for: protected)
+            protected.privateBrowsing = nil
+            protected.privateDesktopBrowsing = nil
+            XCTAssertNil(store.preview(for: protected))
+        }
+        store.remove(for: tab.id)
+        XCTAssertNil(store.preview(for: tab))
+    }
+
     func testCloseManyKeepsTheOverviewAndOtherGroups() async throws {
         let fixture = try BrowserControllerFixture()
         defer { fixture.close() }

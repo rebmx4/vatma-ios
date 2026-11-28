@@ -1,4 +1,8 @@
 export default {
+  "Скрыть нижнюю панель": "Ocultar la barra inferior",
+  "Показать нижнюю панель": "Mostrar la barra inferior",
+  "Скачать по этому адресу": "Descargar desde esta dirección",
+  "Сохранить в «Файлы»": "Guardar en Archivos",
   "Нижняя панель": "Panel inferior",
   "Поделиться": "Compartir",
   "Не удалось поделиться ссылкой": "No se pudo compartir el enlace",

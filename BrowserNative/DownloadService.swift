@@ -10,6 +10,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
     private var reserved = Set<String>()
     private var destinations: [ObjectIdentifier: String] = [:]
     private var sourceTabs: [ObjectIdentifier: String] = [:]
+    private(set) var completionVersion = 0
     var didChange: ((String?, String?) -> Void)?
     private var folder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -30,7 +31,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey], options: [.skipsHiddenFiles])
         paths.removeAll()
         let rows = try files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url -> [String: Any]? in
-            guard let safe = try safeFile(url, root: root) else { return nil }
+            guard !reserved.contains(url.path), let safe = try safeFile(url, root: root) else { return nil }
             let id = SHA256.hash(data: Data(safe.lastPathComponent.utf8)).map { String(format: "%02x", $0) }.joined()
             paths[id] = safe
             return try metadata(safe, id: id)
@@ -38,11 +39,16 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         return ["files": rows]
     }
 
-    func preview(id: String) throws -> [String: Any] {
+    func fileURL(id: String) throws -> URL {
         _ = try list()
         guard let candidate = paths[id], let url = try safeFile(candidate, root: safeFolder()) else {
             throw BrowserFailure.invalid("File is unavailable. Refresh the Downloads list.")
         }
+        return url
+    }
+
+    func preview(id: String) throws -> [String: Any] {
+        let url = try fileURL(id: id)
         var result = try metadata(url, id: id)
         let size = result["size"] as? Int ?? 0
         let kind = result["kind"] as? String ?? "other"
@@ -113,6 +119,10 @@ final class DownloadService: NSObject, WKDownloadDelegate {
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         let tabID = sourceTabs[ObjectIdentifier(download)]
+        if let path = destinations[ObjectIdentifier(download)], let root = try? safeFolder(),
+           let partial = try? safeFile(URL(fileURLWithPath: path), root: root) {
+            try? FileManager.default.removeItem(at: partial)
+        }
         release(download); didChange?(tabID, error.localizedDescription)
     }
 
@@ -121,6 +131,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         active.removeValue(forKey: id)
         sourceTabs.removeValue(forKey: id)
         if let path = destinations.removeValue(forKey: id) { reserved.remove(path) }
+        completionVersion += 1
     }
 
     func download(_ download: WKDownload, didReceive challenge: URLAuthenticationChallenge,

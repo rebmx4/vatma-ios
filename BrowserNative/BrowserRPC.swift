@@ -200,6 +200,8 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             return
         case "files": reply(try downloads.list(), nil); return
         case "file": reply(try downloads.preview(id: string("fileId", body)), nil); return
+        case "file/export": try exportDownload(try string("fileId", body)); reply(true, nil); return
+        case "download-current": try downloadCurrentAddress(); reply(true, nil); return
         case "probe": throw BrowserFailure.invalid("A trustworthy fingerprint probe is not implemented on iOS.")
         case "snapshot": throw BrowserFailure.invalid("Use tab-previews for bounded native tab snapshots.")
         default: throw BrowserFailure.invalid("Unsupported native action: " + action)
@@ -235,10 +237,7 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
         captureCurrentPreview { [weak self] in
             guard let self else { reply(nil, "Browser closed."); return }
             let result = self.model.tabs.reduce(into: [String: String]()) { result, tab in
-                guard !tab.isPrivate, !tab.isPrivateDesktop,
-                      let preview = self.tabPreviews[tab.id], preview.url.absoluteString == tab.url,
-                      let renderer = self.renderers[tab.id], preview.renderer == ObjectIdentifier(renderer) else { return }
-                result[tab.id] = preview.source
+                result[tab.id] = self.tabPreviewSource(for: tab)
             }
             reply(["previews": result, "errors": [String: String]()], nil)
         }

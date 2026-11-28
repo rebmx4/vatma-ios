@@ -13,7 +13,7 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
         if ExternalLinkPolicy.isAppInstallationLink(url) {
             decisionHandler(.cancel); return
         }
-        if navigationAction.shouldPerformDownload, ["http", "https", "blob"].contains(url.scheme ?? "") {
+        if navigationAction.shouldPerformDownload, ["http", "https", "blob", "data"].contains(url.scheme ?? "") {
             if navigationAction.targetFrame?.isMainFrame == true {
                 expectDownload(webView, url: url, knownNavigation: false)
             }
@@ -108,6 +108,11 @@ extension BrowserController: WKNavigationDelegate, WKUIDelegate {
             update(webView, loading: false)
             pageTranslation.didFinish(webView)
             let finishedURL = webView.url
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self, weak webView] in
+                guard let self, let webView, webView === self.currentRenderer,
+                      webView.url == finishedURL, !webView.isLoading else { return }
+                self.captureCurrentPreview {}
+            }
             BrowserSiteResource.metadata(in: webView) { [weak self, weak webView] metadata in
                 guard let self, let webView, webView.url == finishedURL,
                       let id = self.renderers.first(where: { $0.value === webView })?.key,

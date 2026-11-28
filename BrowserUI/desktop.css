@@ -77,17 +77,13 @@ body:is([data-wallpaper-tone=dark], [data-wallpaper-tone=light]) .wallpaper::aft
   grid-auto-flow: row;
   align-content: normal;
   gap: 7px;
-  padding: 5px var(--desktop-page-gutter);
+  padding: 8px var(--desktop-page-gutter) 5px;
   overflow: hidden auto;
   scrollbar-width: none;
 }
 
 .home .desktop-page::-webkit-scrollbar {
   display: none;
-}
-
-.home .desktop-pages.editing .desktop-page {
-  padding-top: 8px;
 }
 
 .home .desktop-page .app-item,
@@ -420,6 +416,50 @@ body[data-wallpaper=solid] .desktop-controls {
 }
 
 .desktop-dock[hidden] { display: none; }
+
+body:not(.editing) .app-remove,
+.desktop-dock-visibility[hidden] { display: none; }
+
+.home, .folder-overlay { -webkit-tap-highlight-color: transparent; }
+
+.desktop-dock-visibility {
+  position: absolute;
+  z-index: 3;
+  inset: 50% auto auto 50%;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 34px;
+  padding: 0;
+  color: var(--desktop-contrast);
+  background: transparent;
+  touch-action: manipulation;
+}
+
+.desktop-dock-visibility span {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--desktop-surface-opaque);
+  box-shadow: inset 0 1px 2px var(--desktop-glass-shine);
+  opacity: .84;
+}
+
+.desktop-dock-visibility svg { width: 12px; height: 12px; }
+.desktop-dock[data-muted] .desktop-dock-grid { opacity: .36; filter: grayscale(1); }
+
+.editing .app-item[data-folder-drop] .app-tile {
+  animation: none;
+  transform: scale(.88);
+  box-shadow: 0 0 0 4px var(--desktop-glass-shine);
+}
+
+.editing .app-item[data-folder-drop] .app-remove { visibility: hidden; }
+
+.drag-ghost .app-tile { box-shadow: none; }
 
 .desktop-dock::before {
   content: '';

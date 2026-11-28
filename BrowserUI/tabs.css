@@ -129,6 +129,11 @@ body[data-theme=light] .tabs-overlay .sheet{
 }
 .tab-shot{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:top}
 .tab-fallback{position:absolute;inset:0;display:grid;place-items:center}
+.tab-fallback-host{
+ position:absolute;left:8px;right:8px;top:calc(50% + min(12.5cqw, 22.5px) + 8px);
+ text-align:center;font-size:calc(10px * var(--text-scale,1));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tab-fallback-mark{display:grid;place-items:center}
 .tabs-overview .tab-fallback svg{width:25cqw;max-width:45px;height:auto}
 .tab-device{
  display:block;padding:5px 9px 6px;font-size:calc(10px * var(--text-scale,1));overflow:hidden;

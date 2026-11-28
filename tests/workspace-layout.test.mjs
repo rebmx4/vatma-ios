@@ -61,6 +61,23 @@ test('extracting from a two-item folder promotes the remaining shortcut in its s
   assert.equal(result.items[2].slots[4],19);
 });
 
+test('combining two shortcuts preserves the target slot on the desktop or dock',()=>{
+  for (const docked of [false,true]) {
+    const source=shortcut('source',0), target=shortcut('target',5);
+    if(docked)target.dockSlot=2;
+    const grouped=dropEntry([source,target],'source','target',{combine:true,columns:4,newFolderId:'group'}).items;
+    assert.deepEqual(grouped[0].children.map(item=>item.id),['target','source']);
+    assert.equal(grouped[0].dockSlot,target.dockSlot);
+    assert.equal(grouped[0].children[0].dockSlot,undefined);
+    assert.equal(dropEntry(grouped,'source','group',{combine:true,columns:4}).changed,false);
+    const split=placeEntry(grouped,'source',18,4).items;
+    assert.deepEqual(split.map(item=>item.id),['target','source']);
+    assert.equal(split[0].dockSlot,target.dockSlot);
+    assert.equal(split[0].slots[4],5);
+    assert.equal(split[1].slots[4],18);
+  }
+});
+
 test('moving or deleting a folder child also dissolves a singleton folder',()=>{
   const moved=dropEntry([folder(),shortcut('c',0)],'a','c',{columns:4});
   assert.ok(moved.changed);

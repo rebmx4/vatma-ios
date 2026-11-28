@@ -1,4 +1,8 @@
 export default {
+  "Скрыть нижнюю панель": "Hide the bottom dock",
+  "Показать нижнюю панель": "Show the bottom dock",
+  "Скачать по этому адресу": "Download from this address",
+  "Сохранить в «Файлы»": "Save to Files",
   "Нижняя панель": "Bottom dock",
  'Поделиться':'Share','Не удалось поделиться ссылкой':"Couldn't share the link",
  'Меню браузера':'Browser menu','Оформление и язык':'Appearance and language',

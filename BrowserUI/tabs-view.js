@@ -237,7 +237,10 @@ function updateCard(view, entry, tab) {
   entry.src = null;
   entry.pending = null;
   const fallback = element('span', 'tab-fallback');
-  fallback.innerHTML = glyph(view, tab.privatePreview ? 'incognito' : 'blank');
+  const mark = element('span', 'tab-fallback-mark');
+  mark.innerHTML = glyph(view, tab.privatePreview ? 'incognito' : 'blank');
+  fallback.append(mark);
+  if (!tab.privatePreview && tab.host) fallback.append(element('span', 'tab-fallback-host', tab.host));
   setText(initial, (tab.name[0] || 'A').toUpperCase());
   preview.replaceChildren(fallback);
  }

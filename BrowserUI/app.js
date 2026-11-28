@@ -50,6 +50,9 @@ const paths = {
   tablet: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M11 19h2"/>',
   check: '<path d="m5 12 4.5 4.5L19 7"/>',
   share: '<path d="M12 15V2m-4 4 4-4 4 4M8 9H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/>',
+  download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.4"/>',
+  'eye-off': '<path d="m3 3 18 18M9 6.4c1-.3 2-.4 3-.4 6.5 0 10 6 10 6a15 15 0 0 1-3 3.3m-3 2.1a10 10 0 0 1-4 .6c-6.5 0-10-6-10-6a15 15 0 0 1 4-4.1"/>',
   refresh: '<path d="M20 7v5h-5m5-1a8 8 0 1 0-2.3 7"/>',
   dots: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',
@@ -107,6 +110,7 @@ let appEditorVersion=0;
 const DESKTOP_HOLD_MS = 750; // iPhone SpringBoard 26.4.1: 0.6875s failed, 0.75s entered editing.
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
 let desktopPage=0, publicPages=Math.max(2,Number(localStorage.getItem('atma-preview-page-count'))||2);
+let renderedDesktopViewport;
 const ALIGNMENT_SNAPSHOT_KEY='atma-preview-alignment-origin';
 let alignmentSnapshot;try{alignmentSnapshot=JSON.parse(localStorage.getItem(ALIGNMENT_SNAPSHOT_KEY));}catch{}
 let privatePageStart=publicPages, privatePageCount=1, folderScope='public', editorScope='public';
@@ -131,11 +135,23 @@ const brandLogoSource=document.querySelector('.wordmark img').getAttribute('src'
 let appearance=parseAppearance(localStorage.getItem(APPEARANCE_KEY));
 const systemColorScheme=matchMedia('(prefers-color-scheme: dark)');
 let nativeThemeSent,changingIcon=false;
+const dockVisibility=$('desktop-dock-visibility');
+function syncDockVisibility() {
+  const dock=$('desktop-dock'), muted=editing&&!appearance.showDock;
+  dock.hidden=!editing&&!appearance.showDock;
+  dock.toggleAttribute('data-muted',muted);
+  $('desktop-dock-grid').inert=muted;
+  dockVisibility.hidden=!editing;
+  dockVisibility.innerHTML=`<span>${icon(appearance.showDock?'eye':'eye-off')}</span>`;
+  dockVisibility.setAttribute('aria-label',localization.t(appearance.showDock?'Скрыть нижнюю панель':'Показать нижнюю панель'));
+  dockVisibility.setAttribute('aria-pressed',String(appearance.showDock));
+}
+dockVisibility.addEventListener('click',()=>changeAppearance({showDock:!appearance.showDock}));
 function applyAppearance() {
   const resolved=resolveTheme(appearance.theme,systemColorScheme.matches);
   document.body.dataset.theme=resolved;document.documentElement.style.colorScheme=resolved;
   document.documentElement.style.setProperty('--text-scale',String(appearance.textSize/100));
-  $('desktop-dock').hidden=!appearance.showDock;
+  syncDockVisibility();
   applyWallpaper();
   if (panel === 'wallpaper') renderWallpapers();
   renderToolbarMessageBadge();
@@ -150,7 +166,7 @@ async function changeAppearance(patch) {
   const previous=appearance;next=normalizeAppearance({...appearance,...patch});
   try{localStorage.setItem(APPEARANCE_KEY,JSON.stringify(next));}catch{reportError('Не удалось сохранить оформление');return;}
   appearance=next;applyAppearance();
-  if(previous.icon!==next.icon||previous.showDock!==next.showDock){renderApps();if(panel==='folder')renderFolder();}
+  if(previous.icon!==next.icon){renderApps();if(panel==='folder')renderFolder();}
   updateAppearanceControls();if(panel==='app-icon')renderAppIconPicker();
 }
 function updateAppearanceControls() {
@@ -386,6 +402,7 @@ function consume(next) {
   // Commands, polling and native push events can finish out of order.
   if(Number.isSafeInteger(state?.sequence)&&(!Number.isSafeInteger(next.sequence)||next.sequence<state.sequence))return;
   const previousMode=state?.mode,previousLoading=state?.loading,changedTab=state?.activeTabId!==next.activeTabId;
+  const downloadsChanged=state?.downloadsVersion!==next.downloadsVersion;
   const previousTranslation=state?.translationStatus;
   const translationChanged=previousMode!==next.mode||previousTranslation!==next.translationStatus||state?.translationOffered!==next.translationOffered;
   const geometryChanged=state?.width!==next.width||state?.height!==next.height||state?.footerHeight!==next.footerHeight;
@@ -436,7 +453,7 @@ function consume(next) {
   if (panel !== next.panel) {
     panel = next.panel;
     renderPanel();
-  }
+  } else if(panel==='files'&&downloadsChanged&&$('file-list'))renderFiles(true);
   if(previousMode!==next.mode||geometryChanged||languageChanged)renderApps();
   const count=next.tabs?.length||0,button=$('tabs-button');
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
@@ -531,11 +548,13 @@ function saveApps(scope='public',{render=true,layoutChanged=true}={}) {
 }
 function updatePool(scope,items) { if(scope==='private')vaultApps=items;else apps=items;return saveApps(scope); }
 function setEditing(value) {
+  if(editing===value)return;
   editing = value; document.body.classList.toggle('editing', value);
   $('edit-apps').hidden = !value;
   $('edit-apps').innerHTML = value ? 'Готово' : icon('edit');
   $('edit-apps').setAttribute('aria-label', value ? 'Завершить редактирование' : 'Редактировать приложения');
-  renderApps(); if (panel === 'folder') renderFolder();
+  syncDockVisibility();
+  syncFolderEditing();
 }
 function positions(container) { return new Map([...container.querySelectorAll('.app-item:not(.dragging)')].map(item => [item.dataset.app, item.getBoundingClientRect()])); }
 function animatePositions(container, previous) {
@@ -579,7 +598,7 @@ function createItem(app, parentId = null, index = 0, scope='public', quickAccess
   item.append(tile, label);
   const unread=shortcutMessageCount(app,scope,messageCounts);
   if(unread>0){const badge=document.createElement('span');badge.className='message-badge';badge.textContent=badgeLabel(unread);badge.setAttribute('aria-hidden','true');item.append(badge);tile.setAttribute('aria-label',`${tile.getAttribute('aria-label')}, ${unread} непрочитанных`);}
-  if (editing&&!quickAccess&&app.type!=='system') {
+  if (!quickAccess&&app.type!=='system') {
     const remove = document.createElement('button'); remove.className = 'app-remove'; remove.innerHTML=icon('minus');
     remove.setAttribute('aria-label', isFolder(app) ? `Расформировать ${app.name}` : `Удалить ${app.name}`);
     remove.type='button';
@@ -605,9 +624,9 @@ function renderApps() {
   if(state?.mode==='browse'||['blank','incognito'].includes(document.body.dataset.surface))return;
   if(document.body.hasAttribute('data-desktop-search'))renderDesktopQuickAccess();
   if(document.body.dataset.runtime==='ios'&&state&&Math.abs(innerHeight-state.height)>1)return;
+  renderedDesktopViewport=`${innerWidth}:${innerHeight}`;
   const previous = positions($('apps'));
   $('apps').replaceChildren();
-  $('apps').classList.toggle('editing', editing);
   const {columns,rows}=gridMetrics(), capacity=columns*rows;
   const privateShortcut=findEntry(apps,'atma-private-desktop')?.entry;
   if(privateShortcut&&!Number.isInteger(privateShortcut.slots?.[columns])){
@@ -660,7 +679,9 @@ function renderDesktopDock(scope) {
   grid.replaceChildren(...arrangeDock(poolFor(scope)).map((app,slot)=>desktopCell(app,slot,scope)));
   animatePositions(grid,previous);
 }
-observeDesktopViewport($('apps'),()=>{if(!gesture)renderApps();});
+observeDesktopViewport($('apps'),()=>{
+  if(!gesture&&renderedDesktopViewport!==`${innerWidth}:${innerHeight}`)renderApps();
+});
 function gridMetrics() {
   const tablet=innerWidth>=700,columns=tablet?6:4;
   if(!usesLegacyDesktopRows)return{columns,rows:5};
@@ -832,7 +853,11 @@ function beginGesture(event, app, parentId,scope='public') {
 }
 function capturePointer(current) { try { document.body.setPointerCapture(current.pointerId); } catch {} }
 function clearHover() {
-  if (gesture) { clearTimeout(gesture.hoverTimer); gesture.targetId = null; gesture.targetSlot = null; gesture.targetDockSlot = null; gesture.hoverKey = null; gesture.combine = false; }
+  if (!gesture)return;
+  clearTimeout(gesture.hoverTimer);
+  gesture.folderDropTile?.removeAttribute('data-folder-drop');
+  gesture.folderDropTile=null;
+  gesture.targetId=null;gesture.targetSlot=null;gesture.targetDockSlot=null;gesture.hoverKey=null;gesture.combine=false;
 }
 document.addEventListener('pointermove', event => {
   const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
@@ -854,8 +879,10 @@ document.addEventListener('pointermove', event => {
     current.ghost.setAttribute('aria-hidden','true');
     const artwork = current.ghost.querySelector('.app-tile');
     current.ghost.replaceChildren(artwork);
-    current.ghost.style.width = artwork.style.width = `${tile.offsetWidth}px`;
-    current.offsetX = current.x-rect.x; current.offsetY = current.y-rect.y;
+    const width=tile.offsetWidth*.92;
+    current.ghost.style.width = artwork.style.width = `${width}px`;
+    current.offsetX = (current.x-rect.x)*width/rect.width;
+    current.offsetY = (current.y-rect.y)*width/rect.height;
     document.body.append(current.ghost); original.classList.add('dragging');
   }
   if (!current.active) return;
@@ -876,7 +903,7 @@ document.addEventListener('pointermove', event => {
   if (panel === 'folder' && current.parentId === openFolderId) {
     const card = document.querySelector('.folder-card')?.getBoundingClientRect();
     if (card && (event.clientX < card.left-22 || event.clientX > card.right+22 || event.clientY < card.top-26 || event.clientY > card.bottom+26)) {
-      current.extracted = true; openFolderId = null; setPanel(null, { immediate:true });
+      openFolderId = null; setPanel(null, { immediate:true });
     }
   }
   updateDropTarget(event.clientX,event.clientY,current);
@@ -891,14 +918,15 @@ function updateDropTarget(x,y,current) {
   }
   const hit=document.elementsFromPoint(x,y);
   const dockTarget=hit.map(item=>item.closest('.desktop-dock [data-slot]')).find(item=>item?.dataset.scope===current.scope);
-  if(dockTarget&&!panel){
+  if(dockTarget&&!panel&&!dockTarget.matches('.app-item')){
     const slot=Number(dockTarget.dataset.slot);
     if(current.targetDockSlot===slot)return;
     clearHover();current.targetDockSlot=slot;return;
   }
   const empty=hit.map(item=>item.closest('.desktop-slot')).find(item=>item&&(item.dataset.scope||'public')===current.scope);
   if(empty&&!panel){const slot=Number(empty.dataset.slot);if(current.targetSlot===slot)return;clearHover();current.targetSlot=slot;return;}
-  const target = hit.map(item=>item.closest('.app-item')).find(item=>item?.dataset.scope===current.scope);
+  const target = hit.map(item=>item.closest('.app-item')).find(item=>
+    item?.dataset.scope===current.scope&&(panel==='folder'?item.dataset.folder===openFolderId:!item.dataset.folder));
   if(target?.dataset.app===current.id){clearHover();current.targetId=current.id;return;}
   const targetId = target?.dataset.app || null;
   if (!target) {
@@ -918,19 +946,19 @@ function updateDropTarget(x,y,current) {
   const pool=poolFor(current.scope),sourceEntry = findEntry(pool,current.id)?.entry, targetEntry = findEntry(pool,targetId)?.entry;
   const rect = target.querySelector('.app-tile').getBoundingClientRect();
   const center = Math.abs(x-(rect.x+rect.width/2)) < rect.width*.36 && Math.abs(y-(rect.y+rect.height/2)) < rect.height*.36;
-  const canCombine = panel !== 'folder' && center && !isFolder(sourceEntry) && !!targetEntry && sourceEntry?.id!=='atma-private-desktop' && targetEntry.id!=='atma-private-desktop';
+  const canCombine = !panel && center && !!sourceEntry?.url && !isFolder(sourceEntry) &&
+    (!!targetEntry?.url||isFolder(targetEntry)) && targetId!==current.parentId;
   const hoverKey = `${targetId}:${canCombine}`;
   if (hoverKey === current.hoverKey) return;
   clearHover(); current.hoverKey=hoverKey;
   current.targetId = targetId;
-  current.hoverTimer = setTimeout(() => {
+  if(dockTarget&&!panel)current.targetDockSlot=Number(dockTarget.dataset.slot);
+  if(canCombine)current.hoverTimer = setTimeout(() => {
     if (gesture !== current || current.targetId !== targetId) return;
-    if (canCombine) { current.combine = true; }
-    else if(!current.fromDock) {
-      const result = panel==='folder'?dropEntry(poolFor(current.scope),current.id,targetId,{destinationFolderId:openFolderId}):placeEntry(poolFor(current.scope),current.id,Number(target.dataset.slot),gridMetrics().columns);
-      if (result.changed) { current.reorderedTargetId=targetId; updatePool(current.scope,result.items); }
-    }
-  }, canCombine ? 430 : 170);
+    current.combine = true;
+    current.folderDropTile=target;
+    target.setAttribute('data-folder-drop','');
+  }, 330);
 }
 async function endGesture(event, cancelled = false) {
   const current = gesture; if (!current || event.pointerId !== current.pointerId) return;
@@ -945,20 +973,23 @@ async function endGesture(event, cancelled = false) {
   if (current.active) {
     let result={changed:false};
     if(!cancelled) {
-      if(Number.isInteger(targetDockSlot))result=placeDockEntry(poolFor(current.scope),current.id,targetDockSlot,gridMetrics().columns);
+      if(combine)result=dropEntry(poolFor(current.scope),current.id,targetId,{
+        combine,columns:gridMetrics().columns,newFolderName:localization.t('Папка')
+      });
+      else if(Number.isInteger(targetDockSlot))result=placeDockEntry(poolFor(current.scope),current.id,targetDockSlot,gridMetrics().columns);
       else if(Number.isInteger(targetSlot))result=placeEntry(poolFor(current.scope),current.id,targetSlot,gridMetrics().columns);
-      else if((targetId||panel==='folder')&&!(!combine&&targetId&&current.reorderedTargetId===targetId)) {
-        if(!panel&&targetId&&!combine) {
+      else if(targetId&&targetId!==current.id&&targetId!==current.parentId) {
+        if(!panel) {
           const columns=gridMetrics().columns;
           const slot=arrangeEntries(poolFor(current.scope),columns).find(({entry})=>entry.id===targetId)?.slot;
           result=placeEntry(poolFor(current.scope),current.id,slot,columns);
-        } else result=dropEntry(poolFor(current.scope),current.id,targetId,{combine,columns:gridMetrics().columns,destinationFolderId:panel==='folder'?openFolderId:null});
+        } else if(panel==='folder') result=dropEntry(poolFor(current.scope),current.id,targetId,{destinationFolderId:openFolderId});
       }
     }
     current.ghost.remove();
     gesture = null; suppressClickUntil=Date.now()+350;
-    if (result.changed) { updatePool(current.scope,result.items); } else { renderApps(); if(panel==='folder') renderFolder(); }
-    if (result.folderId) await openFolder(result.folderId,current.scope);
+    if (result.changed) updatePool(current.scope,result.items);
+    else for(const item of document.querySelectorAll('.app-item.dragging'))item.classList.remove('dragging');
   } else {
     gesture=null;
     const shortTap = current.onTile && Date.now() >= suppressClickUntil
@@ -996,13 +1027,22 @@ function animateFolder(opening) {
   const expanded={ transform:'translate(0,0) scale(1)',opacity:1 };
   return sheet.animate(opening?[collapsed,expanded]:[expanded,collapsed],{duration:opening?360:230,easing:'cubic-bezier(.2,.8,.2,1)'}).finished.catch(()=>{});
 }
+function syncFolderEditing() {
+  if(panel!=='folder'||!$('folder-name'))return;
+  $('folder-name').readOnly=!editing;
+  $('folder-done').textContent=editing?'Готово':'Изменить';
+  $('sheet-content').querySelector('.folder-hint').textContent=editing
+    ?'Чтобы вынести приложение, перетащите его за край папки'
+    :'Удерживайте иконку, чтобы переместить её';
+}
 function renderFolder() {
   const folder=findEntry(poolFor(folderScope),openFolderId)?.entry;
   if (!isFolder(folder)) { setPanel(null,{immediate:true}); return; }
   const previous=positions($('sheet-content'));
   const page = Math.round((document.querySelector('.folder-pages')?.scrollLeft||0)/(document.querySelector('.folder-pages')?.clientWidth||1));
   $('sheet-title').textContent=folder.name;
-  $('sheet-content').innerHTML=`<div class="folder-heading"><input id="folder-name" aria-label="Название папки" maxlength="32" value="${escape(folder.name)}" ${editing?'':'readonly'}><button id="folder-done">${editing?'Готово':'Изменить'}</button></div><div class="folder-card"><div class="folder-pages" id="folder-pages"></div><div class="folder-dots" id="folder-dots"></div></div><p class="folder-hint">${editing?'Чтобы вынести приложение, перетащите его за край папки':'Удерживайте иконку, чтобы переместить её'}</p>`;
+  $('sheet-content').innerHTML=`<div class="folder-heading"><input id="folder-name" aria-label="Название папки" maxlength="32" value="${escape(folder.name)}"><button id="folder-done"></button></div><div class="folder-card"><div class="folder-pages" id="folder-pages"></div><div class="folder-dots" id="folder-dots"></div></div><p class="folder-hint"></p>`;
+  syncFolderEditing();
   for(let start=0;start<folder.children.length;start+=9){
     const grid=document.createElement('div'); grid.className='folder-page';
     folder.children.slice(start,start+9).forEach((app,index)=>grid.append(createItem(app,folder.id,index,folderScope)));
@@ -1013,7 +1053,7 @@ function renderFolder() {
   const updateDots=()=>{const index=Math.round($('folder-pages').scrollLeft/$('folder-pages').clientWidth);[...$('folder-dots').children].forEach((dot,i)=>dot.classList.toggle('active',i===index));};
   $('folder-pages').scrollLeft=page*$('folder-pages').clientWidth; updateDots(); $('folder-pages').addEventListener('scroll',updateDots);
   $('folder-done').addEventListener('click',()=>setEditing(!editing));
-  $('folder-name').addEventListener('change',event=>{folder.name=event.target.value.trim()||'Папка';saveApps(folderScope,{layoutChanged:false});});
+  $('folder-name').addEventListener('change',event=>{folder.name=event.target.value.trim()||localization.t('Папка');saveApps(folderScope,{layoutChanged:false});});
   $('folder-name').addEventListener('keydown',event=>{if(event.key==='Enter')event.currentTarget.blur();});
   animatePositions($('sheet-content'),previous);
 }
@@ -1078,16 +1118,19 @@ function fileSize(bytes) {
   const [value,unit]=bytes<1024?[bytes,'byte']:bytes<1048576?[bytes/1024,'kilobyte']:[bytes/1048576,'megabyte'];
   return new Intl.NumberFormat(localization.language,{style:'unit',unit,maximumFractionDigits:1}).format(value);
 }
-function fileSymbol(file){return `<span class="file-symbol ${file.kind}"><svg viewBox="0 0 36 44" aria-hidden="true"><path d="M6 1h17l9 9v30a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3Z" fill="currentColor" opacity=".12"/><path d="M23 1v10h9M10 24h16M10 30h16" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><b>${escape(file.extension.slice(1,5).toUpperCase()||'ФАЙЛ')}</b></span>`;}
-async function renderFiles(){
+function fileSymbol(file){return `<span class="file-symbol ${file.kind}"><svg viewBox="0 0 36 44" aria-hidden="true"><path d="M6 1h17l9 9v30a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3Z" fill="currentColor" opacity=".12"/><path d="M23 1v10h9M10 24h16M10 30h16" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><b>${escape(file.extension.replace(/^\./,'').slice(0,4).toUpperCase()||'ФАЙЛ')}</b></span>`;}
+async function renderFiles(preserveSearch=false){
+  const search=preserveSearch===true?$('file-search')?.value??'':'';
   $('sheet-content').classList.remove('cookie-browser');
   if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
   $('sheet-content').innerHTML=`<div class="files-location"><span>На ATMA</span>${icon('right')}<strong>Загрузки</strong></div><div id="file-list" class="file-list"><p class="files-empty">Загрузка…</p></div><div class="files-tools"><label class="model-search">${icon('search')}<input id="file-search" placeholder="Поиск файлов" aria-label="Поиск файлов"></label><button id="files-refresh" aria-label="Обновить список файлов">${icon('refresh')}</button></div>`;
+  const fileList=$('file-list');
+  $('file-search').value=search;
   $('files-refresh').addEventListener('click',renderFiles);
   const cookieFolder=document.createElement('button');cookieFolder.className='cookies-folder';cookieFolder.id='open-cookies';cookieFolder.innerHTML=`${icon('globe')}<span><strong>Cookie сайтов</strong><small>Просмотр и выборочное удаление</small></span>${icon('right')}`;
   cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,reportError}));$('file-list').before(cookieFolder);
   try{
-    const {files}=await api('files');if(panel!=='files'||!$('file-list'))return;
+    const {files}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
     function list(){
       const filter=$('file-search').value.toLocaleLowerCase(),visible=files.filter(file=>file.name.toLocaleLowerCase().includes(filter));$('file-list').replaceChildren();
       if(!visible.length){$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
@@ -1098,7 +1141,7 @@ async function renderFiles(){
       }
     }
     $('file-search').addEventListener('input',list);list();
-  }catch(error){if(panel==='files')reportError(error.message);}
+  }catch(error){if(panel==='files'&&$('file-list')===fileList)reportError(error.message);}
 }
 async function showFile(id){
   try{
@@ -1106,6 +1149,8 @@ async function showFile(id){
     if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
     $('sheet-content').innerHTML=`<button class="file-back" id="file-back">${icon('left')}Загрузки</button><h2 class="file-title" data-no-translate>${escape(file.name)}</h2><p class="file-meta">${fileSize(file.size)}</p><div id="file-preview" class="file-preview"></div>`;
     $('file-back').addEventListener('click',renderFiles);
+    if(document.body.dataset.runtime==='ios')$('file-preview').before(
+      settingButton('Сохранить в «Файлы»','share',()=>api('file/export',{fileId:id}).catch(error=>reportError(error.message))));
     if(file.kind==='text'){const pre=document.createElement('pre');pre.className='file-text';pre.textContent=file.text+(file.truncated?'\n\n'+localization.t('…Файл показан не полностью.'):'');$('file-preview').append(pre);}
     else if(['image','pdf','audio','video'].includes(file.kind)){
       const bytes=Uint8Array.from(atob(file.base64),char=>char.charCodeAt(0));filePreviewUrl=URL.createObjectURL(new Blob([bytes],{type:file.mime}));
@@ -1215,6 +1260,12 @@ function renderSettings() {
   if(state?.privateBrowsing){const deviceButton=settingButton('Устройство инкогнито','phone',()=>setPanel('private-device'));deviceButton.id='open-private-device';card.append(deviceButton);}
   const cookiesButton=settingButton('Куки и данные сайтов','globe',()=>setPanel('cookies'));cookiesButton.id='open-cookies-settings';card.append(cookiesButton);
   const downloadsButton=settingButton('Загрузки','image',()=>setPanel('files'));downloadsButton.id='open-downloads';card.append(downloadsButton);
+  if(document.body.dataset.runtime==='ios'&&state?.mode==='browse'&&/^https?:\/\//i.test(state.url??'')){
+    card.append(settingButton('Скачать по этому адресу','download',async()=>{
+      try{await api('download-current');if(panel==='settings')await setPanel('files');}
+      catch(error){reportError(error.message);}
+    }));
+  }
   const policyButton=settingButton('Политика конфиденциальности','lock',()=>setPanel('privacy'));policyButton.id='open-privacy';card.append(policyButton);
   const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
@@ -1222,7 +1273,7 @@ function renderSettings() {
   card.append(settingButton('Добавить страницу рабочего стола','plus',async()=>{publicPages++;localStorage.setItem('atma-preview-page-count',publicPages);await setPanel(null);renderApps();showDesktopPage(publicPages-1);}));
   const addDesktopButton=settingButton('Добавить веб-приложение','plus',openAddShortcut);addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
   const probe=settingButton('Проверить, что видит сайт', 'phone', async () => { try { await action('probe'); } catch {} });probe.disabled=state?.capabilities?.probe===false;card.append(probe);
-  card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; renderApps(); }));
+  card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; }));
   $('sheet-content').append(card);
   const preferences = document.createElement('div'); preferences.className = 'setting-card';
   const useDeviceLanguage=state?.capabilities?.localeEmulation===false;

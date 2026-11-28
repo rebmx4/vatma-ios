@@ -23,6 +23,7 @@ extension BrowserController {
         windowOpeners = windowOpeners.filter { !ids.contains($0.key) && !ids.contains($0.value) }
         for id in ids {
             removeRenderer(for: id)
+            tabPreviewStore.remove(for: id)
             tabPreviewDocuments.removeValue(forKey: id)
         }
         model.tabs.removeAll { ids.contains($0.id) }
