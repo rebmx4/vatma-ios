@@ -10,22 +10,14 @@ import time
 import tkinter as tk
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from tkinter import filedialog, font, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
+from desktop_theme import DesktopAppearance
 from phonedisk.service import CompanionServer, PORT
 from phonedisk.storage import TransferError, file_info
 
 
 APP_NAME = "Мой диск"
-BACKGROUND = "#000000"
-SURFACE = "#161616"
-CONTROL = "#252525"
-OUTLINE = "#373737"
-TEXT = "#f4f4f4"
-MUTED = "#b4b4b4"
-ACCENT = "#a4c8ae"
-SELECTED = "#293a30"
-DANGER = "#efa8a5"
 ROOT = Path(__file__).resolve().parent
 PERMISSIONS = {
     "view": "Просмотр",
@@ -41,88 +33,8 @@ ERROR_MESSAGES = {
 }
 
 
-def rounded_image(root, radius, background, outline, surface, tile):
-    size = 2 * (radius + 1) + tile
-    center = (size - 1) / 2
-    straight = (tile + 1) / 2
-    colors = [root.winfo_rgb(color) for color in (background, outline, surface)]
-    pixels = bytearray()
-    for y in range(size):
-        for x in range(size):
-            dx = max(0, abs(x - center) - straight)
-            dy = max(0, abs(y - center) - straight)
-            distance = math.hypot(dx, dy)
-            edge = min(1, max(0, radius + 0.5 - distance))
-            fill = min(1, max(0, radius - 0.5 - distance))
-            for outside, border, inside in zip(*colors):
-                pixels.append(round((outside * (1 - edge) + border * (edge - fill) + inside * fill) / 257))
-    header = f"P6\n{size} {size}\n255\n".encode("ascii")
-    return tk.PhotoImage(master=root, data=header + pixels, format="ppm")
-
-
 def configure_window(root):
-    root.configure(background=BACKGROUND)
-    style = ttk.Style(root)
-    style.theme_use("clam")
-    images = []
-
-    def element(name, radius, background, outline, surface, padding, states=(), tile=16):
-        image = rounded_image(root, radius, background, outline, surface, tile)
-        variants = [(state, rounded_image(root, radius, background, border, fill, tile))
-                    for state, border, fill in states]
-        images.extend([image, *(variant for _, variant in variants)])
-        minimum = 2 * radius + 3
-        style.element_create(name, "image", image, *variants, border=radius + 1, padding=padding,
-                             width=minimum, height=minimum, sticky="nsew")
-
-    # Large center tiles keep Tk from painting each pixel of a panel separately on macOS.
-    element("Disk.Card", 22, BACKGROUND, "#313131", SURFACE, (16, 12), tile=64)
-    style.layout("Card.TFrame", [("Disk.Card", {"sticky": "nsew"})])
-    element("Disk.Network", 15, BACKGROUND, "#343c37", "#1b221e", (10, 6))
-    style.layout("Network.TFrame", [("Disk.Network", {"sticky": "nsew"})])
-    for name, fill, border, color in (
-        ("Soft", CONTROL, OUTLINE, TEXT),
-        ("Mint", "#26362c", "#40574a", ACCENT),
-        ("Remove", CONTROL, OUTLINE, DANGER),
-    ):
-        face = f"Disk.{name}"
-        element(face, 11, SURFACE, border, fill, (12, 7), (
-            ("disabled", "#2c2c2c", "#212121"),
-            ("focus", ACCENT, fill),
-            ("pressed", border, "#303c34"),
-            ("active", border, "#343834"),
-        ))
-        variant = f"{name}.TButton"
-        style.layout(variant, [(face, {"sticky": "nsew", "children": [("Button.label", {"sticky": "nsew"})]})])
-        style.configure(variant, background=SURFACE, foreground=color)
-        style.map(variant, foreground=[("disabled", "#888888")])
-    root.disk_style_images = images
-
-    default_font = font.nametofont("TkDefaultFont")
-    family = default_font.actual("family")
-    style.configure(".", background=BACKGROUND, foreground=TEXT)
-    style.configure("Title.TLabel", font=(family, 25, "bold"))
-    style.configure("Section.TLabel", background=SURFACE, font=(family, 13, "bold"))
-    style.configure("Note.TLabel", foreground=MUTED)
-    style.configure("Inset.TFrame", background=SURFACE)
-    style.configure("Inset.TLabel", background=SURFACE)
-    style.configure("Network.TLabel", background="#1b221e", foreground=ACCENT)
-    style.configure("Offline.Network.TLabel", foreground=MUTED)
-    style.configure("TCheckbutton", background=SURFACE)
-    style.map("TCheckbutton", background=[("active", SURFACE)])
-    style.layout("Treeview", [("Treeview.treearea", {"sticky": "nsew"})])
-    style.configure("Treeview", background=SURFACE, fieldbackground=SURFACE, foreground=TEXT,
-                    rowheight=max(26, default_font.metrics("linespace") + 6), borderwidth=0)
-    style.map("Treeview", background=[("selected", SELECTED)], foreground=[("selected", TEXT)])
-    style.configure("Treeview.Heading", background=SURFACE, foreground=MUTED, font=default_font, padding=(0, 4),
-                    relief="flat", borderwidth=0, bordercolor=SURFACE, separable=False)
-    style.map("Treeview.Heading", background=[("active", SURFACE), ("pressed", SURFACE)])
-    element("Disk.thumb", 3, SURFACE, "#565c58", "#565c58", 0)
-    style.layout("Disk.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
-        ("Disk.thumb", {"expand": True, "sticky": "nswe"}),
-    ]})])
-    style.configure("Disk.Vertical.TScrollbar", troughcolor=SURFACE, background="#565c58",
-                    bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE, width=7, relief="flat")
+    root.disk_appearance = DesktopAppearance(root)
     icon = ROOT / "icon.png"
     if icon.is_file():
         root.iconphoto(True, tk.PhotoImage(file=icon))
@@ -296,7 +208,7 @@ class DesktopWindow:
         dialog = tk.Toplevel(self.root)
         dialog.title("Подключить телефон")
         dialog.transient(self.root)
-        dialog.configure(background=BACKGROUND)
+        self.root.disk_appearance.color_classic_widgets(dialog)
         dialog.resizable(False, False)
         content = ttk.Frame(dialog, style="Card.TFrame", padding=18)
         content.pack(fill="both", expand=True, padx=12, pady=12)
@@ -364,7 +276,7 @@ class DesktopWindow:
         dialog = tk.Toplevel(self.root)
         dialog.title("Права доступа")
         dialog.transient(self.root)
-        dialog.configure(background=BACKGROUND)
+        self.root.disk_appearance.color_classic_widgets(dialog)
         content = ttk.Frame(dialog, style="Card.TFrame", padding=18)
         content.pack(fill="both", expand=True, padx=12, pady=12)
         content.rowconfigure(1, weight=1)
@@ -372,8 +284,8 @@ class DesktopWindow:
         ttk.Label(content, text=phone["name"], style="Section.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         folder_list = tk.Listbox(content, width=28, height=10, exportselection=False,
-                                bg=SURFACE, fg=TEXT, selectbackground=SELECTED, selectforeground=TEXT,
-                                highlightbackground=OUTLINE, highlightcolor=ACCENT, relief="flat", borderwidth=0)
+                                relief="flat", borderwidth=0)
+        self.root.disk_appearance.color_classic_widgets(folder_list)
         folder_list.grid(row=1, column=0, sticky="nsew")
         rights = ttk.Frame(content, style="Inset.TFrame", padding=(15, 0, 0, 0))
         rights.grid(row=1, column=1, sticky="nw")
