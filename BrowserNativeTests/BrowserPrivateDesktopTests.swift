@@ -25,7 +25,9 @@ final class BrowserPrivateDesktopTests: XCTestCase {
             const menu = await popup;
             tile.dispatchEvent(new PointerEvent('pointerup', touch));
             const action = [...menu.querySelectorAll('button')].find(button => /Rename|Переименовать/i.test(button.textContent));
+            const previous = await window.webkit.messageHandlers.atma.postMessage({action:'state', body:{}});
             action.click();
+            window.dispatchEvent(new CustomEvent('atma-native-state', {detail:previous}));
             const field = document.querySelector('#app-form [name=name]');
             if (document.activeElement !== field) return false;
             field.select();

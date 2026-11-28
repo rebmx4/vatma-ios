@@ -111,6 +111,7 @@ let messageCounts={},messagePollBusy=false,messagePollTimer;
 let stateActionVersion=0;
 let shortcutLaunchVersion=0;
 let appEditorVersion=0;
+let pendingPanelRequest=null;
 const DESKTOP_HOLD_MS = 1000;
 const ICON_EDIT_HOLD_MS = 1500;
 let openFolderId = null, gesture = null, suppressClickUntil = 0;
@@ -512,7 +513,7 @@ function consume(next) {
     document.dispatchEvent?.(new Event('atma-address-context-change'));
   }
   else if (document.activeElement !== $('address') && next.mode === 'browse') $('address').value = next.url === `${location.origin}/probe` ? '' : (next.url || '');
-  if (panel !== next.panel) {
+  if (!pendingPanelRequest && panel !== next.panel) {
     panel = next.panel;
     renderPanel();
   } else if(panel==='files'&&downloadsChanged&&$('file-list'))renderFiles(true);
@@ -1352,9 +1353,17 @@ async function setPanel(name, options = {}) {
   if (panel==='folder' && name!=='folder' && !options.immediate && !options.dragOut) await animateFolder(false);
   if(options.dragOut)openFolderId=null;
   if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;pendingVaultSite=null;}}
+  const request={};
+  pendingPanelRequest=request;
   panel = name; renderPanel();
   options.onRendered?.();
   try { await action('panel', { panel: name }); } catch {}
+  finally {
+    if(pendingPanelRequest===request){
+      pendingPanelRequest=null;
+      if(state&&state.panel!==panel){panel=state.panel;renderPanel();}
+    }
+  }
 }
 function renderPanel() {
   closeShortcutMenu();
