@@ -106,7 +106,11 @@ def test_portal():
     namespace = "org.freedesktop.appearance"
     interface = "org.freedesktop.portal.Settings"
     path = "/org/freedesktop/portal/desktop"
-    connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    connection = Gio.DBusConnection.new_for_address_sync(
+        os.environ["DBUS_SESSION_BUS_ADDRESS"],
+        Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
+        None, None,
+    )
     schema = Gio.DBusNodeInfo.new_for_xml("""
         <node><interface name="org.freedesktop.portal.Settings">
           <method name="ReadAll">
@@ -130,7 +134,7 @@ def test_portal():
 
     def change(dark):
         nonlocal choice
-        choice = 1 if dark else 2
+        choice = 0 if dark is None else 1 if dark else 2
         data = GLib.Variant("(ssv)", (namespace, "color-scheme", GLib.Variant("u", choice)))
         connection.emit_signal(None, path, interface, "SettingChanged", data)
 
@@ -175,7 +179,13 @@ def main():
                 try:
                     root.update_idletasks()
                     palette = DARK if dark else LIGHT
-                    assert root.disk_appearance.palette is palette, "The live theme did not follow the OS setting"
+                    appearance = root.disk_appearance
+                    portal = appearance.linux.portal if not macos else None
+                    assert appearance.palette is palette, (
+                        f"Expected {'dark' if dark else 'light'}, actual {appearance.style.theme_use()}, "
+                        f"portal owner {bool(portal and portal.get_name_owner())}, "
+                        f"portal mode {appearance.linux.portal_dark if appearance.linux else None}"
+                    )
                     assert window.folder_list.selection() == (selected,), "Changing theme lost the selection"
                     assert len(window.folder_list.get_children()) == 3, "Changing theme lost the catalog"
                     style = root.disk_appearance.style
@@ -204,11 +214,22 @@ def main():
             def verify_return():
                 if root.disk_appearance.palette is not LIGHT:
                     errors.append(AssertionError("The window did not return to the light scheme"))
+                if macos:
+                    root.quit()
+                else:
+                    change(None)
+                    root.after(1400, verify_fallback)
+
+            def verify_fallback():
+                appearance = root.disk_appearance
+                if appearance.linux.portal_dark is not None or appearance.palette is not DARK:
+                    errors.append(AssertionError("No preference did not fall back to the local GTK theme"))
                 root.quit()
 
             def start():
-                change(False)
-                root.after(1400, capture, False)
+                if macos:
+                    change(False)
+                root.after(1900, capture, False)
 
             root.after(450, start)
             root.mainloop()
