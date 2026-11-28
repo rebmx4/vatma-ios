@@ -1,6 +1,6 @@
 {
   "name": "ATMA 1 - iPhone + iPad check",
-  "run-name": "ATMA check - ${{ inputs.revision }}",
+  "run-name": "ATMA check (${{ inputs.test_scope }}) - ${{ inputs.revision }}",
   "on": {
     "workflow_dispatch": {
       "inputs": {
@@ -9,6 +9,12 @@
           "required": true,
           "type": "string",
           "default": "atma-browser-testflight"
+        },
+        "test_scope": {
+          "description": "Native test coverage for this run",
+          "type": "choice",
+          "options": ["full", "shortcut-rename"],
+          "default": "full"
         }
       }
     }
@@ -61,7 +67,8 @@
           "run": "bash release/ci.sh prepare"
         },
         {
-          "name": "Run all iPhone tests and iPad UI smoke",
+          "name": "Run native tests on iPhone and iPad (${{ inputs.test_scope }})",
+          "env": {"ATMA_TEST_SCOPE": "${{ inputs.test_scope }}"},
           "run": "bash release/ci.sh smoke"
         },
         {
