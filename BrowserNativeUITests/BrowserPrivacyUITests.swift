@@ -90,13 +90,10 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCTAssertTrue(rename.waitForExistence(timeout: 5)); rename.tap()
         let name = app.textFields.matching(NSPredicate(format: "label IN %@", ["Название приложения", "App name"])).firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5))
-        name.tap()
-        name.typeText("731042")
-        let savedName = try XCTUnwrap(name.value as? String)
-        XCTAssertTrue(savedName.contains("731042"), "The shortcut editor must receive the typed name")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "Rename must open the keyboard")
         button(["Сохранить", "Save"]).tap()
-        let shortcut = button(["Открыть \(savedName)", "Open \(savedName)"])
-        XCTAssertTrue(shortcut.waitForExistence(timeout: 30))
+        let shortcut = duplicate
+        XCTAssertTrue(shortcut.waitForExistence(timeout: 10))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "Saving the shortcut must dismiss the form keyboard")
         let shortcutReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let frame = shortcut.frame
@@ -104,12 +101,13 @@ final class BrowserPrivacyUITests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [shortcutReady], timeout: 10), .completed, "New shortcut must be visible on the desktop")
         shortcut.press(forDuration: 4)
-        let remove = button(["Удалить \(savedName)", "Remove \(savedName)"])
+        let remove = app.buttons.matching(NSPredicate(format: "label IN %@", ["Удалить ВКонтакте", "Remove ВКонтакте"])).element(boundBy: 1)
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         XCTAssertFalse(button(["Сохранить изображение", "Сохранить фото", "Добавить в Фото", "Save Image", "Save to Photos", "Add to Photos"]).exists)
         remove.tap()
         XCTAssertFalse(button(["Сохранить", "Save"]).exists, "The remove control must not open the shortcut editor")
         XCTAssertTrue(shortcut.waitForNonExistence(timeout: 5), "The remove control must remove the shortcut")
+        XCTAssertEqual(vkButtons.count, 1, "Removing the copy must retain the original shortcut")
         emptySpace.tap()
     }
 

@@ -1353,6 +1353,7 @@ async function setPanel(name, options = {}) {
   if(options.dragOut)openFolderId=null;
   if(panel==='pin'&&name!=='pin'){pinEpoch++;pinDigits='';firstPin=null;pinBusy=false;if(!options.keepVaultAction){pendingVaultMove=null;pendingVaultAdd=false;pendingVaultSite=null;}}
   panel = name; renderPanel();
+  options.onRendered?.();
   try { await action('panel', { panel: name }); } catch {}
 }
 function renderPanel() {
@@ -1786,8 +1787,11 @@ function renderAppForm(app,field) {
   $('sheet-content').append(moveButton);
 }
 async function openAppEditor(app,scope='public',field) {
-  editorScope=scope;await setPanel('edit');
-  if(panel==='edit'&&(scope!=='private'||vaultKey))renderAppForm(app,field);
+  editorScope=scope;
+  // Focus the rename field during the user's tap so iOS can present the keyboard.
+  await setPanel('edit',{onRendered:()=>{
+    if(scope!=='private'||vaultKey)renderAppForm(app,field);
+  }});
 }
 async function requestVault() {
   if(panel==='pin'&&(pinBusy||pinSetup==='biometry'))return;
