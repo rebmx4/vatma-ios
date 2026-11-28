@@ -96,6 +96,8 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
                 throw BrowserFailure.invalid("Unsupported interface language.")
             }
             pageTranslation.setTarget(language)
+            downloadLanguage = language
+            updateDownloadCard()
         case "translation/toggle":
             guard BrowserPageTranslation.available, mode == "browse" else {
                 throw BrowserFailure.invalid("Перевод страницы сейчас недоступен.")
@@ -207,6 +209,13 @@ extension BrowserController: WKScriptMessageHandlerWithReply {
             }
             return
         case "files": reply(try downloads.list(), nil); return
+        case "download/confirm": downloads.confirm(try string("id", body)); reply(true, nil); return
+        case "download/cancel": downloads.cancel(try string("id", body)); reply(true, nil); return
+        case "download/retry": try downloads.retry(try string("id", body)); reply(true, nil); return
+        case "download/remove": downloads.removeRecord(try string("id", body)); reply(true, nil); return
+        case "file/delete":
+            guard panel == "files" else { throw BrowserFailure.invalid("Open Downloads first.") }
+            try downloads.removeFile(try string("fileId", body)); reply(true, nil); return
         case "file": reply(try downloads.preview(id: string("fileId", body)), nil); return
         case "file/export": try exportDownload(try string("fileId", body)); reply(true, nil); return
         case "file/photos":

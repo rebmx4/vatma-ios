@@ -3,6 +3,16 @@ import XCTest
 
 final class BrowserDownloadTests: XCTestCase {
     @MainActor
+    private func pending(_ service: DownloadService) async throws -> DownloadService.Transfer {
+        let deadline = Date().addingTimeInterval(12)
+        while Date() < deadline {
+            if let task = service.tasks.first(where: { $0.status == "confirm" }) { return task }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        throw BrowserFailure.invalid("Timed out waiting for a download confirmation.")
+    }
+
+    @MainActor
     func testDownloadingCurrentAddressLeavesItsTabOpenAndPreservesFileBytes() async throws {
         let fixture = try BrowserControllerFixture()
         defer { fixture.close() }
@@ -16,8 +26,17 @@ final class BrowserDownloadTests: XCTestCase {
         let page = try XCTUnwrap(fixture.controller.currentRenderer)
         try await fixture.wait("document.title === 'Download sample'", in: page)
         let service = fixture.controller.downloads
-        let previousCompletion = service.completionVersion
         _ = try await fixture.rpc("download-current")
+        let initial = try await pending(service)
+        XCTAssertEqual(initial.expected, Int64(body.count))
+        XCTAssertEqual(initial.name, resource)
+        XCTAssertFalse(try (service.list()["files"] as? [[String: Any]] ?? []).contains { $0["name"] as? String == resource })
+        _ = try await fixture.rpc("download/cancel", body: ["id":initial.id])
+        XCTAssertEqual(initial.status, "cancelled")
+        _ = try await fixture.rpc("download/retry", body: ["id":initial.id])
+        let retry = try await pending(service)
+        let previousCompletion = service.completionVersion
+        _ = try await fixture.rpc("download/confirm", body: ["id":retry.id])
         let deadline = Date().addingTimeInterval(12)
         while service.completionVersion == previousCompletion && Date() < deadline {
             try await Task.sleep(nanoseconds: 100_000_000)
@@ -31,6 +50,10 @@ final class BrowserDownloadTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saved), body)
         XCTAssertTrue(fixture.controller.currentRenderer === page)
         XCTAssertEqual(page.url, url)
+        XCTAssertEqual(service.notice?.fileID, id)
+        _ = try await fixture.rpc("panel", body: ["panel":"files"])
+        _ = try await fixture.rpc("file/delete", body: ["fileId":id])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: saved.path))
     }
 
     func testDownloadTerminalStatePreservesTabMetadata() {
@@ -64,6 +87,8 @@ final class BrowserDownloadTests: XCTestCase {
             setTimeout(() => location.assign(url), 0);
             return true;
             """, in: page, arguments: ["contents": contents])
+        let task = try await pending(service)
+        service.confirm(task.id)
         let deadline = Date().addingTimeInterval(12)
         while service.completionVersion == previousVersion && Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))

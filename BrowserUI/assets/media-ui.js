@@ -52,7 +52,8 @@ export function renderMediaPlayer(root,{api,openTab,openDownloads,t=value=>value
  $('#media-download').onclick=async()=>{
   if(busy||disposed)return;
   busy=true;epoch++;$('#media-download').disabled=true;
-  try{await api('media/download',{tabId:value.ownerTabId});if(!disposed)await openDownloads();}
+  const tabId=value.ownerTabId;
+  try{await api('media/download',{tabId});if(!disposed)await openDownloads(tabId);}
   catch(error){failure(error);}finally{busy=false;if(!disposed)$('#media-download').disabled=false;}
  };
  $('#media-background').onchange=()=>run('media/background',{enabled:$('#media-background').checked});

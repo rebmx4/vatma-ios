@@ -57,7 +57,7 @@ extension BrowserController {
                 finishDownloadNavigation(tabID)
             }
         }
-        downloads.attach(download, tabID: tabID)
+        downloads.attach(download, tabID: tabID, page: webView)
     }
 
     func finishDownloadNavigation(_ tabID: String) {

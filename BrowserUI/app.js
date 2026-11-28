@@ -9,6 +9,7 @@ import {addressSuggestions, installAddressSuggestions} from './address-suggestio
 import {previewCookieRequest} from './assets/cookie-rpc.js';
 import {previewMediaRequest} from './assets/media-rpc.js';
 import {renderMediaPlayer} from './assets/media-ui.js';
+import {renderTransfers} from './assets/downloads-ui.js';
 import {renderCookieBrowser} from './assets/cookies-ui.js';
 import {createLocalization,LANGUAGE_NAMES} from './assets/i18n.js';
 import {renderLegalInfo} from './assets/legal-ui.js';
@@ -51,6 +52,7 @@ const paths = {
   check: '<path d="m5 12 4.5 4.5L19 7"/>',
   share: '<path d="M12 15V2m-4 4 4-4 4 4M8 9H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/>',
   download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 10v7m4-7v7"/>',
   eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.4"/>',
   'eye-off': '<path d="m3 3 18 18M9 6.4c1-.3 2-.4 3-.4 6.5 0 10 6 10 6a15 15 0 0 1-3 3.3m-3 2.1a10 10 0 0 1-4 .6c-6.5 0-10-6-10-6a15 15 0 0 1 4-4.1"/>',
   refresh: '<path d="M20 7v5h-5m5-1a8 8 0 1 0-2.3 7"/>',
@@ -460,6 +462,7 @@ function consume(next) {
     panel = next.panel;
     renderPanel();
   } else if(panel==='files'&&downloadsChanged&&$('file-list'))renderFiles(true);
+  if(panel==='files'&&$('download-transfers'))paintDownloadTransfers();
   if(previousMode!==next.mode||geometryChanged||languageChanged)renderApps();
   const count=next.tabs?.length||0,button=$('tabs-button');
   if(button.dataset.count!==String(count)){button.dataset.count=String(count);button.innerHTML=count?`<span class="tab-counter">${count}</span>`:icon('plus');button.setAttribute('aria-label',count?`Открытые вкладки: ${count}`:'Новая вкладка');}
@@ -1238,7 +1241,7 @@ function renderPanel() {
   else if (panel === 'desktop-menu') renderDesktopMenu();
   else if(panel==='privacy'||panel==='support')renderLegalInfo($('sheet-content'),{kind:panel,language:localization.language,onOpen:async url=>{try{await action('tabs/new');await action('open',{url,webApp:false});}catch{reportError('Не удалось открыть страницу');}}});
   else if(panel==='media')disposeMediaPanel=renderMediaPlayer($('sheet-content'),{api,t:localization.t,
-    openDownloads:document.body.dataset.runtime==='ios'?()=>setPanel('files'):null,
+    openDownloads:document.body.dataset.runtime==='ios'?tabId=>setPanel(state?.activeTabId===tabId?null:'files'):null,
     openTab:async tabId=>{await action('tabs/select',{tabId});}});
   else if(panel==='appearance')renderAppearance();
   else if(panel==='app-icon')renderAppIconPicker();
@@ -1255,29 +1258,39 @@ function settingButton(text, glyph, handler) {
   button.addEventListener('click', handler); return button;
 }
 function fileSize(bytes) {
-  const [value,unit]=bytes<1024?[bytes,'byte']:bytes<1048576?[bytes/1024,'kilobyte']:[bytes/1048576,'megabyte'];
+  const [value,unit]=bytes<1000?[bytes,'byte']:bytes<1e6?[bytes/1000,'kilobyte']:bytes<1e9?[bytes/1e6,'megabyte']:[bytes/1e9,'gigabyte'];
   return new Intl.NumberFormat(localization.language,{style:'unit',unit,maximumFractionDigits:1}).format(value);
 }
 function fileSymbol(file){return `<span class="file-symbol ${file.kind}"><svg viewBox="0 0 36 44" aria-hidden="true"><path d="M6 1h17l9 9v30a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V4a3 3 0 0 1 3-3Z" fill="currentColor" opacity=".12"/><path d="M23 1v10h9M10 24h16M10 30h16" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><b>${escape(file.extension.replace(/^\./,'').slice(0,4).toUpperCase()||'ФАЙЛ')}</b></span>`;}
+async function transferAction(verb,id) {
+  try { await api('download/'+verb,{id}); } catch(error) { reportError(error.message); }
+}
+function paintDownloadTransfers() {
+  const root=$('download-transfers');
+  if(root)renderTransfers(root,state?.downloadTasks||[],state?.downloadLabels||{},fileSize,transferAction,
+    tabId=>action('tabs/select',{tabId}).catch(error=>reportError(error.message)));
+}
+window.atmaShowDownload=async fileID=>{
+  await setPanel('files');
+  if(fileID&&panel==='files')await showFile(fileID);
+};
 async function renderFiles(preserveSearch=false){
   const search=preserveSearch===true?$('file-search')?.value??'':'';
   $('sheet-content').classList.remove('cookie-browser');
   if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
   $('sheet-content').innerHTML=`<div class="files-location"><span>На ATMA</span>${icon('right')}<strong>Загрузки</strong></div><div id="file-list" class="file-list"><p class="files-empty">Загрузка…</p></div><div class="files-tools"><label class="model-search">${icon('search')}<input id="file-search" placeholder="Поиск файлов" aria-label="Поиск файлов"></label><button id="files-refresh" aria-label="Обновить список файлов">${icon('refresh')}</button></div>`;
   const fileList=$('file-list');
+  const transfers=document.createElement('section');transfers.id='download-transfers';
+  fileList.before(transfers);paintDownloadTransfers();
   $('file-search').value=search;
   $('files-refresh').addEventListener('click',renderFiles);
   const cookieFolder=document.createElement('button');cookieFolder.className='cookies-folder';cookieFolder.id='open-cookies';cookieFolder.innerHTML=`${icon('globe')}<span><strong>Cookie сайтов</strong><small>Просмотр и выборочное удаление</small></span>${icon('right')}`;
   cookieFolder.addEventListener('click',()=>renderCookieBrowser($('sheet-content'),{api,onBack:renderFiles,reportError}));$('file-list').before(cookieFolder);
   try{
-    const {files,downloading}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
-    if(downloading){
-      const status=document.createElement('p');status.className='sheet-note';status.setAttribute('role','status');
-      status.textContent=localization.t('Идёт скачивание…');fileList.before(status);
-    }
+    const {files}=await api('files');if(panel!=='files'||$('file-list')!==fileList)return;
     function list(){
       const filter=$('file-search').value.toLocaleLowerCase(),visible=files.filter(file=>file.name.toLocaleLowerCase().includes(filter));$('file-list').replaceChildren();
-      if(!visible.length){$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
+      if(!visible.length){if(filter||transfers.hidden)$('file-list').innerHTML=`<p class="files-empty">${filter?'Файлы не найдены':'Здесь появятся файлы,<br>которые вы скачаете в ATMA'}</p>`;return;}
       for(const file of visible){
         const button=document.createElement('button');button.className='file-row';button.dataset.file=file.id;
         button.innerHTML=`${fileSymbol(file)}<span class="file-details"><strong data-no-translate>${escape(file.name)}</strong><small>${new Date(file.modified).toLocaleDateString(localization.language)} · ${fileSize(file.size)}</small></span>${icon('right')}`;
@@ -1293,6 +1306,18 @@ async function showFile(id){
     if(filePreviewUrl){URL.revokeObjectURL(filePreviewUrl);filePreviewUrl=null;}
     $('sheet-content').innerHTML=`<button class="file-back" id="file-back">${icon('left')}Загрузки</button><h2 class="file-title" data-no-translate>${escape(file.name)}</h2><p class="file-meta">${fileSize(file.size)}</p><div id="file-preview" class="file-preview"></div>`;
     $('file-back').addEventListener('click',renderFiles);
+    if(state?.downloadLabels){
+      const labels=state.downloadLabels;
+      const source=state.downloadTasks?.find(task=>task.fileID===id&&task.retry);
+      if(source)$('file-preview').before(settingButton(labels.retry,'refresh',()=>transferAction('retry',source.id)));
+      const remove=settingButton(labels.delete,'trash',async()=>{
+        if(!window.confirm(labels.deleteQuestion+'\n'+file.name))return;
+        remove.disabled=true;
+        try{await api('file/delete',{fileId:id});if(panel==='files')await renderFiles();}
+        catch(error){remove.disabled=false;reportError(error.message);}
+      });
+      $('file-preview').before(remove);
+    }
     if(document.body.dataset.runtime==='ios')$('file-preview').before(
       settingButton('Сохранить в «Файлы»','share',()=>api('file/export',{fileId:id}).catch(error=>reportError(error.message))));
     if(document.body.dataset.runtime==='ios'&&file.canSaveToPhotos){
@@ -1390,7 +1415,7 @@ function renderDesktopMenu() {
     ['Открыть Инкогнито','incognito',newIncognitoTab],
     ['Куки и данные сайтов','lock',()=>setPanel('cookies')],
     ['История','left',openBrowserHistory],
-    ['Добавить веб-приложение','plus',openAddShortcut],
+    ['Загрузки','download',()=>setPanel('files')],
     [editing?'Завершить редактирование':'Изменить приложения','edit',async()=>{await setPanel(null);setEditing(!editing);}],
     ['Оформление и язык','image',()=>setPanel('appearance')],
   ];
@@ -1414,7 +1439,7 @@ function renderSettings() {
   const downloadsButton=settingButton('Загрузки','image',()=>setPanel('files'));downloadsButton.id='open-downloads';card.append(downloadsButton);
   if(document.body.dataset.runtime==='ios'&&state?.mode==='browse'&&/^https?:\/\//i.test(state.url??'')){
     card.append(settingButton('Скачать по этому адресу','download',async()=>{
-      try{await api('download-current');if(panel==='settings')await setPanel('files');}
+      try{await api('download-current');if(panel==='settings')await setPanel(null);}
       catch(error){reportError(error.message);}
     }));
   }
@@ -1422,7 +1447,6 @@ function renderSettings() {
   const supportButton=settingButton('Поддержка','info',()=>setPanel('support'));supportButton.id='open-support';card.append(supportButton);
   const mediaButton=settingButton('Медиаплеер','image',()=>setPanel('media'));mediaButton.id='open-media';card.append(mediaButton);
   card.append(settingButton('Приватный стол','lock',requestVault));
-  const addDesktopButton=settingButton('Добавить веб-приложение','plus',openAddShortcut);addDesktopButton.id='add-desktop-app';card.append(addDesktopButton);
   const probe=settingButton('Проверить, что видит сайт', 'phone', async () => { try { await action('probe'); } catch {} });probe.disabled=state?.capabilities?.probe===false;card.append(probe);
   card.append(settingButton(editing ? 'Завершить редактирование' : 'Изменить приложения', 'edit', async () => { setEditing(!editing); await action('home'); $('address').value = ''; }));
   $('sheet-content').append(card);
@@ -1888,7 +1912,7 @@ window.addEventListener('languagechange',()=>{
 });
 
 function syncPageTranslationLanguage() {
-  if (state?.capabilities?.pageTranslation) {
+  if (state?.capabilities?.pageTranslation || state?.downloadLabels) {
     return api('translation/language', {language:localization.language}).catch(() => {});
   }
 }

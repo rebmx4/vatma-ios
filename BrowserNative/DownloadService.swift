@@ -6,12 +6,54 @@ import UniformTypeIdentifiers
 @MainActor
 final class DownloadService: NSObject, WKDownloadDelegate {
     private var paths: [String: URL] = [:]
-    private var active: [ObjectIdentifier: WKDownload] = [:]
-    // Only publish completed transfers in the directory visible to the iOS Files picker.
-    private var transfers: [ObjectIdentifier: (temporary: URL, filename: String)] = [:]
-    private var sourceTabs: [ObjectIdentifier: String] = [:]
+    @MainActor
+    final class Transfer {
+        let id = UUID().uuidString
+        let tabID: String
+        weak var page: WKWebView?
+        var request: URLRequest?
+        var download: WKDownload?
+        var destination: ((URL?) -> Void)?
+        var temporary: URL?
+        var name: String
+        var host: String
+        var status = "connecting"
+        var expected: Int64 = -1
+        var error: String?
+        var fileID: String?
+        var received: Int64 { max(0, download?.progress.completedUnitCount ?? 0) }
+        var total: Int64 {
+            if expected >= 0 { return expected }
+            if status == "running", let length = download?.progress.totalUnitCount, length > 0 { return length }
+            return -1
+        }
+        var canRetry: Bool {
+            guard page != nil, let request, let scheme = request.url?.scheme?.lowercased() else { return false }
+            return (request.httpMethod ?? "GET") == "GET" && ["http","https","blob","data"].contains(scheme)
+        }
+        init(_ download: WKDownload, tabID: String, page: WKWebView) {
+            self.tabID = tabID
+            self.download = download
+            self.page = page
+            let original = download.originalRequest
+            request = (original?.httpMethod ?? "GET") == "GET" ? original : nil
+            let url = download.originalRequest?.url
+            name = DownloadFilename.make(["http","https"].contains(url?.scheme ?? "") ? url?.lastPathComponent ?? "" : "")
+            host = url?.host ?? page.url?.host ?? ""
+        }
+    }
+    private(set) var tasks: [Transfer] = []
+    private var active: [ObjectIdentifier: Transfer] = [:]
+    private(set) var notice: Transfer?
+    var rows: [[String: Any]] {
+        tasks.map { task in
+            ["id":task.id, "name":task.name, "status":task.status, "total":task.total,
+             "received":task.received, "retry":task.canRetry, "error":task.error ?? "",
+             "fileID":task.fileID ?? "", "tabID":task.tabID, "canOpen":task.page != nil]
+        }
+    }
     private(set) var completionVersion = 0
-    var didChange: ((String?, String?) -> Void)?
+    var didChange: (() -> Void)?
     private var folder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .resolvingSymlinksInPath().appendingPathComponent("Downloads", isDirectory: true)
@@ -33,7 +75,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
         let rows = try files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { url -> [String: Any]? in
             do {
                 guard let safe = try safeFile(url, root: root) else { return nil }
-                let id = SHA256.hash(data: Data(safe.lastPathComponent.utf8)).map { String(format: "%02x", $0) }.joined()
+                let id = Self.fileID(for: safe)
                 let row = try metadata(safe, id: id)
                 paths[id] = safe
                 return row
@@ -42,7 +84,7 @@ final class DownloadService: NSObject, WKDownloadDelegate {
                 return nil
             }
         }
-        return ["files": rows, "downloading": !active.isEmpty]
+        return ["files": rows]
     }
 
     func fileURL(id: String) throws -> URL {
@@ -98,16 +140,18 @@ final class DownloadService: NSObject, WKDownloadDelegate {
                 "mime": type?.preferredMIMEType ?? "application/octet-stream"]
     }
 
-    func attach(_ download: WKDownload, tabID: String) {
-        active[ObjectIdentifier(download)] = download
-        sourceTabs[ObjectIdentifier(download)] = tabID
+    func attach(_ download: WKDownload, tabID: String, page: WKWebView) {
+        let task = Transfer(download, tabID: tabID, page: page)
+        tasks.append(task)
+        active[ObjectIdentifier(download)] = task
         download.delegate = self
+        didChange?()
     }
 
     func start(_ url: URL, in page: WKWebView, tabID: String) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             page.startDownload(using: URLRequest(url: url)) { download in
-                self.attach(download, tabID: tabID)
+                self.attach(download, tabID: tabID, page: page)
                 continuation.resume()
             }
         }
@@ -115,36 +159,97 @@ final class DownloadService: NSObject, WKDownloadDelegate {
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
                   completionHandler: @escaping (URL?) -> Void) {
-        do {
-            if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-                throw BrowserFailure.invalid("HTTP \(http.statusCode) · \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))")
-            }
-            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            var filename = DownloadFilename.make(suggestedFilename)
-            if (filename as NSString).pathExtension.isEmpty, let mime = response.mimeType,
-               mime != "application/octet-stream", let type = UTType(mimeType: mime),
-               let ext = type.preferredFilenameExtension {
-                filename += "." + ext
-            }
-            transfers[ObjectIdentifier(download)] = (temporary, filename)
-            completionHandler(temporary)
-        } catch {
-            // WebKit can follow a nil destination with a generic cancellation callback.
-            let tabID = sourceTabs[ObjectIdentifier(download)]
-            release(download)
+        guard let task = active[ObjectIdentifier(download)] else { completionHandler(nil); return }
+        guard task.status != "cancelling" else { completionHandler(nil); return }
+        task.name = DownloadFilename.make(suggestedFilename)
+        task.host = response.url?.host ?? task.host
+        task.expected = response.expectedContentLength
+        if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+            finish(task, status: "failed", error: "HTTP \(http.statusCode) · \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))")
             completionHandler(nil)
-            didChange?(tabID, error.localizedDescription)
+            return
+        }
+        if (task.name as NSString).pathExtension.isEmpty, let mime = response.mimeType,
+           mime != "application/octet-stream", let ext = UTType(mimeType: mime)?.preferredFilenameExtension {
+            task.name += "." + ext
+        }
+        task.status = "confirm"
+        task.destination = completionHandler
+        didChange?()
+    }
+
+    func confirm(_ id: String) {
+        guard let task = tasks.first(where: { $0.id == id }), let decide = task.destination else { return }
+        task.destination = nil
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        task.temporary = url
+        task.status = "running"
+        decide(url)
+        didChange?()
+    }
+
+    func cancel(_ id: String) {
+        guard let task = tasks.first(where: { $0.id == id }), let download = task.download else { return }
+        if task.destination != nil {
+            finish(task, status: "cancelled")
+        } else {
+            guard task.status != "cancelling" else { return }
+            task.status = "cancelling"
+            download.cancel { [weak self] _ in
+                guard self?.active[ObjectIdentifier(download)] === task else { return }
+                self?.finish(task, status: "cancelled")
+            }
+            didChange?()
         }
     }
 
+    func retry(_ id: String) throws {
+        guard let task = tasks.first(where: { $0.id == id }), ["failed","cancelled","done"].contains(task.status),
+              task.canRetry, let page = task.page, let request = task.request else {
+            throw BrowserFailure.invalid("Open the original page to download this file again.")
+        }
+        if task.status != "done" { tasks.removeAll { $0 === task } }
+        if notice === task { notice = nil }
+        page.startDownload(using: request) { self.attach($0, tabID: task.tabID, page: page) }
+        didChange?()
+    }
+
+    func removeRecord(_ id: String) {
+        tasks.removeAll { $0.id == id && ["failed","cancelled"].contains($0.status) }
+        if notice?.id == id { notice = nil }
+        didChange?()
+    }
+
+    func removeFile(_ id: String) throws {
+        try FileManager.default.removeItem(at: fileURL(id: id))
+        tasks.removeAll { $0.fileID == id }
+        if notice?.fileID == id { notice = nil }
+        completionVersion += 1
+        didChange?()
+    }
+
+    func dismissNotice() { notice = nil; didChange?() }
+
+    func tabClosed(_ id: String) {
+        for task in tasks where task.tabID == id {
+            task.request = nil
+            task.page = nil
+            if ["connecting","confirm"].contains(task.status) { cancel(task.id) }
+        }
+        tasks.removeAll { $0.tabID == id && $0.status == "done" }
+        if notice?.tabID == id { dismissNotice() }
+    }
+
     func downloadDidFinish(_ download: WKDownload) {
-        let tabID = sourceTabs[ObjectIdentifier(download)]
-        guard let transfer = transfers[ObjectIdentifier(download)] else { return }
+        guard let task = active[ObjectIdentifier(download)], let temporary = task.temporary else { return }
+        guard task.status != "cancelling" else { finish(task, status: "cancelled"); return }
         do {
-            _ = try publishFile(transfer.temporary, suggestedFilename: transfer.filename)
-            release(download); didChange?(tabID, nil)
+            let file = try publishFile(temporary, suggestedFilename: task.name)
+            task.name = file.lastPathComponent
+            task.fileID = Self.fileID(for: file)
+            finish(task, status: "done")
         } catch {
-            release(download); didChange?(tabID, error.localizedDescription)
+            finish(task, status: "failed", error: error.localizedDescription)
         }
     }
 
@@ -164,20 +269,28 @@ final class DownloadService: NSObject, WKDownloadDelegate {
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        guard let tabID = sourceTabs[ObjectIdentifier(download)] else { return }
+        guard let task = active[ObjectIdentifier(download)] else { return }
         let failure = error as NSError
-        let cancelled = failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled
-        release(download); didChange?(tabID, cancelled ? nil : error.localizedDescription)
+        let cancelled = task.status == "cancelling" || (failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled)
+        finish(task, status: cancelled ? "cancelled" : "failed", error: cancelled ? nil : error.localizedDescription)
     }
 
-    private func release(_ download: WKDownload) {
-        let id = ObjectIdentifier(download)
-        active.removeValue(forKey: id)
-        sourceTabs.removeValue(forKey: id)
-        if let transfer = transfers.removeValue(forKey: id) {
-            try? FileManager.default.removeItem(at: transfer.temporary)
-        }
+    private func finish(_ task: Transfer, status: String, error: String? = nil) {
+        if let download = task.download { active.removeValue(forKey: ObjectIdentifier(download)) }
+        let decision = task.destination
+        task.destination = nil
+        task.download = nil
+        task.status = status
+        task.error = error
+        if let temporary = task.temporary { try? FileManager.default.removeItem(at: temporary); task.temporary = nil }
+        decision?(nil)
+        if status == "done" || status == "failed" { notice = task }
         completionVersion += 1
+        didChange?()
+    }
+
+    private static func fileID(for url: URL) -> String {
+        SHA256.hash(data: Data(url.lastPathComponent.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     func download(_ download: WKDownload, didReceive challenge: URLAuthenticationChallenge,

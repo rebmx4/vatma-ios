@@ -20,6 +20,9 @@ final class BrowserController: UIViewController {
     lazy var uiStartup = BrowserUIStartup(browser: self)
     let blocker = SiteBlocker()
     let downloads = DownloadService()
+    let downloadCard = DownloadCard(material: .systemThickMaterial)
+    var downloadLanguage = Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en"
+    private var downloadCardBottom: NSLayoutConstraint!
     lazy var pageTranslation = BrowserPageTranslation(browser: self)
     lazy var media: BrowserMediaController = {
         let controller = BrowserMediaController()
@@ -111,15 +114,18 @@ final class BrowserController: UIViewController {
         ui.scrollView.isScrollEnabled = false
         ui.scrollView.contentInsetAdjustmentBehavior = .never
         browserViewport.addSubview(ui)
+        downloadCard.translatesAutoresizingMaskIntoConstraints = false
+        browserViewport.addSubview(downloadCard)
+        downloadCardBottom = downloadCard.bottomAnchor.constraint(equalTo: browserViewport.bottomAnchor, constant: -12)
+        let idealWidth = downloadCard.widthAnchor.constraint(equalToConstant: 370)
+        idealWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([downloadCardBottom, idealWidth,
+            downloadCard.centerXAnchor.constraint(equalTo: browserViewport.centerXAnchor),
+            downloadCard.widthAnchor.constraint(lessThanOrEqualTo: browserViewport.widthAnchor, constant: -24)])
         blocker.didChange = { [weak self] in self?.publish() }
-        downloads.didChange = { [weak self] tabID, error in
+        downloads.didChange = { [weak self] in
             guard let self else { return }
-            if let error {
-                if let index = self.model.tabs.firstIndex(where: { $0.id == tabID }) {
-                    self.model.tabs[index].error = error
-                    self.model.save()
-                } else { self.nativeError = error }
-            }
+            self.updateDownloadCard()
             self.publish()
         }
         uiStartup.start()
@@ -175,7 +181,10 @@ final class BrowserController: UIViewController {
             renderer.frame = CGRect(x: frame.minX, y: frame.minY, width: frame.width,
                                     height: max(0, frame.height - currentFooterHeight))
         }
-        browserViewport.bringSubviewToFront(ui)
+        let cardOffset = browsing ? currentFooterHeight + 6 : max(12, view.safeAreaInsets.bottom + 8)
+        if downloadCardBottom.constant != -cardOffset { downloadCardBottom.constant = -cardOffset }
+        browserViewport.bringSubviewToFront(downloadCard)
+        updateDownloadCard()
         if LocalUIServer.diagnosticsEnabled {
             let geometry = "mode=\(mode), root=\(view.bounds), viewport=\(browserViewport.frame), ui=\(ui.frame), keyboard=\(view.keyboardLayoutGuide.layoutFrame), safe=\(view.safeAreaInsets), footer=\(currentFooterHeight)"
             if geometry != lastLayoutDiagnostic { lastLayoutDiagnostic = geometry; LocalUIServer.diagnostic("Layout: " + geometry) }
@@ -299,6 +308,7 @@ final class BrowserController: UIViewController {
     }
 
     func removeRenderer(for id: String) {
+        downloads.tabClosed(id)
         historyObservations.removeValue(forKey: id)?.forEach { $0.invalidate() }
         invalidatePreview(for: id)
         if let renderer = renderers.removeValue(forKey: id) {
@@ -345,7 +355,8 @@ final class BrowserController: UIViewController {
                 "preferredLanguages": Locale.preferredLanguages,
                 "timezone": TimeZone.autoupdatingCurrent.identifier, "profiles": model.profiles,
                 "tabs": tabOverviewState(), "tabPreviewVersion": tabPreviewVersion,
-                "activeTabId": model.activeTabId, "media": media.state, "downloadsVersion": downloads.completionVersion]
+                "activeTabId": model.activeTabId, "media": media.state, "downloadsVersion": downloads.completionVersion,
+                "downloadTasks": panel == "files" ? downloads.rows : [], "downloadLabels": downloadLabels]
     }
 
     func publish() {
