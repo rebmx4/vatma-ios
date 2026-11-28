@@ -8,6 +8,14 @@ final class BrowserPrivateDesktopTests: XCTestCase {
         let fixture = try BrowserControllerFixture(); defer { fixture.close() }
         _ = try await fixture.start()
         let ui = try XCTUnwrap(fixture.controller.ui)
+        _ = try await fixture.script("""
+            const key = 'atma-preview-apps', entries = JSON.parse(localStorage.getItem(key));
+            entries.push({id:'pager-fixture', name:'Page two', type:'web', url:'https://example.com/', slots:{4:20, 6:30}});
+            const newValue = JSON.stringify(entries);
+            localStorage.setItem(key, newValue);
+            window.dispatchEvent(new StorageEvent('storage', {key, newValue}));
+            return true;
+            """, in: ui)
         try await fixture.wait("document.querySelectorAll('#apps .desktop-page').length >= 2", in: ui)
         let value = try await fixture.script("""
             const pager = document.getElementById('apps');

@@ -273,7 +273,21 @@ final class BrowserRenderingTests: XCTestCase {
         _ = try await script("window.__iconChoicePreviousDocument=true;return true;", in: controller.ui)
         controller.ui.reload()
         try await waitFor("window.__iconChoicePreviousDocument!==true && document.readyState==='complete' && !!document.body.dataset.mode", in: controller.ui)
-        _ = try await script("document.getElementById('edit-apps').click();const app=\(saved);[...document.querySelectorAll('.app-item')].find(item=>item.dataset.app===app.id).querySelector('.app-tile').click();return true;", in: controller.ui)
+        _ = try await script("""
+            const home = document.querySelector('.home');
+            home.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, isPrimary:true, pointerId:1, button:0}));
+            return true;
+            """, in: controller.ui)
+        try await waitFor("document.body.classList.contains('editing')", in: controller.ui)
+        _ = try await script("""
+            document.querySelector('.home').dispatchEvent(new PointerEvent('pointerup', {bubbles:true, isPrimary:true, pointerId:1, button:0}));
+            const tile = document.querySelector('[data-app="' + \(saved).id + '"] .app-tile');
+            const rect = tile.getBoundingClientRect();
+            const touch = {bubbles:true, isPrimary:true, pointerId:2, button:0, clientX:rect.x+20, clientY:rect.y+20};
+            tile.dispatchEvent(new PointerEvent('pointerdown', touch));
+            tile.dispatchEvent(new PointerEvent('pointerup', touch));
+            return true;
+            """, in: controller.ui)
         try await waitFor("!!document.getElementById('app-form')", in: controller.ui)
         let selected = try await script("return document.querySelector('#app-form [name=iconStyle]:checked')?.value;", in: controller.ui) as? String
         XCTAssertEqual(selected, "chat", "The editor must retain the chosen shortcut icon after relaunch")
