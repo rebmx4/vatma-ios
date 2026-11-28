@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import time
 import tkinter as tk
 from tkinter import font, ttk
 
@@ -63,6 +64,8 @@ class LinuxAppearance:
         self.settings = None
         self.schema = None
         self.context = None
+        self.fallback_dark = False
+        self.next_fallback_read = 0.0
         config_home = Path(os.environ.get("XDG_CONFIG_HOME", ""))
         self.config_home = config_home if config_home.is_absolute() else Path.home() / ".config"
         try:
@@ -122,13 +125,19 @@ class LinuxAppearance:
         return config
 
     def prefers_dark(self):
-        if self.context:
+        if self.context is not None:
             for _ in range(16):
                 if not self.context.iteration(False):
                     break
         if self.portal_dark is not None:
             return self.portal_dark
+        now = time.monotonic()
+        if now >= self.next_fallback_read:
+            self.fallback_dark = self.read_desktop_preference()
+            self.next_fallback_read = now + 1.0
+        return self.fallback_dark
 
+    def read_desktop_preference(self):
         gtk_override = os.environ.get("GTK_THEME")
         if gtk_override:
             return "dark" in gtk_override.casefold()
@@ -267,7 +276,7 @@ class DesktopAppearance:
                 self.style.theme_use(name)
             self.palette = palette
             self.color_classic_widgets(self.root)
-        self.root.after(700, self.update)
+        self.root.after(250 if self.linux is not None else 700, self.update)
 
     def color_classic_widgets(self, widget):
         palette = self.palette
