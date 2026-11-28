@@ -2,7 +2,7 @@ name: PhoneDisk desktop packages
 
 on:
   push:
-    branches: [phone-disk/desktop-unix-beta]
+    branches: [phone-disk/desktop-unix-beta, phone-disk/desktop-rounded-ui]
     paths:
       - 'PhoneDisk/Companion/**'
       - '.github/workflows/phone-disk-desktop.yml'
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           installer="$RUNNER_TEMP/python-3.13.17.pkg"
-          curl --fail --silent --show-error --location \
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 90 \
             https://www.python.org/ftp/python/3.13.17/python-3.13.17-macos11.pkg -o "$installer"
           printf '%s  %s\n' '3053592af66128269efab37fe7851a4894920b27c442aeec99ce4d34d17c07e3' "$installer" |
             shasum -a 256 -c -
@@ -79,6 +79,19 @@ jobs:
           python -c 'import tkinter; print(tkinter.TkVersion)'
           python PhoneDisk/Companion/Tests/connection.py --wheels .
           bash PhoneDisk/Companion/macos/build.sh "$PWD/out" "$PWD/PhoneDisk/Companion/Tests/desktop-preview.mp4"
+      - name: Open and verify the final disk image
+        run: |
+          set -euo pipefail
+          mount="$RUNNER_TEMP/phonedisk-disk-image"
+          mkdir "$mount"
+          image="out/PhoneDisk-macOS-${{ matrix.model }}-test.dmg"
+          hdiutil attach "$image" -nobrowse -readonly -mountpoint "$mount"
+          trap 'hdiutil detach "$mount" >/dev/null' EXIT
+          app="$mount/Мой диск.app"
+          codesign --verify --deep --strict "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/PhoneDisk")" = "$(uname -m)"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" = "0.1.1"
+          "$app/Contents/MacOS/PhoneDisk" --verify --verify-video "$PWD/PhoneDisk/Companion/Tests/desktop-preview.mp4"
       - uses: actions/upload-artifact@v4
         with:
           name: phonedisk-macos-${{ matrix.model }}

@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTROL = """Package: phonedisk
-Version: 0.1.0~test1
+Version: 0.1.1~test1
 Section: utils
 Priority: optional
 Architecture: all

@@ -9,6 +9,9 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
+[assembly: AssemblyFileVersion("0.1.1.0")]
+[assembly: AssemblyInformationalVersion("0.1.1")]
+
 internal static class Setup
 {
     private const string Title = "Установка «Моего диска»";

@@ -62,8 +62,8 @@ with path.open("rb") as stream:
 info.update({
     "CFBundleDisplayName": "Мой диск",
     "CFBundleName": "Мой диск",
-    "CFBundleShortVersionString": "0.1.0",
-    "CFBundleVersion": "1",
+    "CFBundleShortVersionString": "0.1.1",
+    "CFBundleVersion": "2",
     "LSMinimumSystemVersion": "13.0",
     "NSRequiresAquaSystemAppearance": False,
     "NSLocalNetworkUsageDescription": "Мой диск подключается к iPhone в домашней сети.",
