@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 import UIKit
 import XCTest
 
@@ -19,4 +20,17 @@ func renderingAverageRGB(_ source: String) throws -> [UInt8] {
         context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
     }
     return pixel
+}
+
+extension BrowserRenderingTests {
+    func script(_ source: String, in page: WKWebView, arguments: [String: Any] = [:]) async throws -> Any? {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            page.callAsyncJavaScript(source, arguments: arguments, in: nil, in: .page) { result in
+                switch result {
+                case .success(let value): continuation.resume(returning: value)
+                case .failure(let error): continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
 }

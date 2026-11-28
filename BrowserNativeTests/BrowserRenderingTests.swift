@@ -307,7 +307,7 @@ final class BrowserRenderingTests: XCTestCase {
         let destination = base.appendingPathComponent("slow").absoluteString
         try controller.open(destination)
         let rejection = try await script("try {await window.webkit.messageHandlers.atma.postMessage({action:'current-site'});return '';} catch(error){return String(error.message||error);}", in: controller.ui) as? String
-        XCTAssertTrue(rejection?.contains("Дождитесь") == true || rejection?.contains("Страница") == true,
+        XCTAssertTrue(rejection?.contains("Р”РѕР¶РґРёС‚РµСЃСЊ") == true || rejection?.contains("РЎС‚СЂР°РЅРёС†Р°") == true,
                       "Quick-add must reject the preceding document during navigation: \(String(describing: rejection))")
         try await waitForPaint(in: XCTUnwrap(controller.currentRenderer), color: "rgb(30, 70, 220)")
         try await waitFor("document.getElementById('address').value===\(renderingJSONString(destination)) && !document.getElementById('pin-site').disabled", in: controller.ui)
@@ -390,20 +390,7 @@ final class BrowserRenderingTests: XCTestCase {
         throw NSError(domain: "ATMA.RenderingFixture", code: 1)
     }
 
-    private func script(_ source: String, in page: WKWebView, arguments: [String: Any] = [:]) async throws -> Any? {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
-            page.callAsyncJavaScript(source, arguments: arguments, in: nil, in: .page) { result in
-                switch result {
-                case .success(let value): continuation.resume(returning: value)
-                case .failure(let error): continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
     private func rpc(_ action: String, body: [String: Any] = [:]) async throws -> Any? {
         try await script("return await window.webkit.messageHandlers.atma.postMessage({action,body});", in: controller.ui, arguments: ["action": action, "body": body])
     }
-
-
 }
