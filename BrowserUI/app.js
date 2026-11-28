@@ -955,6 +955,7 @@ function beginGesture(event, app, parentId,scope='public') {
   const current = gesture = { id: app.id, parentId, scope, pointerId: event.pointerId, pointerType:event.pointerType, x:event.clientX, y:event.clientY, wasEditing:editing, active:false, scrollStart:$('apps').scrollLeft, onTile:Boolean(event.target.closest('.app-tile')), fromDock:Boolean(event.target.closest('.desktop-dock')) };
   if (editing) { event.preventDefault(); capturePointer(current); setDesktopGrab(current,true); }
   if(!editing&&app.url&&app.type!=='system'&&!isFolder(app)){
+    current.menuStartedAt=event.timeStamp;
     current.menuTimer=setTimeout(()=>{
       if(gesture!==current||current.swipe)return;
       current.held=true;current.menuShown=true;capturePointer(current);
@@ -1216,6 +1217,16 @@ async function endGesture(event, cancelled = false) {
   }
   if(event.pointerId!==current.pointerId)return;
   clearTimeout(current.menuTimer);
+  const heldFor=event.timeStamp-current.menuStartedAt;
+  if(!cancelled&&!current.active&&!current.swipe&&!current.menuShown&&heldFor>=DESKTOP_HOLD_MS&&heldFor<ICON_EDIT_HOLD_MS&&Math.hypot(event.clientX-current.x,event.clientY-current.y)<=7){
+    // WebKit can deliver finger-up after a busy frame has already run the edit timer.
+    const entry=findEntry(poolFor(current.scope),current.id)?.entry;
+    if(entry){
+      if(editing)setEditing(false);
+      current.held=true;current.menuShown=true;
+      showShortcutMenu(entry,current);
+    }
+  }
   if(current.menuShown){
     if(cancelled)closeShortcutMenu();
     suppressReleaseClick=true;

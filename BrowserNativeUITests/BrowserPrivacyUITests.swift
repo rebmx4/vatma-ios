@@ -9,8 +9,31 @@ final class BrowserPrivacyUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         // Keep the Russian desktop separate from the unit-test host's saved regional layout.
         app.launchArguments = ["-atma.ui.loopback.port", "28917", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU", "--atma-ui-diagnostics"]
+        if name.contains("testRenameShortcutFromHome") {
+            // This scenario renames a default shortcut and relaunches the app.
+            app.launchArguments[1] = "28918"
+        }
         app.launch()
         XCTAssertTrue(button(["Меню браузера", "Browser menu"]).waitForExistence(timeout: 60))
+    }
+
+    func testRenameShortcutFromHome() throws {
+        let original = button(["Открыть ВКонтакте", "Open ВКонтакте"])
+        XCTAssertTrue(original.waitForExistence(timeout: 15))
+        original.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1.12)
+        let rename = button(["Переименовать", "Rename"])
+        XCTAssertTrue(rename.waitForExistence(timeout: 10))
+        rename.tap()
+        let field = app.textFields.matching(NSPredicate(format: "label IN %@", ["Название приложения", "App name"])).firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        field.typeText("731042")
+        button(["Сохранить", "Save"]).tap()
+        let renamed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "731042")).firstMatch
+        XCTAssertTrue(renamed.waitForExistence(timeout: 10))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(renamed.waitForExistence(timeout: 20), "The new name must survive a fresh launch")
     }
 
     func testIncognitoDesktopIconOpensPrivateSearchScreen() throws {

@@ -86,14 +86,14 @@ case "${1:?Expected gate, prepare, smoke or archive}" in
       if [[ "$scope" = shortcut-rename ]]; then
         test_command+=(
           -only-testing:BrowserNativeTests/BrowserPrivateDesktopTests/testShortcutRenameUsesFocusedFieldAndPersistsToDesktop
-          -only-testing:BrowserNativeUITests/BrowserPrivacyUITests/testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu
+          -only-testing:BrowserNativeUITests/BrowserPrivacyUITests/testRenameShortcutFromHome
         )
       elif [[ "$device" = ipad ]]; then
         test_command+=(-only-testing:BrowserNativeUITests)
       fi
       "${test_command[@]}" 2>&1 | tee "$task_root/out/test-$device.log"
       if [[ "$scope" = shortcut-rename ]]; then
-        for name in testShortcutRenameUsesFocusedFieldAndPersistsToDesktop testEmptySpaceAndNewWebsiteIconEnterEditingWithoutAnImageMenu; do
+        for name in testShortcutRenameUsesFocusedFieldAndPersistsToDesktop testRenameShortcutFromHome; do
           grep -Eq "Test Case .*${name}.* passed" "$task_root/out/test-$device.log" || { echo "Missing passing test: $name" >&2; exit 1; }
         done
       fi
