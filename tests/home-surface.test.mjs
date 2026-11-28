@@ -10,7 +10,7 @@ function browser(){
  assert.ok(begin>0&&end>begin);
  const controls=new Map(),rootStyle=new Map();
  const element=id=>{if(!controls.has(id))controls.set(id,{dataset:{},value:'',setAttribute(){}});return controls.get(id);};
- const context={state:undefined,profiles:[],panel:null,busy:false,desktopTabId:null,desktopSurfaceKey:'desktop',
+ const context={state:undefined,profiles:[],panel:null,pendingPanelRequest:null,busy:false,desktopTabId:null,desktopSurfaceKey:'desktop',
   document:{body:{dataset:{}},documentElement:{style:{setProperty:(name,value)=>rootStyle.set(name,value)}},activeElement:null},
   sessionStorage:{setItem(){},removeItem(){}},location:{origin:'https://ui.invalid'},$:element,
   icon:name=>name,renderPanel(){},renderApps(){},renderTabs(){},updateQuickAdd(){}};
